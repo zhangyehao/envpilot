@@ -6,7 +6,7 @@ DESTINATION="${ENVPILOT_ASSET_DESTINATION:-$ROOT/downloads}"
 MAX_DEPTH="${ENVPILOT_ASSET_MAX_DEPTH:-5}"
 DRY_RUN="0"
 UPLOAD_RELEASE="0"
-TAG="${ENVPILOT_RELEASE_TAG:-v0.1.0}"
+TAG="${ENVPILOT_RELEASE_TAG:-offline-cache-manual}"
 REPO="${ENVPILOT_REPO:-zhangyehao/envpilot}"
 MAX_SIZE_MB="${ENVPILOT_ASSET_MAX_SIZE_MB:-700}"
 
@@ -102,6 +102,14 @@ if [ "$DRY_RUN" = "0" ]; then
 fi
 
 if [ "$UPLOAD_RELEASE" = "1" ] && [ "$DRY_RUN" = "0" ]; then
+    if [ "$REPO" = "zhangyehao/envpilot" ]; then
+        case "$TAG" in
+            v[0-9]*.[0-9]*.[0-9]*)
+                printf '[ERROR] Do not upload third-party installers to normal envpilot version releases. Use a dedicated offline-cache tag or a separate cache repository.\n' >&2
+                exit 1
+                ;;
+        esac
+    fi
     command -v gh >/dev/null 2>&1 || {
         printf '[ERROR] gh not found; cannot upload release assets.\n' >&2
         exit 1

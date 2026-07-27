@@ -15,7 +15,18 @@
   },
   "windows": {
     "native": "not promised",
-    "supported_runtimes": ["WSL", "MSYS2", "Git Bash"]
+    "supported_runtimes": [
+      "WSL",
+      "MSYS2",
+      "Git Bash"
+    ]
+  },
+  "latest": {
+    "version": "3.7b",
+    "name": "tmux 3.7b",
+    "published_at": "2026-07-01T18:58:22Z",
+    "html_url": "https://github.com/tmux/tmux/releases/tag/3.7b",
+    "checked_at": "2026-07-27T11:25:23Z",
+    "note": "source_versions remain pinned until maintainer review"
   }
 }
-

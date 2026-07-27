@@ -180,8 +180,6 @@ run_reset()
 
 run_update_manifests()
 {
-    ep_init
-    ep_platform_detect
     ep_update_manifests
 }
 

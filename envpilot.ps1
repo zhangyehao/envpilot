@@ -319,6 +319,14 @@ function Rollback-Latest {
     Write-Info "Restored $($parts[0]) from $($parts[1])"
 }
 
+function Update-Manifests {
+    $script = Join-Path $Script:Root "scripts/update-manifests.py"
+    $python = Get-Command python3 -ErrorAction SilentlyContinue
+    if (-not $python) { $python = Get-Command python -ErrorAction SilentlyContinue }
+    if (-not $python) { Stop-Envpilot "python3 or python is required to update manifests" }
+    & $python.Source $script
+    if ($LASTEXITCODE -ne 0) { Stop-Envpilot "Manifest update failed." }
+}
 function Show-Usage {
 @"
 envpilot - cross-platform user-space environment bootstrapper
@@ -330,6 +338,7 @@ Usage:
   .\envpilot.ps1 rollback
   .\envpilot.ps1 resume
   .\envpilot.ps1 reset
+  .\envpilot.ps1 update-manifests
 "@
 }
 
@@ -342,7 +351,7 @@ try {
         "rollback" { Rollback-Latest }
         "resume" { if (Test-Path $Script:StateFile) { Get-Content $Script:StateFile }; $Component = "all"; Invoke-Install }
         "reset" { Remove-Item -LiteralPath $Script:StateFile -Force -ErrorAction SilentlyContinue; Write-Info "State reset." }
-        "update-manifests" { Get-ChildItem -LiteralPath (Join-Path $Script:Root "manifests") -Filter "*.json" }
+        "update-manifests" { Update-Manifests }
         "self-test" { & (Join-Path $Script:Root "tests/test-envpilot.ps1") }
         "help" { Show-Usage }
     }

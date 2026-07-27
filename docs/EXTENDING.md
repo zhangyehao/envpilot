@@ -56,10 +56,10 @@ The resolver may query upstream APIs at runtime, but must stop with a clear mess
 Use three workflow types:
 
 - `test.yml`: syntax and fixture tests on every PR and push.
-- `update-manifests.yml`: scheduled or manual manifest refresh; opens PRs instead of committing directly to main.
-- `release-assets.yml`: optional manual workflow that uploads selected offline installers to GitHub Release assets.
+- `update-manifests.yml`: scheduled or manual manifest refresh through `scripts/update-manifests.py`; writes upstream stable metadata into manifest `latest` fields and opens PRs instead of committing directly to `main`.
+- `release-assets.yml`: manual packaging workflow that attaches envpilot-owned `.tar.gz`, `.zip`, and `.sha256` assets to a release tag.
 
-Do not store large binaries in Git history.
+Do not store large binaries in Git history. Third-party offline installers should stay in local ignored `downloads/` by default. If centralized caching is needed, use a separate offline-cache repository or a dedicated non-version tag instead of normal envpilot `v0.x.y` releases.
 
 ## State, resume, and rollback
 
@@ -111,14 +111,16 @@ Windows:
 
 ```powershell
 .\scripts\collect-assets.ps1 -DryRun
-.\scripts\collect-assets.ps1 -UploadRelease -Tag v0.1.0 -Repo zhangyehao/envpilot
+.\scripts\collect-assets.ps1 -MaxSizeMB 2000
 ```
 
 Unix-like:
 
 ```bash
 ENVPILOT_ASSET_MAX_SIZE_MB=2000 bash scripts/collect-assets.sh --dry-run
-bash scripts/collect-assets.sh --upload-release --tag v0.1.0 --repo zhangyehao/envpilot
+ENVPILOT_ASSET_MAX_SIZE_MB=2000 bash scripts/collect-assets.sh
 ```
 
-The scripts copy matching stable installers into ignored `downloads/` and can upload them to GitHub Release assets. Do not commit binary payloads to Git history.
+The scripts copy matching stable installers into ignored `downloads/` and write `downloads/assets-index.json`. Treat `downloads/` as a local offline cache and do not commit binary payloads to Git history.
+
+`-UploadRelease` / `--upload-release` is only for a separate offline-cache repository or a dedicated non-version tag. The scripts reject uploading third-party installers to `zhangyehao/envpilot` normal `v0.x.y` releases.

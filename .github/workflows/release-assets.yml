@@ -4,25 +4,36 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag to attach offline assets to"
+        description: "Release tag to package envpilot for"
         required: true
 
 permissions:
   contents: write
 
 jobs:
-  publish:
+  package:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Prepare offline asset directory
+        with:
+          fetch-depth: 0
+      - name: Validate tag
         run: |
-          mkdir -p downloads
-          echo "Place curated offline installers in downloads/ before running this workflow from a maintainer branch."
-      - name: Upload assets if present
+          test -n "${{ inputs.tag }}"
+          git rev-parse "${{ inputs.tag }}" >/dev/null
+      - name: Build envpilot release archives
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ inputs.tag }}"
+          version="${tag#v}"
+          mkdir -p dist
+          git archive --format=tar.gz --prefix="envpilot-${version}/" -o "dist/envpilot-${version}.tar.gz" "$tag"
+          git archive --format=zip --prefix="envpilot-${version}/" -o "dist/envpilot-${version}.zip" "$tag"
+          sha256sum dist/envpilot-${version}.tar.gz dist/envpilot-${version}.zip > "dist/envpilot-${version}.sha256"
+      - name: Upload envpilot release assets
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.tag }}
-          files: downloads/*
-          fail_on_unmatched_files: false
-
+          files: dist/*
+          fail_on_unmatched_files: true

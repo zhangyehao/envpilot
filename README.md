@@ -259,14 +259,15 @@ Windows 原生不承诺 tmux；如需 tmux，请使用 WSL、MSYS2 或 Git Bash 
 
 ## 离线资产
 
-不要把二进制包提交到 Git。`downloads/` 已被 `.gitignore` 忽略。
+不要把二进制包提交到 Git。`downloads/` 已被 `.gitignore` 忽略，适合维护者或用户在本机暂存第三方安装包。
 
 推荐来源：
 
-- 用户手动上传到 `downloads/`
-- 私有 GitHub Release assets
+- 用户手动放入 `downloads/`
 - 使用 `--asset-path` 指定本地文件
+- 如必须集中分发，使用单独的 offline-cache 仓库或专用非版本 tag，不要上传到 `v0.x.y` 这类 envpilot 正式 release
 
+`downloads/` 不会被 GitHub Actions 自动填充。Actions 运行在 GitHub-hosted runner 上，不能访问你本机的 `D:\`、`E:\` 或服务器目录。
 
 ## GitHub Actions 触发
 
@@ -274,32 +275,38 @@ Windows 原生不承诺 tmux；如需 tmux，请使用 WSL、MSYS2 或 Git Bash 
 
 - 每周一自动运行一次。
 - 也可以在 GitHub 网页进入 `Actions` -> `update-manifests` -> `Run workflow` 手动触发。
-- 它只刷新/检查 manifest，发现变更时开 PR，不直接改 `main`。
+- 它会运行 `scripts/update-manifests.py` 查询上游 stable 元数据，当前覆盖 mihomo、GitHub CLI、Codex、Conda 和 tmux。
+- 发现 manifest 变化时自动开 PR，不直接改 `main`。
+- 它不安装软件；实际安装仍由运行时 resolver 根据当前系统、架构、libc、root 状态和 manifest 选择资产。
 
 `release-assets.yml`：
 
-- 只能手动触发：`Actions` -> `release-assets` -> `Run workflow`，输入 release tag，例如 `v0.1.0`。
-- GitHub-hosted runner 不能访问你本机的 `D:\`、`E:\` 或服务器目录；它只能上传当前 workflow 工作区内已有的 `downloads/*`。
-- 本机安装包推荐用 `scripts/collect-assets.ps1` 或 `scripts/collect-assets.sh` 收集后，直接上传到 GitHub Release assets。
+- 只能手动触发：`Actions` -> `release-assets` -> `Run workflow`，输入 release tag，例如 `v0.1.1`。
+- 它打包 envpilot 仓库本身，生成 `envpilot-<version>.tar.gz`、`.zip` 和 `.sha256` 并附加到该 release。
+- 它不上传第三方安装包，不读取 `downloads/`。
 
-Windows 本机收集并上传到 `v0.1.0`：
-
-```powershell
-.\scripts\collect-assets.ps1 -UploadRelease -Tag v0.1.0 -Repo zhangyehao/envpilot
-```
-
-默认会跳过超过 700 MB 的大型安装包；需要包含 Anaconda 这类大文件时，可加 `-MaxSizeMB 2000`。
-
-只预览不复制：
+本机收集第三方安装包到 `downloads/`：
 
 ```powershell
 .\scripts\collect-assets.ps1 -DryRun
+.\scripts\collect-assets.ps1 -MaxSizeMB 2000
 ```
 
 Linux/macOS/WSL：
 
 ```bash
-bash scripts/collect-assets.sh --upload-release --tag v0.1.0 --repo zhangyehao/envpilot
+ENVPILOT_ASSET_MAX_SIZE_MB=2000 bash scripts/collect-assets.sh --dry-run
+ENVPILOT_ASSET_MAX_SIZE_MB=2000 bash scripts/collect-assets.sh
+```
+
+如果以后确实需要集中保存第三方离线包，只用于独立缓存仓库或专用非版本 tag，例如：
+
+```powershell
+.\scripts\collect-assets.ps1 -UploadRelease -Tag offline-cache-20260727 -Repo zhangyehao/envpilot-offline-cache
+```
+
+```bash
+bash scripts/collect-assets.sh --upload-release --tag offline-cache-20260727 --repo zhangyehao/envpilot-offline-cache
 ```
 ## 安全边界
 

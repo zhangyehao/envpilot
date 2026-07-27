@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.1 - 2026-07-27
+
+### Changed
+
+- Implemented network-backed manifest updates that record upstream stable metadata in `manifests/*.json`.
+- Changed `release-assets.yml` to publish envpilot-owned source archives and checksums only.
+- Clarified that third-party offline installers belong in local `downloads/` or a separate offline-cache distribution path, not normal envpilot version releases.
+
+### Fixed
+
+- Added tests for manifest updater validation and release workflow semantics.
+- Guarded local asset collection scripts against uploading third-party installers to `zhangyehao/envpilot` `v0.x.y` releases.
+
 ## 0.1.0 - 2026-07-27
 
 Initial private preview release.
@@ -17,4 +30,3 @@ Initial private preview release.
 
 - Binary installers, secrets, mihomo subscriptions, generated configs, and logs are intentionally excluded from Git.
 - GitHub Packages is not used in this release; offline assets should be attached to GitHub Releases when needed.
-

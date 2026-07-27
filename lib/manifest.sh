@@ -16,9 +16,14 @@ ep_manifest_show()
 
 ep_update_manifests()
 {
-    ep_log "Manifest updates are resolver-driven and CI-managed."
-    ep_log "Run this command in CI or a maintainer workstation with network access."
-    ep_log "Current manifests:"
-    find "$ENVPILOT_ROOT/manifests" -maxdepth 1 -type f -name '*.json' -print | sort
+    local python_bin="" candidate
+    for candidate in python3 python; do
+        if ep_command_exists "$candidate" && "$candidate" -c 'import sys; sys.exit(0)' >/dev/null 2>&1; then
+            python_bin="$candidate"
+            break
+        fi
+    done
+    [ -n "$python_bin" ] || ep_die "python3 or python is required to update manifests"
+    "$python_bin" "$ENVPILOT_ROOT/scripts/update-manifests.py"
 }
 

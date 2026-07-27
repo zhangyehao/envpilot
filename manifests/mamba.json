@@ -2,6 +2,11 @@
   "name": "mamba",
   "install_method": "conda install -n base -y -c conda-forge mamba",
   "purpose": "Fast Conda solver for Conda environments only.",
-  "not_for": ["tmux direct command installation"]
+  "not_for": [
+    "tmux direct command installation"
+  ],
+  "latest": {
+    "checked_at": "2026-07-27T11:25:17Z",
+    "status": "no updater implemented"
+  }
 }
-

@@ -54,10 +54,10 @@ resolver 可以在运行时查询上游 API，但如果无法安全判断应安�
 当前设计保留三类 workflow：
 
 - `test.yml`：每次 push/PR 执行语法检查、fixture 测试和 README 命令检查。
-- `update-manifests.yml`：定时或手动刷新 manifest，自动开 PR，不直接提交到 `main`。
-- `release-assets.yml`：维护者手动触发，将常用离线安装包上传到 GitHub Release assets。
+- `update-manifests.yml`：定时或手动运行 `scripts/update-manifests.py`，查询上游 stable 元数据并写入 manifest 的 `latest` 字段；如有变化自动开 PR，不直接提交到 `main`。
+- `release-assets.yml`：维护者手动触发，用 tag 生成 envpilot 自身的 `.tar.gz`、`.zip` 和 `.sha256` release assets。
 
-不要把大型二进制包放进 Git 历史。离线安装包优先放在 GitHub Release assets 或用户本地 `downloads/`。
+不要把大型二进制包放进 Git 历史。第三方离线安装包默认只进入本地 `downloads/`；如需集中缓存，使用单独 offline-cache 仓库或专用非版本 tag，不要混入 envpilot 的 `v0.x.y` 正式 release。
 
 ## 状态、恢复和回滚
 
@@ -114,14 +114,16 @@ Windows：
 
 ```powershell
 .\scripts\collect-assets.ps1 -DryRun
-.\scripts\collect-assets.ps1 -UploadRelease -Tag v0.1.0 -Repo zhangyehao/envpilot
+.\scripts\collect-assets.ps1 -MaxSizeMB 2000
 ```
 
 Unix-like：
 
 ```bash
 ENVPILOT_ASSET_MAX_SIZE_MB=2000 bash scripts/collect-assets.sh --dry-run
-bash scripts/collect-assets.sh --upload-release --tag v0.1.0 --repo zhangyehao/envpilot
+ENVPILOT_ASSET_MAX_SIZE_MB=2000 bash scripts/collect-assets.sh
 ```
 
-脚本会把匹配到的 stable 安装包复制到 `downloads/`，并可选上传到 GitHub Release assets。`downloads/` 被 `.gitignore` 忽略，不应提交二进制包到 Git 历史。
+脚本会把匹配到的 stable 安装包复制到被忽略的 `downloads/`，并写入 `downloads/assets-index.json`。`downloads/` 只作为本机离线缓存，不应提交二进制包到 Git 历史。
+
+`-UploadRelease` / `--upload-release` 只用于单独的离线缓存仓库或专用非版本 tag；脚本会拒绝把第三方安装包上传到 `zhangyehao/envpilot` 的 `v0.x.y` 正式 release。

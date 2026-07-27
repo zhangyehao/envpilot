@@ -38,6 +38,41 @@
     "conda_init": false,
     "activate_base": false,
     "condarc_template": "templates/condarc"
+  },
+  "latest": {
+    "checked_at": "2026-07-27T11:25:14Z",
+    "policy": "vendor latest URLs are used directly; installer version is resolved by upstream at download time",
+    "assets": [
+      {
+        "os": "linux",
+        "arch": "amd64",
+        "url": "https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh",
+        "offline_pattern": "Miniconda3-*.sh"
+      },
+      {
+        "os": "linux",
+        "arch": "arm64",
+        "url": "https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-aarch64.sh",
+        "offline_pattern": "Miniconda3-*.sh"
+      },
+      {
+        "os": "darwin",
+        "arch": "amd64",
+        "url": "https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-x86_64.sh",
+        "offline_pattern": "Miniconda3-*.sh"
+      },
+      {
+        "os": "darwin",
+        "arch": "arm64",
+        "url": "https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-arm64.sh",
+        "offline_pattern": "Miniconda3-*.sh"
+      },
+      {
+        "os": "windows",
+        "arch": "amd64",
+        "url": "https://repo.anaconda.com/miniconda/Miniconda3-latest-Windows-x86_64.exe",
+        "offline_pattern": "Miniconda3-*.exe"
+      }
+    ]
   }
 }
-

@@ -6,7 +6,7 @@ param(
     [switch]$DryRun,
     [switch]$Force,
     [switch]$UploadRelease,
-    [string]$Tag = "v0.1.0",
+    [string]$Tag = "offline-cache-manual",
     [string]$Repo = "zhangyehao/envpilot",
     [string]$GhPath = "C:\Program Files\GitHub CLI\gh.exe",
     [int]$MaxSizeMB = 700
@@ -153,6 +153,9 @@ if (-not $DryRun) {
 }
 
 if ($UploadRelease) {
+    if ($Repo -eq "zhangyehao/envpilot" -and $Tag -match "^v\d+\.\d+\.\d+$") {
+        throw "Do not upload third-party installers to normal envpilot version releases. Use a dedicated offline-cache tag or a separate cache repository."
+    }
     if ($DryRun) {
         Write-Host "[DRYRUN] Would upload copied assets to $Repo release $Tag"
         exit 0

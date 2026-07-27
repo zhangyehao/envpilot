@@ -3,4 +3,8 @@
 *.md text eol=lf
 *.json text eol=lf
 templates/* text eol=lf
-
+*.yml text eol=lf
+*.yaml text eol=lf
+*.py text eol=lf
+VERSION text eol=lf
+.gitattributes text eol=lf
