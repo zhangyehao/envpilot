@@ -1,0 +1,28 @@
+name: release-assets
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to attach offline assets to"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare offline asset directory
+        run: |
+          mkdir -p downloads
+          echo "Place curated offline installers in downloads/ before running this workflow from a maintainer branch."
+      - name: Upload assets if present
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag }}
+          files: downloads/*
+          fail_on_unmatched_files: false
+

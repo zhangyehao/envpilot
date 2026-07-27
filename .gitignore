@@ -1,0 +1,22 @@
+# Local/offline payloads
+downloads/*
+!downloads/.gitkeep
+
+# Secrets and generated configs
+*.key
+*.pem
+api.env
+config.yaml
+auth.json
+
+# Runtime state and logs
+.envpilot-state/
+*.log
+install-report.json
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+

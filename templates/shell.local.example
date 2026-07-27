@@ -1,0 +1,11 @@
+# envpilot shell.local
+# User-specific additions live here so envpilot can update the main shell profile safely.
+
+# BASHRC_INIT_CONDA="1"
+# BASHRC_AUTO_START_MIHOMO="1"
+# BASHRC_AUTO_ENABLE_PROXY="1"
+# BASHRC_AUTO_LOAD_SECRETS="0"
+
+# path_append "$HOME/software/mytool/bin"
+# module load apps/singularity/4.0.1
+

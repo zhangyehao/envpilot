@@ -1,0 +1,85 @@
+# ~/.zshrc managed by envpilot
+# Keep non-interactive zsh quiet.
+
+export ENVPILOT_CONFIG_DIR="${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}"
+export BASHRC_SECRETS_FILE="${BASHRC_SECRETS_FILE:-$HOME/.config/secrets/api.env}"
+export BASHRC_PROXY_HOST="${BASHRC_PROXY_HOST:-127.0.0.1}"
+export BASHRC_PROXY_PORT="${BASHRC_PROXY_PORT:-7890}"
+
+path_prepend()
+{
+    [ -d "$1" ] || return 0
+    case ":${PATH:-}:" in
+        *":$1:"*) ;;
+        *) export PATH="$1${PATH:+:$PATH}" ;;
+    esac
+}
+
+path_prepend "$HOME/.local/bin"
+path_prepend "$HOME/bin"
+path_prepend "$HOME/software/bin"
+
+case $- in
+    *i*) ;;
+    *) return 0 ;;
+esac
+
+if [ -z "${EDITOR:-}" ]; then
+    command -v vim >/dev/null 2>&1 && export EDITOR=vim
+fi
+export VISUAL="${VISUAL:-${EDITOR:-vi}}"
+
+init_conda()
+{
+    local conda_sh
+    for conda_sh in \
+        "$HOME/software/miniconda3/etc/profile.d/conda.sh" \
+        "$HOME/software/anaconda3/etc/profile.d/conda.sh" \
+        "$HOME/miniconda3/etc/profile.d/conda.sh" \
+        "$HOME/anaconda3/etc/profile.d/conda.sh"; do
+        [ -r "$conda_sh" ] && . "$conda_sh" && return 0
+    done
+    return 1
+}
+
+proxy_on()
+{
+    export http_proxy="http://${BASHRC_PROXY_HOST}:${BASHRC_PROXY_PORT}"
+    export https_proxy="$http_proxy"
+    export HTTP_PROXY="$http_proxy"
+    export HTTPS_PROXY="$https_proxy"
+    export all_proxy="socks5://${BASHRC_PROXY_HOST}:${BASHRC_PROXY_PORT}"
+    export ALL_PROXY="$all_proxy"
+    export no_proxy="localhost,127.0.0.1,::1"
+    export NO_PROXY="$no_proxy"
+}
+
+proxy_off()
+{
+    unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY no_proxy NO_PROXY
+}
+
+with_secrets()
+{
+    local secret_file="$BASHRC_SECRETS_FILE"
+    if [ "${1:-}" = "--file" ]; then
+        secret_file="$2"
+        shift 2
+    fi
+    [ "$#" -gt 0 ] || { printf 'Usage: with_secrets [--file FILE] command [args...]\n' >&2; return 2; }
+    [ -f "$secret_file" ] || { printf 'Secret file not found: %s\n' "$secret_file" >&2; return 1; }
+    (
+        set -a
+        . "$secret_file"
+        set +a
+        exec "$@"
+    )
+}
+
+[ -r "$ENVPILOT_CONFIG_DIR/shell.local" ] && . "$ENVPILOT_CONFIG_DIR/shell.local"
+
+alias ..='cd ..'
+alias ...='cd ../..'
+alias ll='ls -lhA'
+alias la='ls -A'
+

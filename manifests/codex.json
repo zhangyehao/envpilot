@@ -1,0 +1,14 @@
+{
+  "name": "codex",
+  "package": "@openai/codex",
+  "minimum_node_major": 22,
+  "install_methods": ["npm", "nvm"],
+  "config": {
+    "provider": "codex",
+    "base_url_default": "https://yanhuoapi.com/v1",
+    "auth": "env_key",
+    "env_key": "OPENAI_API_KEY",
+    "write_auth_json": false
+  }
+}
+

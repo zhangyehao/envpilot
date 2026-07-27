@@ -1,0 +1,33 @@
+name: update-manifests
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * 1"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate current manifests
+        run: |
+          python -m json.tool manifests/conda.json >/dev/null
+          python -m json.tool manifests/mihomo.json >/dev/null
+          python -m json.tool manifests/codex.json >/dev/null
+          python -m json.tool manifests/github-cli.json >/dev/null
+          python -m json.tool manifests/tmux.json >/dev/null
+      - name: Report upstream latest stable assets
+        run: bash envpilot.sh update-manifests
+      - name: Open PR if manifests changed
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: update envpilot manifests
+          title: "[envpilot] update manifests"
+          body: "Automated manifest refresh. Review asset rules before merging."
+          branch: codex/update-manifests
+

@@ -1,0 +1,21 @@
+{
+  "name": "tmux",
+  "direct_command_required": true,
+  "never_install_with_conda": true,
+  "strategies": [
+    "use existing tmux",
+    "load tmux module if available",
+    "use OS package manager when explicitly root or user package manager exists",
+    "build ncurses/libevent/tmux into ~/.local/envpilot and link ~/.local/bin/tmux"
+  ],
+  "source_versions": {
+    "ncurses": "6.5",
+    "libevent": "2.1.12-stable",
+    "tmux": "3.5a"
+  },
+  "windows": {
+    "native": "not promised",
+    "supported_runtimes": ["WSL", "MSYS2", "Git Bash"]
+  }
+}
+

@@ -1,0 +1,20 @@
+{
+  "name": "mihomo",
+  "source": "https://github.com/MetaCubeX/mihomo/releases",
+  "api": "https://api.github.com/repos/MetaCubeX/mihomo/releases",
+  "stable_policy": "Select the first non-draft, non-prerelease asset whose tag and asset name do not contain alpha, beta, rc, or pre.",
+  "asset_rules": [
+    { "os": "linux", "arch": "amd64", "regex": "mihomo-linux-amd64-compatible-.*\\.gz$" },
+    { "os": "linux", "arch": "arm64", "regex": "mihomo-linux-arm64-.*\\.gz$" },
+    { "os": "darwin", "arch": "amd64", "regex": "mihomo-darwin-amd64-.*\\.gz$" },
+    { "os": "darwin", "arch": "arm64", "regex": "mihomo-darwin-arm64-.*\\.gz$" },
+    { "os": "windows", "arch": "amd64", "regex": "mihomo-windows-amd64-compatible-.*\\.zip$" },
+    { "os": "windows", "arch": "arm64", "regex": "mihomo-windows-arm64-.*\\.zip$" }
+  ],
+  "security_defaults": {
+    "allow_lan": false,
+    "listen_host": "127.0.0.1",
+    "mixed_port": 7890
+  }
+}
+

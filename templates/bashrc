@@ -1,0 +1,374 @@
+# ~/.bashrc managed by envpilot
+# Non-interactive shells must stay quiet for scp, rsync, git, VS Code Remote-SSH.
+
+BASHRC_UMASK="${BASHRC_UMASK:-027}"
+BASHRC_INIT_CONDA="${BASHRC_INIT_CONDA:-0}"
+BASHRC_AUTO_LOAD_MODULES="${BASHRC_AUTO_LOAD_MODULES:-0}"
+BASHRC_AUTO_START_MIHOMO="${BASHRC_AUTO_START_MIHOMO:-0}"
+BASHRC_AUTO_ENABLE_PROXY="${BASHRC_AUTO_ENABLE_PROXY:-0}"
+BASHRC_AUTO_LOAD_SECRETS="${BASHRC_AUTO_LOAD_SECRETS:-0}"
+BASHRC_ENABLE_HISTORY_SYNC="${BASHRC_ENABLE_HISTORY_SYNC:-1}"
+
+BASHRC_SECRETS_FILE="${BASHRC_SECRETS_FILE:-$HOME/.config/secrets/api.env}"
+BASHRC_MIHOMO_BIN="${BASHRC_MIHOMO_BIN:-$HOME/software/mihomo/mihomo}"
+BASHRC_MIHOMO_START_SCRIPT="${BASHRC_MIHOMO_START_SCRIPT:-$HOME/software/mihomo/start_mihomo.sh}"
+BASHRC_MIHOMO_LOG="${BASHRC_MIHOMO_LOG:-$HOME/.local/state/mihomo/start.log}"
+BASHRC_PROXY_HOST="${BASHRC_PROXY_HOST:-127.0.0.1}"
+BASHRC_PROXY_PORT="${BASHRC_PROXY_PORT:-7890}"
+BASHRC_LOCAL_FILE="${BASHRC_LOCAL_FILE:-$HOME/.config/envpilot/shell.local}"
+
+command_exists()
+{
+    command -v "$1" >/dev/null 2>&1
+}
+
+path_contains()
+{
+    case ":${PATH:-}:" in
+        *":$1:"*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+path_prepend()
+{
+    [ -d "$1" ] || return 0
+    path_contains "$1" || PATH="$1${PATH:+:$PATH}"
+    export PATH
+}
+
+path_append()
+{
+    [ -d "$1" ] || return 0
+    path_contains "$1" || PATH="${PATH:+$PATH:}$1"
+    export PATH
+}
+
+umask "$BASHRC_UMASK"
+path_prepend "$HOME/.local/bin"
+path_prepend "$HOME/bin"
+path_prepend "$HOME/software/bin"
+
+case $- in
+    *i*) ;;
+    *) return 0 ;;
+esac
+
+if [ -r /etc/bashrc ]; then
+    . /etc/bashrc
+elif [ -r /etc/bash.bashrc ]; then
+    . /etc/bash.bashrc
+fi
+
+BASHRC_OS="$(uname -s 2>/dev/null || printf 'Unknown')"
+BASHRC_HOST_SHORT="$(hostname -s 2>/dev/null || hostname 2>/dev/null || printf 'unknown')"
+export BASHRC_OS BASHRC_HOST_SHORT
+
+if [ -z "${EDITOR:-}" ]; then
+    if command_exists vim; then
+        export EDITOR="vim"
+    elif command_exists nano; then
+        export EDITOR="nano"
+    elif command_exists vi; then
+        export EDITOR="vi"
+    fi
+fi
+export VISUAL="${VISUAL:-${EDITOR:-vi}}"
+
+if command_exists less; then
+    export PAGER="${PAGER:-less}"
+    export LESS="${LESS:--FRX}"
+fi
+
+if [ -z "${LANG:-}" ] && command_exists locale; then
+    if locale -a 2>/dev/null | grep -qi '^C\.UTF-8$'; then
+        export LANG="C.UTF-8"
+    elif locale -a 2>/dev/null | grep -qi '^en_US\.UTF-8$'; then
+        export LANG="en_US.UTF-8"
+    elif locale -a 2>/dev/null | grep -qi '^zh_CN\.UTF-8$'; then
+        export LANG="zh_CN.UTF-8"
+    fi
+fi
+
+shopt -s checkwinsize
+shopt -s globstar 2>/dev/null || true
+
+init_environment_modules()
+{
+    if type module >/dev/null 2>&1; then
+        return 0
+    fi
+    local candidate
+    for candidate in \
+        /etc/profile.d/modules.sh \
+        /usr/share/Modules/init/bash \
+        /usr/share/lmod/lmod/init/bash \
+        /opt/modules/init/bash; do
+        if [ -r "$candidate" ]; then
+            . "$candidate"
+            break
+        fi
+    done
+}
+
+hpc_modules_load()
+{
+    init_environment_modules
+    if ! type module >/dev/null 2>&1; then
+        printf 'Environment Modules/Lmod not detected.\n' >&2
+        return 1
+    fi
+    if [ -r "$HOME/.config/envpilot/modules.list" ]; then
+        while IFS= read -r module_name; do
+            case "$module_name" in ''|'#'*) continue ;; esac
+            module load "$module_name" || return 1
+        done < "$HOME/.config/envpilot/modules.list"
+    fi
+}
+
+init_conda()
+{
+    if type conda >/dev/null 2>&1; then
+        return 0
+    fi
+    local conda_sh
+    for conda_sh in \
+        "$HOME/software/miniconda3/etc/profile.d/conda.sh" \
+        "$HOME/software/anaconda3/etc/profile.d/conda.sh" \
+        "$HOME/miniconda3/etc/profile.d/conda.sh" \
+        "$HOME/anaconda3/etc/profile.d/conda.sh" \
+        /opt/conda/etc/profile.d/conda.sh; do
+        if [ -r "$conda_sh" ]; then
+            . "$conda_sh"
+            return 0
+        fi
+    done
+    printf 'conda.sh not found. Update envpilot shell.local or Conda path.\n' >&2
+    return 1
+}
+
+if [ "$BASHRC_INIT_CONDA" = "1" ]; then
+    init_conda
+fi
+
+if [ -z "${TMPDIR:-}" ] && [ -d "$HOME/tmp" ]; then
+    export TMPDIR="$HOME/tmp"
+fi
+export SINGULARITY_TMPDIR="${SINGULARITY_TMPDIR:-${TMPDIR:-$HOME/tmp}}"
+export SINGULARITY_CACHEDIR="${SINGULARITY_CACHEDIR:-$HOME/.cache/singularity}"
+export SINGULARITY_LOCALCACHEDIR="${SINGULARITY_LOCALCACHEDIR:-$HOME/.cache/singularity/local}"
+export APPTAINER_TMPDIR="${APPTAINER_TMPDIR:-$SINGULARITY_TMPDIR}"
+export APPTAINER_CACHEDIR="${APPTAINER_CACHEDIR:-$HOME/.cache/apptainer}"
+
+if [ "$BASHRC_ENABLE_HISTORY_SYNC" = "1" ]; then
+    mkdir -p "$HOME/.local/state/bash" 2>/dev/null || true
+    export HISTFILE="${HISTFILE:-$HOME/.local/state/bash/history}"
+    export HISTSIZE="${HISTSIZE:-100000}"
+    export HISTFILESIZE="${HISTFILESIZE:-200000}"
+    export HISTCONTROL="ignoreboth:erasedups"
+    export HISTTIMEFORMAT='%Y-%m-%d %H:%M:%S  '
+    export HISTIGNORE="${HISTIGNORE:+$HISTIGNORE:}export *KEY=*:*TOKEN=*:*SECRET=*:*PASSWORD=*:*PASSWD=*"
+    __envpilot_history_sync()
+    {
+        history -a
+        history -n
+    }
+    case ";${PROMPT_COMMAND:-};" in
+        *';__envpilot_history_sync;'*) ;;
+        ';;') PROMPT_COMMAND='__envpilot_history_sync' ;;
+        *) PROMPT_COMMAND="__envpilot_history_sync;${PROMPT_COMMAND}" ;;
+    esac
+fi
+
+file_mode()
+{
+    if stat -c '%a' "$1" >/dev/null 2>&1; then
+        stat -c '%a' "$1"
+    elif stat -f '%Lp' "$1" >/dev/null 2>&1; then
+        stat -f '%Lp' "$1"
+    else
+        return 1
+    fi
+}
+
+secrets_check()
+{
+    local secret_file="${1:-$BASHRC_SECRETS_FILE}"
+    local mode owner_uid current_uid
+    [ -f "$secret_file" ] || { printf 'Secret file not found: %s\n' "$secret_file" >&2; return 1; }
+    current_uid="$(id -u)"
+    owner_uid="$(stat -c '%u' "$secret_file" 2>/dev/null || stat -f '%u' "$secret_file" 2>/dev/null || printf '%s' "$current_uid")"
+    [ "$owner_uid" = "$current_uid" ] || { printf 'Refuse to load secret file owned by another user.\n' >&2; return 1; }
+    mode="$(file_mode "$secret_file" 2>/dev/null || true)"
+    case "$mode" in 400|600) return 0 ;; esac
+    printf 'Refuse to load %s: permission should be 600 or 400, current=%s.\n' "$secret_file" "${mode:-unknown}" >&2
+    return 1
+}
+
+secrets_load()
+{
+    local secret_file="${1:-$BASHRC_SECRETS_FILE}"
+    secrets_check "$secret_file" || return 1
+    . "$secret_file"
+    printf 'Loaded secret file: %s\n' "$secret_file"
+}
+
+with_secrets()
+{
+    local secret_file="$BASHRC_SECRETS_FILE"
+    if [ "${1:-}" = "--file" ]; then
+        secret_file="$2"
+        shift 2
+    fi
+    [ "$#" -gt 0 ] || { printf 'Usage: with_secrets [--file FILE] command [args...]\n' >&2; return 2; }
+    secrets_check "$secret_file" || return 1
+    (
+        set -a
+        . "$secret_file"
+        set +a
+        exec "$@"
+    )
+}
+
+secrets_unload()
+{
+    local secret_file="${1:-$BASHRC_SECRETS_FILE}"
+    local variable_name
+    [ -f "$secret_file" ] || return 0
+    while IFS= read -r variable_name; do
+        case "$variable_name" in ''|*[!A-Za-z0-9_]*) continue ;; esac
+        unset "$variable_name"
+    done < <(sed -nE 's/^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)=.*/\2/p' "$secret_file")
+}
+
+secret_read()
+{
+    local variable_name="$1"
+    local prompt_text="${2:-Enter secret}"
+    local secret_value
+    [[ "$variable_name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || { printf 'Usage: secret_read VARIABLE [prompt]\n' >&2; return 2; }
+    IFS= read -r -s -p "$prompt_text: " secret_value
+    printf '\n'
+    printf -v "$variable_name" '%s' "$secret_value"
+    export "$variable_name"
+    unset secret_value
+}
+
+if [ "$BASHRC_AUTO_LOAD_SECRETS" = "1" ] && [ -f "$BASHRC_SECRETS_FILE" ]; then
+    secrets_load "$BASHRC_SECRETS_FILE"
+fi
+
+process_is_running()
+{
+    local pattern="$1"
+    if command_exists pgrep; then
+        pgrep -u "$USER" -f "$pattern" >/dev/null 2>&1
+    else
+        ps -u "$USER" -o args= 2>/dev/null | grep -F "$pattern" | grep -v grep >/dev/null 2>&1
+    fi
+}
+
+proxy_port_is_listening()
+{
+    local host="${1:-$BASHRC_PROXY_HOST}"
+    local port="${2:-$BASHRC_PROXY_PORT}"
+    if command_exists ss; then
+        ss -lnt 2>/dev/null | grep -Eq "${host//./\\.}:${port}([[:space:]]|$)"
+    elif command_exists lsof; then
+        lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | grep -q "$host"
+    elif command_exists netstat; then
+        netstat -an 2>/dev/null | grep -Eq "${host//./\\.}[.:]${port}[[:space:]].*LISTEN"
+    elif command_exists nc; then
+        nc -z "$host" "$port" >/dev/null 2>&1
+    else
+        return 1
+    fi
+}
+
+mihomo_start()
+{
+    mkdir -p "$(dirname "$BASHRC_MIHOMO_LOG")" 2>/dev/null || true
+    if process_is_running "$BASHRC_MIHOMO_BIN"; then
+        return 0
+    fi
+    if [ -x "$BASHRC_MIHOMO_START_SCRIPT" ]; then
+        nohup "$BASHRC_MIHOMO_START_SCRIPT" >>"$BASHRC_MIHOMO_LOG" 2>&1 </dev/null &
+    elif [ -x "$BASHRC_MIHOMO_BIN" ]; then
+        nohup "$BASHRC_MIHOMO_BIN" -d "$HOME/.config/mihomo" >>"$BASHRC_MIHOMO_LOG" 2>&1 </dev/null &
+    else
+        printf 'mihomo executable or start script not found.\n' >&2
+        return 1
+    fi
+}
+
+mihomo_stop()
+{
+    if command_exists pkill; then
+        pkill -u "$USER" -f "$BASHRC_MIHOMO_BIN"
+    else
+        printf 'pkill not found; stop mihomo manually.\n' >&2
+        return 1
+    fi
+}
+
+proxy_on()
+{
+    export http_proxy="http://${BASHRC_PROXY_HOST}:${BASHRC_PROXY_PORT}"
+    export https_proxy="$http_proxy"
+    export HTTP_PROXY="$http_proxy"
+    export HTTPS_PROXY="$https_proxy"
+    export all_proxy="socks5://${BASHRC_PROXY_HOST}:${BASHRC_PROXY_PORT}"
+    export ALL_PROXY="$all_proxy"
+    export no_proxy="localhost,127.0.0.1,::1"
+    export NO_PROXY="$no_proxy"
+}
+
+proxy_off()
+{
+    unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY
+    unset all_proxy ALL_PROXY no_proxy NO_PROXY
+}
+
+proxy_status()
+{
+    printf 'mihomo process:\n'
+    if command_exists pgrep; then
+        pgrep -af "$BASHRC_MIHOMO_BIN" || printf 'not running\n'
+    else
+        ps -u "$USER" -o pid=,args= 2>/dev/null | grep -F "$BASHRC_MIHOMO_BIN" | grep -v grep || printf 'not running\n'
+    fi
+    printf '\nproxy port:\n'
+    proxy_port_is_listening && printf '%s:%s listening\n' "$BASHRC_PROXY_HOST" "$BASHRC_PROXY_PORT" || printf '%s:%s not listening\n' "$BASHRC_PROXY_HOST" "$BASHRC_PROXY_PORT"
+    printf '\nproxy variables:\n'
+    printf 'http_proxy=%s\n' "${http_proxy:-unset}"
+    printf 'https_proxy=%s\n' "${https_proxy:-unset}"
+    printf 'all_proxy=%s\n' "${all_proxy:-unset}"
+}
+
+if [ "$BASHRC_AUTO_LOAD_MODULES" = "1" ]; then
+    hpc_modules_load
+fi
+if [ "$BASHRC_AUTO_START_MIHOMO" = "1" ]; then
+    mihomo_start
+fi
+if [ "$BASHRC_AUTO_ENABLE_PROXY" = "1" ] && proxy_port_is_listening; then
+    proxy_on
+fi
+
+[ -r "$BASHRC_LOCAL_FILE" ] && . "$BASHRC_LOCAL_FILE"
+
+alias ..='cd ..'
+alias ...='cd ../..'
+alias dfh='df -h'
+alias duh='du -h'
+alias jobs='jobs -l'
+path_show() { printf '%s\n' "${PATH//:/$'\n'}"; }
+alias path='path_show'
+if command_exists ls; then
+    alias ll='ls -lhA'
+    alias la='ls -A'
+fi
+if command_exists rg; then
+    alias rgrep='rg'
+fi
+

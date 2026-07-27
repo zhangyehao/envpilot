@@ -1,0 +1,102 @@
+# Extending envpilot
+
+This document is for maintainers who add components, platforms, or updater logic.
+
+## Design rules
+
+- Keep user-space installation as the default.
+- Detect before using a command.
+- Print what will be installed, why that asset was selected, where it will be installed, and what config will change.
+- Do not commit secrets, subscription URLs, generated configs, logs, or binary installers.
+- Avoid changing shell startup behavior for non-interactive sessions.
+- Do not install direct command-line tools through Conda when users expect them outside Conda environments.
+
+## Adding a component
+
+Add four pieces:
+
+1. `components/<name>.sh`
+2. Optional Windows support in `envpilot.ps1`
+3. `manifests/<name>.json`
+4. Tests and README examples
+
+The shell component must expose:
+
+```bash
+ep_doctor_<name>()
+ep_install_<name>()
+```
+
+The install function should:
+
+- call `ep_require_unix_runtime` when appropriate
+- detect existing installation first
+- resolve platform-specific assets
+- summarize the action before mutating files
+- call `ep_state_mark_done <name>` on success
+- call `ep_report_event <name> ...` for installed, skipped, or failed states
+
+## Manifest rules
+
+Each manifest should document:
+
+- upstream source
+- stable release policy
+- OS and architecture mapping
+- offline filename pattern
+- excluded versions such as alpha, beta, rc, pre, prerelease
+- expected install path and config files
+
+The resolver may query upstream APIs at runtime, but must stop with a clear message when no safe match exists.
+
+## CI/CD strategy
+
+Use three workflow types:
+
+- `test.yml`: syntax and fixture tests on every PR and push.
+- `update-manifests.yml`: scheduled or manual manifest refresh; opens PRs instead of committing directly to main.
+- `release-assets.yml`: optional manual workflow that uploads selected offline installers to GitHub Release assets.
+
+Do not store large binaries in Git history.
+
+## State, resume, and rollback
+
+State file:
+
+```text
+~/.config/envpilot/state
+```
+
+Rollback log:
+
+```text
+~/.config/envpilot/rollback.log
+```
+
+If a component writes a user config, use `ep_backup_file` first. If a component writes multiple files, back up each file separately and keep the most important user-facing file last so `rollback` restores that file by default.
+
+## Shell templates
+
+Rules for `.bashrc`, `.zshrc`, and PowerShell profiles:
+
+- non-interactive shell must return quietly
+- do not auto-start mihomo unless explicitly enabled
+- do not auto-load secrets by default
+- do not auto-activate Conda base
+- source local overrides from `~/.config/envpilot`
+
+If future templates need more platform-specific behavior, add a new template instead of making one large conditional file.
+
+## Testing new components
+
+Add fixture tests for:
+
+- missing dependency
+- existing installation
+- online asset resolver excluding prereleases
+- offline missing asset
+- report event creation
+- rollback record creation when configs are changed
+
+Prefer fast tests that do not download large assets. Network-heavy checks belong in scheduled CI or manual release workflows.
+

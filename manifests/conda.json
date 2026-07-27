@@ -1,0 +1,43 @@
+{
+  "name": "conda",
+  "default_distribution": "miniconda",
+  "stable_policy": "Use vendor latest installer URLs for Miniconda; never commit installers.",
+  "assets": [
+    {
+      "os": "linux",
+      "arch": "amd64",
+      "url": "https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh",
+      "offline_pattern": "Miniconda3-*.sh"
+    },
+    {
+      "os": "linux",
+      "arch": "arm64",
+      "url": "https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-aarch64.sh",
+      "offline_pattern": "Miniconda3-*.sh"
+    },
+    {
+      "os": "darwin",
+      "arch": "amd64",
+      "url": "https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-x86_64.sh",
+      "offline_pattern": "Miniconda3-*.sh"
+    },
+    {
+      "os": "darwin",
+      "arch": "arm64",
+      "url": "https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-arm64.sh",
+      "offline_pattern": "Miniconda3-*.sh"
+    },
+    {
+      "os": "windows",
+      "arch": "amd64",
+      "url": "https://repo.anaconda.com/miniconda/Miniconda3-latest-Windows-x86_64.exe",
+      "offline_pattern": "Miniconda3-*.exe"
+    }
+  ],
+  "post_install": {
+    "conda_init": false,
+    "activate_base": false,
+    "condarc_template": "templates/condarc"
+  }
+}
+
