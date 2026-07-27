@@ -106,3 +106,22 @@ resolver 可以在运行时查询上游 API，但如果无法安全判断应安�
 - 任何涉及密钥、订阅链接、代理配置的功能都应默认交互确认。
 - 默认行为应保守：能检测就检测，不能判断就停止，不要替用户做高风险猜测。
 - Windows 支持应区分 PowerShell 原生能力和 WSL/MSYS2/Git Bash 能力，避免承诺 Windows 原生不具备的 Unix 工具行为。
+## 离线资产收集
+
+GitHub Actions 运行在 GitHub-hosted runner 上，不能访问维护者本机磁盘。因此从 `D:\software`、`E:\software`、`~/Downloads` 等预设位置搜索安装包，应在维护者本机执行。
+
+Windows：
+
+```powershell
+.\scripts\collect-assets.ps1 -DryRun
+.\scripts\collect-assets.ps1 -UploadRelease -Tag v0.1.0 -Repo zhangyehao/envpilot
+```
+
+Unix-like：
+
+```bash
+ENVPILOT_ASSET_MAX_SIZE_MB=2000 bash scripts/collect-assets.sh --dry-run
+bash scripts/collect-assets.sh --upload-release --tag v0.1.0 --repo zhangyehao/envpilot
+```
+
+脚本会把匹配到的 stable 安装包复制到 `downloads/`，并可选上传到 GitHub Release assets。`downloads/` 被 `.gitignore` 忽略，不应提交二进制包到 Git 历史。

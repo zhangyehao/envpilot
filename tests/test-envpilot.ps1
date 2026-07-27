@@ -6,7 +6,14 @@ New-Item -ItemType Directory -Force -Path $TempHome | Out-Null
 $env:ENVPILOT_CONFIG_DIR = Join-Path $TempHome ".config/envpilot"
 
 Write-Host "[TEST] PowerShell parser"
-$null = [System.Management.Automation.PSParser]::Tokenize((Get-Content -LiteralPath (Join-Path $Root "envpilot.ps1") -Raw), [ref]$null)
+$parseErrors = $null
+$null = [System.Management.Automation.PSParser]::Tokenize((Get-Content -LiteralPath (Join-Path $Root "envpilot.ps1") -Raw), [ref]$parseErrors)
+if ($parseErrors) { throw $parseErrors }
+Get-ChildItem -LiteralPath (Join-Path $Root "scripts") -Filter "*.ps1" | ForEach-Object {
+    $parseErrors = $null
+    $null = [System.Management.Automation.PSParser]::Tokenize((Get-Content -LiteralPath $_.FullName -Raw), [ref]$parseErrors)
+    if ($parseErrors) { throw $parseErrors }
+}
 
 Write-Host "[TEST] doctor"
 & (Join-Path $Root "envpilot.ps1") doctor | Out-String | Select-String "OS:"
@@ -21,5 +28,3 @@ if (-not ((Get-Content -LiteralPath $template -Raw) -match "Use-EnvpilotSecrets"
 }
 
 Write-Host "[TEST] ok"
-
-

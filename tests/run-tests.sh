@@ -9,7 +9,7 @@ ROOT="$(cd "${BASH_SOURCE[0]%/*}/.." && pwd)"
 
 echo "[TEST] bash syntax"
 bash -n "$ROOT/envpilot.sh"
-for file in "$ROOT"/lib/*.sh "$ROOT"/components/*.sh "$ROOT"/templates/bashrc "$ROOT"/templates/zshrc "$ROOT"/templates/start_mihomo.sh; do
+for file in "$ROOT"/lib/*.sh "$ROOT"/components/*.sh "$ROOT"/scripts/*.sh "$ROOT"/templates/bashrc "$ROOT"/templates/zshrc "$ROOT"/templates/start_mihomo.sh; do
     bash -n "$file"
 done
 

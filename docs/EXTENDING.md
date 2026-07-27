@@ -102,3 +102,23 @@ Add fixture tests for:
 
 Prefer fast tests that do not download large assets. Network-heavy checks belong in scheduled CI or manual release workflows.
 
+
+## Offline asset collection
+
+GitHub Actions runs on GitHub-hosted runners and cannot read a maintainer workstation path such as `D:\software`, `E:\software`, or `~/Downloads`. Collect local installers on the maintainer machine first.
+
+Windows:
+
+```powershell
+.\scripts\collect-assets.ps1 -DryRun
+.\scripts\collect-assets.ps1 -UploadRelease -Tag v0.1.0 -Repo zhangyehao/envpilot
+```
+
+Unix-like:
+
+```bash
+ENVPILOT_ASSET_MAX_SIZE_MB=2000 bash scripts/collect-assets.sh --dry-run
+bash scripts/collect-assets.sh --upload-release --tag v0.1.0 --repo zhangyehao/envpilot
+```
+
+The scripts copy matching stable installers into ignored `downloads/` and can upload them to GitHub Release assets. Do not commit binary payloads to Git history.

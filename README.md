@@ -267,6 +267,40 @@ Windows 原生不承诺 tmux；如需 tmux，请使用 WSL、MSYS2 或 Git Bash 
 - 私有 GitHub Release assets
 - 使用 `--asset-path` 指定本地文件
 
+
+## GitHub Actions 触发
+
+`update-manifests.yml`：
+
+- 每周一自动运行一次。
+- 也可以在 GitHub 网页进入 `Actions` -> `update-manifests` -> `Run workflow` 手动触发。
+- 它只刷新/检查 manifest，发现变更时开 PR，不直接改 `main`。
+
+`release-assets.yml`：
+
+- 只能手动触发：`Actions` -> `release-assets` -> `Run workflow`，输入 release tag，例如 `v0.1.0`。
+- GitHub-hosted runner 不能访问你本机的 `D:\`、`E:\` 或服务器目录；它只能上传当前 workflow 工作区内已有的 `downloads/*`。
+- 本机安装包推荐用 `scripts/collect-assets.ps1` 或 `scripts/collect-assets.sh` 收集后，直接上传到 GitHub Release assets。
+
+Windows 本机收集并上传到 `v0.1.0`：
+
+```powershell
+.\scripts\collect-assets.ps1 -UploadRelease -Tag v0.1.0 -Repo zhangyehao/envpilot
+```
+
+默认会跳过超过 700 MB 的大型安装包；需要包含 Anaconda 这类大文件时，可加 `-MaxSizeMB 2000`。
+
+只预览不复制：
+
+```powershell
+.\scripts\collect-assets.ps1 -DryRun
+```
+
+Linux/macOS/WSL：
+
+```bash
+bash scripts/collect-assets.sh --upload-release --tag v0.1.0 --repo zhangyehao/envpilot
+```
 ## 安全边界
 
 - 不写系统目录，除非当前用户明确以 root 运行并确认。
