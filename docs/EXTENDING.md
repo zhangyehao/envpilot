@@ -1,5 +1,7 @@
 # Extending envpilot
 
+Chinese version: [EXTENDING.zh-CN.md](EXTENDING.zh-CN.md)
+
 This document is for maintainers who add components, platforms, or updater logic.
 
 ## Design rules

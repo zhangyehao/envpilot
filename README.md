@@ -279,6 +279,7 @@ Windows 原生不承诺 tmux；如需 tmux，请使用 WSL、MSYS2 或 Git Bash 
 新增组件、维护 manifest、CI 更新策略见：
 
 ```text
+docs/EXTENDING.zh-CN.md
 docs/EXTENDING.md
 ```
 
