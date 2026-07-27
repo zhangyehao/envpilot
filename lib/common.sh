@@ -45,19 +45,25 @@ ep_on_interrupt()
 ep_log()
 {
     printf '[INFO] %s\n' "$*"
-    [ -n "${EP_LOG_FILE:-}" ] && printf '[INFO] %s\n' "$*" >> "$EP_LOG_FILE" 2>/dev/null || true
+    if [ -n "${EP_LOG_FILE:-}" ]; then
+        printf '[INFO] %s\n' "$*" >> "$EP_LOG_FILE" 2>/dev/null || true
+    fi
 }
 
 ep_warn()
 {
     printf '[WARN] %s\n' "$*" >&2
-    [ -n "${EP_LOG_FILE:-}" ] && printf '[WARN] %s\n' "$*" >> "$EP_LOG_FILE" 2>/dev/null || true
+    if [ -n "${EP_LOG_FILE:-}" ]; then
+        printf '[WARN] %s\n' "$*" >> "$EP_LOG_FILE" 2>/dev/null || true
+    fi
 }
 
 ep_die()
 {
     printf '[ERROR] %s\n' "$*" >&2
-    [ -n "${EP_LOG_FILE:-}" ] && printf '[ERROR] %s\n' "$*" >> "$EP_LOG_FILE" 2>/dev/null || true
+    if [ -n "${EP_LOG_FILE:-}" ]; then
+        printf '[ERROR] %s\n' "$*" >> "$EP_LOG_FILE" 2>/dev/null || true
+    fi
     exit 1
 }
 
@@ -84,7 +90,12 @@ ep_confirm()
         fi
         IFS= read -r answer || return 1
         case "${answer:-}" in
-            '') [ "$default" = "yes" ] && return 0 || return 1 ;;
+            '')
+                if [ "$default" = "yes" ]; then
+                    return 0
+                fi
+                return 1
+                ;;
             y|Y|yes|YES|Yes) return 0 ;;
             n|N|no|NO|No) return 1 ;;
             *) printf 'Please answer yes or no.\n' ;;

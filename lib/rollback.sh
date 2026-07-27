@@ -8,7 +8,9 @@ ep_rollback_latest()
     IFS="$(printf '\t')" read -r target backup <<EOF
 $(tail -n 1 "$EP_ROLLBACK_LOG")
 EOF
-    [ -n "$target" ] && [ -n "$backup" ] || ep_die "Invalid rollback record."
+    if [ -z "$target" ] || [ -z "$backup" ]; then
+        ep_die "Invalid rollback record."
+    fi
     [ -f "$backup" ] || ep_die "Backup file not found: $backup"
     cp -p "$backup" "$target"
     ep_log "Restored $target from $backup"
