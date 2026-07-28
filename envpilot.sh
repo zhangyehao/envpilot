@@ -29,7 +29,7 @@ envpilot - cross-platform user-space environment bootstrapper
 
 Usage:
   bash envpilot.sh doctor
-  bash envpilot.sh install [all|conda|mamba|mihomo|codex|github|tmux] [--mode online|offline] [--prefix PATH] [--asset-path PATH] [--yes]
+  bash envpilot.sh install [all|mihomo|conda|mamba|codex|github|tmux] [--mode online|offline] [--prefix PATH] [--asset-path PATH] [--yes]
   bash envpilot.sh apply-shell [--yes]
   bash envpilot.sh rollback
   bash envpilot.sh resume
@@ -41,6 +41,8 @@ Options:
   --mode online|offline   Prefer live downloads or local downloads/ assets. Default: online.
   --prefix PATH           User-space install root. Default: $HOME/software.
   --asset-path PATH       Explicit offline asset path for the selected component.
+  --conda-distribution miniconda|anaconda
+                         Conda distribution to install. Default: miniconda.
   --yes                   Accept low-risk confirmations. Profile/config writes still summarize first.
   -h, --help              Show this help.
 EOF
@@ -72,6 +74,14 @@ parse_args()
             --asset-path)
                 EP_ASSET_PATH="${2:-}"
                 [ -n "$EP_ASSET_PATH" ] || ep_die "--asset-path requires a path"
+                shift 2
+                ;;
+            --conda-distribution)
+                EP_CONDA_DISTRIBUTION="${2:-}"
+                case "$EP_CONDA_DISTRIBUTION" in
+                    miniconda|anaconda) ;;
+                    *) ep_die "--conda-distribution must be miniconda or anaconda" ;;
+                esac
                 shift 2
                 ;;
             --yes|-y)
@@ -125,7 +135,7 @@ run_install()
 
     case "$EP_COMPONENT" in
         all)
-            for component in conda mamba mihomo codex github tmux; do
+            for component in mihomo conda mamba codex github tmux; do
                 if ep_state_is_done "$component"; then
                     ep_log "Skip $component: already marked done. Use reset to clear state."
                     ep_report_event "$component" "skipped" "already marked done" "" "" ""
@@ -134,7 +144,7 @@ run_install()
                 install_one "$component"
             done
             ;;
-        conda|mamba|mihomo|codex|github|tmux)
+        mihomo|conda|mamba|codex|github|tmux)
             install_one "$EP_COMPONENT"
             ;;
         *)

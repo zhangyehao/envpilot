@@ -4,6 +4,7 @@ EP_MODE="${EP_MODE:-online}"
 EP_PREFIX="${EP_PREFIX:-${HOME:-}/software}"
 EP_ASSET_PATH="${EP_ASSET_PATH:-}"
 EP_ASSUME_YES="${EP_ASSUME_YES:-0}"
+EP_CONDA_DISTRIBUTION="${EP_CONDA_DISTRIBUTION:-miniconda}"
 EP_COMMAND="${EP_COMMAND:-}"
 EP_COMPONENT="${EP_COMPONENT:-all}"
 EP_RUN_ID=""
@@ -116,6 +117,28 @@ ep_prompt_nonempty()
             return 0
         fi
         printf 'Value cannot be empty. Press Ctrl+C to cancel.\n'
+    done
+}
+
+ep_prompt_optional_url()
+{
+    local var_name="$1"
+    local prompt="$2"
+    local value
+    while true; do
+        printf "%s (press Enter to skip): " "$prompt"
+        IFS= read -r value || return 1
+        if [ -z "$value" ]; then
+            printf -v "$var_name" "%s" ""
+            return 0
+        fi
+        case "$value" in
+            http://*|https://*)
+                printf -v "$var_name" "%s" "$value"
+                return 0
+                ;;
+            *) printf "Please enter a URL beginning with http:// or https://, or press Enter to skip.\n" ;;
+        esac
     done
 }
 

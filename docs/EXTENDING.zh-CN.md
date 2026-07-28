@@ -57,7 +57,7 @@ resolver 可以在运行时查询上游 API，但如果无法安全判断应安�
 - `update-manifests.yml`：定时或手动运行 `scripts/update-manifests.py`，查询上游 stable 元数据并写入 manifest 的 `latest` 字段；如有变化自动开 PR，不直接提交到 `main`。
 - `release-assets.yml`：维护者手动触发，用 tag 生成 envpilot 自身的 `.tar.gz`、`.zip` 和 `.sha256` release assets。
 
-不要把大型二进制包放进 Git 历史。第三方离线安装包（包括 Miniconda 和 Miniforge）默认只进入本地 `downloads/`；如需集中缓存，使用单独 offline-cache 仓库或专用非版本 tag，不要混入 envpilot 的 `v0.x.y` 正式 release。
+不要把大型二进制包放进 Git 历史。第三方离线安装包（包括 Miniconda、Anaconda、mihomo 等）默认只进入本地 `downloads/`；如需集中缓存，使用单独 offline-cache 仓库或专用非版本 tag，不要混入 envpilot 的 `v0.x.y` 正式 release。
 
 ## 状态、恢复和回滚
 
@@ -124,6 +124,6 @@ ENVPILOT_ASSET_MAX_SIZE_MB=2000 bash scripts/collect-assets.sh --dry-run
 ENVPILOT_ASSET_MAX_SIZE_MB=2000 bash scripts/collect-assets.sh
 ```
 
-脚本会把匹配到的 stable Miniconda/Miniforge 安装包复制到被忽略的 `downloads/`，并写入 `downloads/assets-index.json`。`downloads/` 只作为本机离线缓存，不应提交二进制包到 Git 历史。
+脚本会把匹配到的 stable Miniconda/Anaconda/mihomo 等安装包复制到被忽略的 `downloads/`，并写入 `downloads/assets-index.json`。`downloads/` 只作为本机离线缓存，不应提交二进制包到 Git 历史。
 
 `-UploadRelease` / `--upload-release` 只用于单独的离线缓存仓库或专用非版本 tag；脚本会拒绝把第三方安装包上传到 `zhangyehao/envpilot` 的 `v0.x.y` 正式 release。

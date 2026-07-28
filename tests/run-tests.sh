@@ -20,6 +20,40 @@ grep -q 'git archive' "$ROOT/.github/workflows/release-assets.yml"
 ! grep -q 'files: downloads/\*' "$ROOT/.github/workflows/release-assets.yml"
 grep -q 'refs/tags/v' "$ROOT/.github/workflows/release-assets.yml"
 grep -q 'scripts/update-manifests.py --check' "$ROOT/.github/workflows/update-manifests.yml"
+
+echo "[TEST] install order and resolver policy"
+grep -q 'for component in mihomo conda mamba codex github tmux' "$ROOT/envpilot.sh"
+grep -q 'EP_LEGACY_MINICONDA_VERSION' "$ROOT/components/conda.sh"
+grep -q 'ep_mihomo_offline_pattern' "$ROOT/components/mihomo.sh"
+grep -q 'Source URL:' "$ROOT/lib/download.sh"
+! grep -qi 'miniforge' "$ROOT/components/conda.sh" "$ROOT/manifests/conda.json" "$ROOT/templates/bashrc" "$ROOT/templates/zshrc" "$ROOT/scripts/collect-assets.sh" "$ROOT/scripts/collect-assets.ps1"
+
+(
+    ENVPILOT_ROOT="$ROOT"
+    # shellcheck source=/dev/null
+    . "$ROOT/lib/common.sh"
+    # shellcheck source=/dev/null
+    . "$ROOT/lib/platform.sh"
+    # shellcheck source=/dev/null
+    . "$ROOT/components/conda.sh"
+    EP_OS="linux"
+    EP_ARCH="amd64"
+    EP_LIBC="glibc"
+    EP_GLIBC_VERSION="2.17"
+    EP_CONDA_DISTRIBUTION="miniconda"
+    legacy_url="$(ep_conda_installer_url)"
+    case "$legacy_url" in
+        *Miniconda3-py39_4.12.0-Linux-x86_64.sh) ;;
+        *) echo "Expected archived Miniconda for glibc 2.17, got: $legacy_url" >&2; exit 1 ;;
+    esac
+    EP_CONDA_DISTRIBUTION="anaconda"
+    anaconda_url="$(ep_conda_installer_url)"
+    case "$anaconda_url" in
+        *Anaconda3-2025.06-0-Linux-x86_64.sh) ;;
+        *) echo "Expected Anaconda installer URL, got: $anaconda_url" >&2; exit 1 ;;
+    esac
+)
+
 echo "[TEST] non-interactive bashrc is quiet"
 tmp_home="$(mktemp -d)"
 mkdir -p "$tmp_home/.config/envpilot"
@@ -44,7 +78,7 @@ grep -q 'env_key = "OPENAI_API_KEY"' "$ROOT/components/codex.sh"
 ! grep -q 'requires_openai_auth = true' "$ROOT/components/codex.sh"
 
 echo "[TEST] version"
-grep -q '^0\.1\.2$' "$ROOT/VERSION"
+grep -q '^0\.1\.3$' "$ROOT/VERSION"
 
 echo "[TEST] secret patterns are ignored"
 grep -q '^api.env$' "$ROOT/.gitignore"
@@ -52,4 +86,3 @@ grep -q '^config.yaml$' "$ROOT/.gitignore"
 
 rm -rf "$tmp_home"
 echo "[TEST] ok"
-

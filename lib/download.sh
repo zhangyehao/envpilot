@@ -1,17 +1,29 @@
 #!/usr/bin/env bash
 
+ep_download_note()
+{
+    printf '[INFO] %s\n' "$*" >&2
+    if [ -n "${EP_LOG_FILE:-}" ]; then
+        printf '[INFO] %s\n' "$*" >> "$EP_LOG_FILE" 2>/dev/null || true
+    fi
+}
+
 ep_fetch_url()
 {
     local url="$1"
     local dest="$2"
     mkdir -p "$(dirname "$dest")"
+    ep_download_note "Downloading: $url"
+    ep_download_note "Destination: $dest"
     if ep_command_exists curl; then
-        curl -fsSL --retry 3 --connect-timeout 20 "$url" -o "$dest"
+        curl -fL --retry 3 --connect-timeout 20 --max-time "${ENVPILOT_DOWNLOAD_MAX_TIME:-1800}" --progress-bar "$url" -o "$dest"
     elif ep_command_exists wget; then
-        wget -q "$url" -O "$dest"
+        wget --tries=3 --timeout=20 --progress=bar:force:noscroll "$url" -O "$dest"
     else
         ep_die "Neither curl nor wget is available. Install one or use --mode offline."
     fi
+    [ -s "$dest" ] || ep_die "Download produced an empty file: $dest"
+    ep_download_note "Downloaded: $dest"
 }
 
 ep_find_offline_asset()
@@ -21,12 +33,14 @@ ep_find_offline_asset()
 
     if [ -n "${EP_ASSET_PATH:-}" ]; then
         [ -f "$EP_ASSET_PATH" ] || ep_die "--asset-path does not exist: $EP_ASSET_PATH"
+        ep_download_note "Using explicit offline asset: $EP_ASSET_PATH"
         printf '%s' "$EP_ASSET_PATH"
         return 0
     fi
 
     candidate="$(find "$ENVPILOT_ROOT/downloads" -maxdepth 1 -type f -name "$pattern" 2>/dev/null | sort -r | head -n 1 || true)"
     [ -n "$candidate" ] || ep_die "Offline asset not found in downloads/: $pattern"
+    ep_download_note "Using downloads/ offline asset: $candidate"
     printf '%s' "$candidate"
 }
 
@@ -44,6 +58,7 @@ ep_download_or_offline()
         return 0
     fi
 
+    ep_download_note "Source URL: $url"
     ep_fetch_url "$url" "$dest"
     printf '%s' "$url"
 }
@@ -57,6 +72,8 @@ ep_github_asset_url()
 
     api="https://api.github.com/repos/$owner/$repo/releases"
     tmp="$(mktemp)"
+    ep_download_note "Resolving stable GitHub asset: $api"
+    ep_download_note "Asset regex: $asset_regex"
     ep_fetch_url "$api" "$tmp"
 
     if ep_command_exists jq; then
@@ -85,6 +102,6 @@ ep_github_asset_url()
 
     rm -f "$tmp"
     [ -n "$url" ] || ep_die "Could not resolve stable GitHub asset for $owner/$repo matching $asset_regex"
+    ep_download_note "Resolved asset URL: $url"
     printf '%s' "$url"
 }
-

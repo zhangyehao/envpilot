@@ -59,7 +59,7 @@ Use three workflow types:
 - `update-manifests.yml`: scheduled or manual manifest refresh through `scripts/update-manifests.py`; writes upstream stable metadata into manifest `latest` fields and opens PRs instead of committing directly to `main`.
 - `release-assets.yml`: manual packaging workflow that attaches envpilot-owned `.tar.gz`, `.zip`, and `.sha256` assets to a release tag.
 
-Do not store large binaries in Git history. Third-party offline installers, including Miniconda and Miniforge payloads, should stay in local ignored `downloads/` by default. If centralized caching is needed, use a separate offline-cache repository or a dedicated non-version tag instead of normal envpilot `v0.x.y` releases.
+Do not store large binaries in Git history. Third-party offline installers, including Miniconda, Anaconda, mihomo, and related payloads, should stay in local ignored `downloads/` by default. If centralized caching is needed, use a separate offline-cache repository or a dedicated non-version tag instead of normal envpilot `v0.x.y` releases.
 
 ## State, resume, and rollback
 
@@ -121,6 +121,6 @@ ENVPILOT_ASSET_MAX_SIZE_MB=2000 bash scripts/collect-assets.sh --dry-run
 ENVPILOT_ASSET_MAX_SIZE_MB=2000 bash scripts/collect-assets.sh
 ```
 
-The scripts copy matching stable Miniconda/Miniforge installers into ignored `downloads/` and write `downloads/assets-index.json`. Treat `downloads/` as a local offline cache and do not commit binary payloads to Git history.
+The scripts copy matching stable Miniconda/Anaconda/mihomo installers into ignored `downloads/` and write `downloads/assets-index.json`. Treat `downloads/` as a local offline cache and do not commit binary payloads to Git history.
 
 `-UploadRelease` / `--upload-release` is only for a separate offline-cache repository or a dedicated non-version tag. The scripts reject uploading third-party installers to `zhangyehao/envpilot` normal `v0.x.y` releases.

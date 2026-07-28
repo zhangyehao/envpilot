@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+EP_LEGACY_MINICONDA_VERSION="${EP_LEGACY_MINICONDA_VERSION:-py39_4.12.0}"
+
 ep_conda_bin()
 {
     if ep_command_exists conda; then
@@ -7,10 +9,8 @@ ep_conda_bin()
         return 0
     fi
     for candidate in \
-        "$EP_PREFIX/miniforge3/bin/conda" \
         "$EP_PREFIX/miniconda3/bin/conda" \
         "$EP_PREFIX/anaconda3/bin/conda" \
-        "$HOME/miniforge3/bin/conda" \
         "$HOME/miniconda3/bin/conda" \
         "$HOME/anaconda3/bin/conda"; do
         [ -x "$candidate" ] && { printf '%s' "$candidate"; return 0; }
@@ -20,35 +20,17 @@ ep_conda_bin()
 
 ep_conda_distribution()
 {
-    case "$EP_OS:$EP_ARCH" in
-        linux:amd64|linux:arm64)
-            if [ "$EP_LIBC" = "glibc" ]; then
-                local glibc_version
-                glibc_version="$(ep_linux_glibc_version)"
-                [ "$glibc_version" != "unknown" ] || ep_die "Could not determine glibc version for Linux Conda selection."
-                if ep_version_at_least "$glibc_version" "2.28"; then
-                    printf 'miniconda'
-                elif ep_version_at_least "$glibc_version" "2.17"; then
-                    printf 'miniforge'
-                else
-                    ep_die "No bundled Conda installer supports glibc $glibc_version on Linux. Use an offline asset or upgrade glibc."
-                fi
-            else
-                printf 'miniforge'
-            fi
-            ;;
-        darwin:amd64|darwin:arm64|windows:amd64)
-            printf 'miniconda'
-            ;;
-        *) ep_die "No Conda installer rule for $EP_OS/$EP_ARCH. Use --mode offline --asset-path." ;;
+    case "${EP_CONDA_DISTRIBUTION:-miniconda}" in
+        miniconda|anaconda) printf '%s' "$EP_CONDA_DISTRIBUTION" ;;
+        *) ep_die "Unsupported Conda distribution: $EP_CONDA_DISTRIBUTION. Use miniconda or anaconda." ;;
     esac
 }
 
 ep_conda_distribution_label()
 {
     case "$(ep_conda_distribution)" in
-        miniforge) printf 'Miniforge' ;;
         miniconda) printf 'Miniconda' ;;
+        anaconda) printf 'Anaconda' ;;
         *) printf 'Conda' ;;
     esac
 }
@@ -56,32 +38,60 @@ ep_conda_distribution_label()
 ep_conda_install_target()
 {
     case "$(ep_conda_distribution)" in
-        miniforge) printf '%s/miniforge3' "$EP_PREFIX" ;;
         miniconda) printf '%s/miniconda3' "$EP_PREFIX" ;;
+        anaconda) printf '%s/anaconda3' "$EP_PREFIX" ;;
         *) ep_die "No Conda install target rule for $EP_OS/$EP_ARCH." ;;
     esac
 }
 
 ep_conda_offline_pattern()
 {
-    case "$(ep_conda_distribution)" in
-        miniforge) printf 'Miniforge3-*.sh' ;;
-        miniconda) printf 'Miniconda3-*.sh' ;;
+    case "$(ep_conda_distribution):$EP_OS" in
+        miniconda:windows*) printf 'Miniconda3-*.exe' ;;
+        miniconda:*) printf 'Miniconda3-*.sh' ;;
+        anaconda:windows*) printf 'Anaconda3-*.exe' ;;
+        anaconda:*) printf 'Anaconda3-*.sh' ;;
         *) ep_die "No Conda offline asset pattern for $EP_OS/$EP_ARCH." ;;
     esac
 }
 
+ep_conda_uses_legacy_miniconda()
+{
+    [ "$(ep_conda_distribution)" = "miniconda" ] || return 1
+    [ "$EP_OS" = "linux" ] || return 1
+    [ "$EP_LIBC" = "glibc" ] || return 1
+    [ "$EP_GLIBC_VERSION" != "unknown" ] || return 1
+    ! ep_version_at_least "$EP_GLIBC_VERSION" "2.28"
+}
+
 ep_conda_installer_url()
 {
-    case "$EP_OS:$EP_ARCH:$(ep_conda_distribution)" in
-        linux:amd64:miniconda) printf 'https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh' ;;
-        linux:amd64:miniforge) printf 'https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh' ;;
-        linux:arm64:miniconda) printf 'https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-aarch64.sh' ;;
-        linux:arm64:miniforge) printf 'https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-aarch64.sh' ;;
+    local dist
+    dist="$(ep_conda_distribution)"
+    case "$EP_OS:$EP_ARCH:$dist" in
+        linux:amd64:miniconda)
+            if ep_conda_uses_legacy_miniconda; then
+                printf 'https://repo.anaconda.com/miniconda/Miniconda3-%s-Linux-x86_64.sh' "$EP_LEGACY_MINICONDA_VERSION"
+            else
+                printf 'https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh'
+            fi
+            ;;
+        linux:arm64:miniconda)
+            if ep_conda_uses_legacy_miniconda; then
+                printf 'https://repo.anaconda.com/miniconda/Miniconda3-%s-Linux-aarch64.sh' "$EP_LEGACY_MINICONDA_VERSION"
+            else
+                printf 'https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-aarch64.sh'
+            fi
+            ;;
+        linux:amd64:anaconda) printf 'https://repo.anaconda.com/archive/Anaconda3-2025.06-0-Linux-x86_64.sh' ;;
+        linux:arm64:anaconda) printf 'https://repo.anaconda.com/archive/Anaconda3-2025.06-0-Linux-aarch64.sh' ;;
         darwin:amd64:miniconda) printf 'https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-x86_64.sh' ;;
         darwin:arm64:miniconda) printf 'https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-arm64.sh' ;;
+        darwin:amd64:anaconda) printf 'https://repo.anaconda.com/archive/Anaconda3-2025.06-0-MacOSX-x86_64.sh' ;;
+        darwin:arm64:anaconda) printf 'https://repo.anaconda.com/archive/Anaconda3-2025.06-0-MacOSX-arm64.sh' ;;
         windows:amd64:miniconda) printf 'https://repo.anaconda.com/miniconda/Miniconda3-latest-Windows-x86_64.exe' ;;
-        *) ep_die "No Conda installer rule for $EP_OS/$EP_ARCH. Use --mode offline --asset-path." ;;
+        windows:amd64:anaconda) printf 'https://repo.anaconda.com/archive/Anaconda3-2025.06-0-Windows-x86_64.exe' ;;
+        *) ep_die "No Conda installer rule for $EP_OS/$EP_ARCH/$dist. Use --mode offline --asset-path." ;;
     esac
 }
 
@@ -121,20 +131,35 @@ ep_install_conda()
     label="$(ep_conda_distribution_label)"
     pattern="$(ep_conda_offline_pattern)"
     glibc_version="$(ep_linux_glibc_version)"
+    if [ "$EP_MODE" = "offline" ]; then
+        source="$(ep_find_offline_asset "$pattern")"
+    else
+        source="$url"
+    fi
 
     ep_log "Component: conda"
     ep_log "Selected $label installer for $EP_OS/$EP_ARCH"
-    if [ "$label" = "Miniforge" ] && [ "$EP_LIBC" = "glibc" ]; then
-        ep_log "Compatibility note: glibc $glibc_version is below Miniconda's current Linux threshold; using Miniforge latest."
+    if ep_conda_uses_legacy_miniconda; then
+        ep_log "Compatibility note: glibc $glibc_version is below current Miniconda's Linux threshold; using archived Miniconda $EP_LEGACY_MINICONDA_VERSION."
     fi
-    ep_log "Install target: $target"
+    if [ "$label" = "Anaconda" ] && [ "$EP_OS" = "linux" ] && [ "$EP_LIBC" = "glibc" ] && ! ep_version_at_least "$EP_GLIBC_VERSION" "2.28"; then
+        ep_warn "Anaconda latest may require newer glibc than $EP_GLIBC_VERSION. Use --asset-path with a known-compatible Anaconda installer if this fails."
+    fi
+    ep_log "Plan: install $label"
+    ep_log "Source: $source"
+    ep_log "Target: $target"
+    ep_log "Will write: $HOME/.condarc"
     ep_log "Conda init will not be run; shell templates source conda.sh only when requested."
-    ep_confirm "Install Conda to $target?" "yes" || {
-        ep_report_event conda skipped "user declined" "" "$url" "$target"
+    ep_confirm "Install $label from $source to $target?" "yes" || {
+        ep_report_event conda skipped "user declined" "" "$source" "$target"
         return 0
     }
 
-    source="$(ep_download_or_offline "$url" "$pattern" "$installer")"
+    if [ "$EP_MODE" = "offline" ]; then
+        cp "$source" "$installer"
+    else
+        ep_fetch_url "$source" "$installer"
+    fi
     bash "$installer" -b -p "$target"
     rm -f "$installer"
     ep_write_condarc

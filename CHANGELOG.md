@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.3 - 2026-07-28
+
+### Changed
+
+- `install all` now installs mihomo first so proxy setup can happen before other network-heavy components.
+- Online/offline downloads now print source URL or selected offline asset, destination path, and transfer progress before long-running work.
+- Conda selection no longer switches to a third-party distribution; default remains Miniconda, with archived Miniconda selected for Linux glibc 2.17-2.27 and Anaconda available by explicit option.
+
+### Fixed
+
+- Improved mihomo install summary, subscription URL validation, local-only proxy defaults, and start-script errors when `config.yaml` is missing.
+
 ## 0.1.2 - 2026-07-28
 
 ### Changed

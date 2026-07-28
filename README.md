@@ -42,8 +42,8 @@ bash envpilot.sh install mihomo --mode offline --asset-path /path/to/mihomo.gz
 
 ```bash
 bash envpilot.sh doctor
-bash envpilot.sh install conda
 bash envpilot.sh install mihomo
+bash envpilot.sh install conda
 bash envpilot.sh install codex
 bash envpilot.sh install github
 bash envpilot.sh install tmux
@@ -143,9 +143,9 @@ with_secrets codex
 
 ## Conda 和 Mamba
 
-Linux 会按 glibc 版本选择兼容的安装器：glibc >= 2.28 使用 Miniconda，glibc 2.17-2.27 使用 Miniforge。Windows/macOS 继续使用 Miniconda。默认目标目录会随发行版变化，通常是 `~/software/miniconda3` 或 `~/software/miniforge3`。
+默认只安装 Miniconda；如果明确需要 Anaconda，可运行 `bash envpilot.sh install conda --conda-distribution anaconda`。Linux 上 glibc >= 2.28 使用 Miniconda latest；glibc 2.17-2.27 不再切换到第三方发行版，而是使用归档的兼容 Miniconda 安装器。默认目标目录为 `~/software/miniconda3` 或 `~/software/anaconda3`。
 
-不会执行 `conda init`，也不会自动 `conda activate base`。
+不会执行 `conda init`，也不会自动 `conda activate base`。安装前会打印安装器 URL、离线匹配规则和目标目录；下载时会显示来源、目标文件和进度，避免长时间无输出。
 
 写入的 `.condarc`：
 
@@ -171,12 +171,13 @@ https://proxy.yanhuoapi.com/
 
 envpilot 会：
 
-- 自动选择当前系统和架构匹配的 mihomo stable 资产。
-- 排除 alpha/beta/rc/prerelease。
+- `bash envpilot.sh install` 默认首先处理 mihomo，然后才处理 Conda、Codex、GitHub CLI、tmux 等其他组件。
+- 在线模式会先查询 MetaCubeX/mihomo stable release，排除 alpha/beta/rc/prerelease，再打印选中的 asset URL。
+- 离线模式会从 `--asset-path` 或 `downloads/` 选择匹配的 `mihomo-*` 安装包。
 - 安装到 `~/software/mihomo/mihomo`。
 - 写入启动脚本 `~/software/mihomo/start_mihomo.sh`。
-- 强制 `allow-lan: false`。
-- 默认使用 `127.0.0.1:7890`。
+- 强制 `allow-lan: false`、`bind-address: 127.0.0.1`、`mixed-port: 7890`。
+- 不会自动启动；需要 `apply-shell` 后手动运行 `mihomo_start`。
 
 常用命令：
 
@@ -278,7 +279,7 @@ Windows 原生不承诺 tmux；如需 tmux，请使用 WSL、MSYS2 或 Git Bash 
 
 `release-assets.yml`：
 
-- 只能手动触发：`Actions` -> `release-assets` -> `Run workflow`，输入 release tag，例如 `v0.1.2` 或 `0.1.2`。
+- 只能手动触发：`Actions` -> `release-assets` -> `Run workflow`，输入 release tag，例如 `v0.1.3` 或 `0.1.3`。
 - 它打包 envpilot 仓库本身，生成 `envpilot-<version>.tar.gz`、`.zip` 和 `.sha256` 并附加到该 release。
 - 它不上传第三方安装包，不读取 `downloads/`。
 

@@ -8,7 +8,7 @@ DRY_RUN="0"
 UPLOAD_RELEASE="0"
 TAG="${ENVPILOT_RELEASE_TAG:-offline-cache-manual}"
 REPO="${ENVPILOT_REPO:-zhangyehao/envpilot}"
-MAX_SIZE_MB="${ENVPILOT_ASSET_MAX_SIZE_MB:-700}"
+MAX_SIZE_MB="${ENVPILOT_ASSET_MAX_SIZE_MB:-1300}"
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -50,7 +50,7 @@ is_stable_name()
 matches_asset_pattern()
 {
     case "$1" in
-        Miniforge3-*.sh|Miniforge3-*.pkg|Miniforge3-*.exe|Miniconda3-*.sh|Miniconda3-*.exe|Anaconda3-*.sh|Anaconda3-*.exe|mihomo-*.gz|mihomo-*.zip|gh_*_linux_*.tar.gz|gh_*_macOS_*.zip|gh_*_windows_*.zip|GitHubCLI*.msi|node-v*.tar.gz|node-v*.tar.xz|node-v*.pkg|node-v*.msi) return 0 ;;
+        Miniconda3-*.sh|Miniconda3-*.exe|Anaconda3-*.sh|Anaconda3-*.exe|mihomo-*.gz|mihomo-*.zip|gh_*_linux_*.tar.gz|gh_*_macOS_*.zip|gh_*_windows_*.zip|GitHubCLI*.msi|node-v*.tar.gz|node-v*.tar.xz|node-v*.pkg|node-v*.msi) return 0 ;;
         *) return 1 ;;
     esac
 }

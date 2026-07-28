@@ -283,7 +283,7 @@ function Install-One {
 
 function Invoke-Install {
     $Script:Platform = Get-EnvpilotPlatform
-    $names = if ($Component -eq "all") { @("conda","mamba","mihomo","codex","github","tmux") } else { @($Component) }
+    $names = if ($Component -eq "all") { @("mihomo","conda","mamba","codex","github","tmux") } else { @($Component) }
     foreach ($name in $names) {
         if (Test-StateDone $name) {
             Write-Info "Skip ${name}: already marked done. Use reset to clear state."
@@ -333,7 +333,7 @@ envpilot - cross-platform user-space environment bootstrapper
 
 Usage:
   .\envpilot.ps1 doctor
-  .\envpilot.ps1 install [all|conda|mamba|mihomo|codex|github|tmux] [-Mode online|offline] [-Prefix PATH] [-AssetPath PATH] [-Yes]
+  .\envpilot.ps1 install [all|mihomo|conda|mamba|codex|github|tmux] [-Mode online|offline] [-Prefix PATH] [-AssetPath PATH] [-Yes]
   .\envpilot.ps1 apply-shell
   .\envpilot.ps1 rollback
   .\envpilot.ps1 resume

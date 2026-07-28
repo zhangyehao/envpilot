@@ -9,7 +9,7 @@ param(
     [string]$Tag = "offline-cache-manual",
     [string]$Repo = "zhangyehao/envpilot",
     [string]$GhPath = "C:\Program Files\GitHub CLI\gh.exe",
-    [int]$MaxSizeMB = 700
+    [int]$MaxSizeMB = 1300
 )
 
 $ErrorActionPreference = "Stop"
@@ -37,9 +37,6 @@ if (-not $Roots -or $Roots.Count -eq 0) {
 }
 
 $patterns = @(
-    "Miniforge3-*.sh",
-    "Miniforge3-*.pkg",
-    "Miniforge3-*.exe",
     "Miniconda3-*.sh",
     "Miniconda3-*.exe",
     "Anaconda3-*.sh",
