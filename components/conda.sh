@@ -114,7 +114,7 @@ ep_install_conda()
         return 0
     fi
 
-    local target installer url source label pattern glibc_version
+    local target installer url source label pattern glibc_version conda_version
     target="$(ep_conda_install_target)"
     installer="$(mktemp "${TMPDIR:-/tmp}/envpilot-conda.XXXXXX.sh")"
     url="$(ep_conda_installer_url)"
@@ -139,5 +139,6 @@ ep_install_conda()
     rm -f "$installer"
     ep_write_condarc
     ep_state_mark_done conda
-    ep_report_event conda installed "installed $label" "$($target/bin/conda --version 2>/dev/null || true)" "$source" "$target"
+    conda_version="$("$target"/bin/conda --version 2>/dev/null || true)"
+    ep_report_event conda installed "installed $label" "$conda_version" "$source" "$target"
 }

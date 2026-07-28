@@ -278,7 +278,7 @@ Windows 原生不承诺 tmux；如需 tmux，请使用 WSL、MSYS2 或 Git Bash 
 
 `release-assets.yml`：
 
-- 只能手动触发：`Actions` -> `release-assets` -> `Run workflow`，输入 release tag，例如 `v0.1.2`。
+- 只能手动触发：`Actions` -> `release-assets` -> `Run workflow`，输入 release tag，例如 `v0.1.2` 或 `0.1.2`。
 - 它打包 envpilot 仓库本身，生成 `envpilot-<version>.tar.gz`、`.zip` 和 `.sha256` 并附加到该 release。
 - 它不上传第三方安装包，不读取 `downloads/`。
 

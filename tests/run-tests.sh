@@ -18,6 +18,7 @@ python "$ROOT/scripts/update-manifests.py" --check >/tmp/envpilot-manifest-check
 echo "[TEST] workflow semantics"
 grep -q 'git archive' "$ROOT/.github/workflows/release-assets.yml"
 ! grep -q 'files: downloads/\*' "$ROOT/.github/workflows/release-assets.yml"
+grep -q 'refs/tags/v' "$ROOT/.github/workflows/release-assets.yml"
 grep -q 'scripts/update-manifests.py --check' "$ROOT/.github/workflows/update-manifests.yml"
 echo "[TEST] non-interactive bashrc is quiet"
 tmp_home="$(mktemp -d)"
@@ -51,5 +52,4 @@ grep -q '^config.yaml$' "$ROOT/.gitignore"
 
 rm -rf "$tmp_home"
 echo "[TEST] ok"
-
 
