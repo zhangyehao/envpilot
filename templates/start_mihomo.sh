@@ -18,9 +18,14 @@ if [ ! -s "$CONFIG_DIR/config.yaml" ]; then
     exit 1
 fi
 
-if pgrep -u "$USER" -f "$MIHOMO_BIN" >/dev/null 2>&1; then
+if ss -lntH "sport = :7890" 2>/dev/null | grep -q .; then
     echo "[INFO] mihomo already running."
-    pgrep -u "$USER" -af "$MIHOMO_BIN"
+    ss -lntH "sport = :7890" 2>/dev/null | head -n 1
+    exit 0
+fi
+if pgrep -u "$USER" -f "mihomo" >/dev/null 2>&1; then
+    echo "[INFO] mihomo already running."
+    pgrep -u "$USER" -af "mihomo"
     exit 0
 fi
 

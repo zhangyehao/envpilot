@@ -1,7 +1,14 @@
 # Changelog
 
-## 0.1.3 - 2026-07-28
+## 0.1.4 - 2026-07-28
 
+### Fixed
+
+- Fixed mihomo/proxy status detection when `ss` reports the listener as `:::7890` instead of `127.0.0.1:7890`.
+- Made shell startup avoid repeated mihomo starts when the proxy port is already listening.
+- Updated `doctor` to detect any listener on port 7890 instead of only exact IPv4 loopback output.
+
+## 0.1.3 - 2026-07-28
 ### Changed
 
 - `install all` now installs mihomo first so proxy setup can happen before other network-heavy components.

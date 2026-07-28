@@ -40,10 +40,10 @@ ep_doctor_mihomo()
     else
         ep_warn "mihomo: not found at $bin"
     fi
-    if ep_command_exists ss && ss -lnt 2>/dev/null | grep -q '127\.0\.0\.1:7890'; then
-        ep_log "Proxy port: 127.0.0.1:7890 is listening"
+    if ep_command_exists ss && ss -lntH "sport = :7890" 2>/dev/null | grep -q .; then
+        ep_log "Proxy port: 7890 is listening"
     else
-        ep_warn "Proxy port: 127.0.0.1:7890 not detected"
+        ep_warn "Proxy port: 7890 not detected"
     fi
 }
 

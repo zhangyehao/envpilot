@@ -273,11 +273,11 @@ proxy_port_is_listening()
     local host="${1:-$BASHRC_PROXY_HOST}"
     local port="${2:-$BASHRC_PROXY_PORT}"
     if command_exists ss; then
-        ss -lnt 2>/dev/null | grep -Eq "${host//./\\.}:${port}([[:space:]]|$)"
+        ss -lntH "sport = :$port" 2>/dev/null | grep -q .
     elif command_exists lsof; then
-        lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | grep -q "$host"
+        lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | grep -q .
     elif command_exists netstat; then
-        netstat -an 2>/dev/null | grep -Eq "${host//./\\.}[.:]${port}[[:space:]].*LISTEN"
+        netstat -an 2>/dev/null | grep -Eq "[.:]${port}[[:space:]].*LISTEN"
     elif command_exists nc; then
         nc -z "$host" "$port" >/dev/null 2>&1
     else
@@ -288,7 +288,7 @@ proxy_port_is_listening()
 mihomo_start()
 {
     mkdir -p "$(dirname "$BASHRC_MIHOMO_LOG")" 2>/dev/null || true
-    if process_is_running "$BASHRC_MIHOMO_BIN"; then
+    if process_is_running "mihomo" || proxy_port_is_listening; then
         return 0
     fi
     if [ -x "$BASHRC_MIHOMO_START_SCRIPT" ]; then
@@ -333,12 +333,20 @@ proxy_status()
 {
     printf 'mihomo process:\n'
     if command_exists pgrep; then
-        pgrep -af "$BASHRC_MIHOMO_BIN" || printf 'not running\n'
+        pgrep -af "mihomo" || printf 'not running\n'
     else
-        ps -u "$USER" -o pid=,args= 2>/dev/null | grep -F "$BASHRC_MIHOMO_BIN" | grep -v grep || printf 'not running\n'
+        ps -u "$USER" -o pid=,args= 2>/dev/null | grep -E '(^|/|[[:space:]])mihomo(\.exe)?([[:space:]]|$)' || printf 'not running\n'
     fi
     printf '\nproxy port:\n'
-    proxy_port_is_listening && printf '%s:%s listening\n' "$BASHRC_PROXY_HOST" "$BASHRC_PROXY_PORT" || printf '%s:%s not listening\n' "$BASHRC_PROXY_HOST" "$BASHRC_PROXY_PORT"
+    if proxy_port_is_listening; then
+        if command_exists ss; then
+            ss -lntH "sport = :$BASHRC_PROXY_PORT" 2>/dev/null | head -n 1 | awk '{print $4 " listening"}'
+        else
+            printf '%s:%s listening\n' "$BASHRC_PROXY_HOST" "$BASHRC_PROXY_PORT"
+        fi
+    else
+        printf '%s:%s not listening\n' "$BASHRC_PROXY_HOST" "$BASHRC_PROXY_PORT"
+    fi
     printf '\nproxy variables:\n'
     printf 'http_proxy=%s\n' "${http_proxy:-unset}"
     printf 'https_proxy=%s\n' "${https_proxy:-unset}"

@@ -66,6 +66,31 @@ if [ -n "$output" ]; then
     exit 1
 fi
 
+echo "[TEST] proxy port detection accepts IPv6 wildcard"
+tmp_home="$(mktemp -d)"
+tmp_bin="$(mktemp -d)"
+cat > "$tmp_bin/ss" <<'EOF'
+#!/usr/bin/env bash
+cat <<'OUT'
+State      Recv-Q Send-Q     Local Address:Port                    Peer Address:Port
+LISTEN     0      128                   :::7890                              :::*
+OUT
+EOF
+chmod +x "$tmp_bin/ss"
+proxy_check="$(
+    HOME="$tmp_home" \
+    PATH="$tmp_bin:$PATH" \
+    BASHRC_AUTO_START_MIHOMO=0 \
+    BASHRC_AUTO_ENABLE_PROXY=0 \
+    BASHRC_AUTO_LOAD_MODULES=0 \
+    BASHRC_AUTO_LOAD_SECRETS=0 \
+    bash --noprofile --norc -ic '. "'"$ROOT/templates/bashrc"'"; if proxy_port_is_listening; then printf yes; else printf no; fi' 2>/dev/null
+)"
+if [ "$proxy_check" != "yes" ]; then
+    echo "Expected proxy_port_is_listening to accept :::7890, got: $proxy_check" >&2
+    exit 1
+fi
+
 echo "[TEST] doctor works with isolated HOME"
 HOME="$tmp_home" bash "$ROOT/envpilot.sh" doctor >/tmp/envpilot-doctor.out 2>&1
 grep -q 'envpilot doctor' /tmp/envpilot-doctor.out
@@ -78,7 +103,7 @@ grep -q 'env_key = "OPENAI_API_KEY"' "$ROOT/components/codex.sh"
 ! grep -q 'requires_openai_auth = true' "$ROOT/components/codex.sh"
 
 echo "[TEST] version"
-grep -q '^0\.1\.3$' "$ROOT/VERSION"
+grep -q '^0\.1\.4$' "$ROOT/VERSION"
 
 echo "[TEST] secret patterns are ignored"
 grep -q '^api.env$' "$ROOT/.gitignore"
