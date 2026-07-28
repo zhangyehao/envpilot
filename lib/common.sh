@@ -179,6 +179,7 @@ ep_report_start()
     "os": "${EP_OS:-unknown}",
     "arch": "${EP_ARCH:-unknown}",
     "libc": "${EP_LIBC:-unknown}",
+    "glibc_version": "${EP_GLIBC_VERSION:-unknown}",
     "shell": "$(printf '%s' "${SHELL:-unknown}" | ep_json_escape)",
     "is_root": "${EP_IS_ROOT:-unknown}"
   },

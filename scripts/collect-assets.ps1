@@ -37,6 +37,9 @@ if (-not $Roots -or $Roots.Count -eq 0) {
 }
 
 $patterns = @(
+    "Miniforge3-*.sh",
+    "Miniforge3-*.pkg",
+    "Miniforge3-*.exe",
     "Miniconda3-*.sh",
     "Miniconda3-*.exe",
     "Anaconda3-*.sh",

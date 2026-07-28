@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.2 - 2026-07-28
+
+### Changed
+
+- Default clone instructions now use HTTPS so users without GitHub SSH keys can get the repository immediately.
+- Linux Conda selection is now glibc-aware: glibc >= 2.28 uses Miniconda, glibc 2.17-2.27 falls back to Miniforge, and the detected glibc version is recorded in install reports.
+- Updated asset collection and shell templates so offline cache and config lookup cover Miniforge paths as well.
+
+### Fixed
+
+- Prevented Linux glibc 2.17 installs from failing on Miniconda's current minimum by falling back to a compatible installer.
+- Fixed manifest metadata and validation coverage for the new compatibility-aware Conda flow.
+
 ## 0.1.1 - 2026-07-27
 
 ### Changed

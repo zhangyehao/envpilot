@@ -9,7 +9,7 @@
 Linux/macOS/WSL/Git Bash:
 
 ```bash
-git clone git@github.com:zhangyehao/envpilot.git
+git clone https://github.com/zhangyehao/envpilot.git
 cd envpilot
 bash envpilot.sh doctor
 bash envpilot.sh install
@@ -19,7 +19,7 @@ bash envpilot.sh apply-shell
 Windows PowerShell:
 
 ```powershell
-git clone git@github.com:zhangyehao/envpilot.git
+git clone https://github.com/zhangyehao/envpilot.git
 cd envpilot
 .\envpilot.ps1 doctor
 .\envpilot.ps1 install
@@ -143,11 +143,7 @@ with_secrets codex
 
 ## Conda 和 Mamba
 
-默认安装 Miniconda 到：
-
-```text
-~/software/miniconda3
-```
+Linux 会按 glibc 版本选择兼容的安装器：glibc >= 2.28 使用 Miniconda，glibc 2.17-2.27 使用 Miniforge。Windows/macOS 继续使用 Miniconda。默认目标目录会随发行版变化，通常是 `~/software/miniconda3` 或 `~/software/miniforge3`。
 
 不会执行 `conda init`，也不会自动 `conda activate base`。
 
@@ -235,9 +231,10 @@ EP_CODEX_BASE_URL="https://example.com/v1" bash envpilot.sh install codex
 
 ## GitHub
 
-GitHub CLI 用于私有仓库 clone、创建仓库、PR/issue 等工作。推荐 SSH 协议：
+GitHub CLI 用于私有仓库 clone、创建仓库、PR/issue 等工作。普通拉取优先用 HTTPS；如果你已经配置 SSH key 且需要免密码推送，再切换到 SSH。
 
 ```bash
+git clone https://github.com/zhangyehao/envpilot.git
 gh auth login -h github.com --git-protocol ssh
 ssh -T git@github.com
 ```
@@ -281,7 +278,7 @@ Windows 原生不承诺 tmux；如需 tmux，请使用 WSL、MSYS2 或 Git Bash 
 
 `release-assets.yml`：
 
-- 只能手动触发：`Actions` -> `release-assets` -> `Run workflow`，输入 release tag，例如 `v0.1.1`。
+- 只能手动触发：`Actions` -> `release-assets` -> `Run workflow`，输入 release tag，例如 `v0.1.2`。
 - 它打包 envpilot 仓库本身，生成 `envpilot-<version>.tar.gz`、`.zip` 和 `.sha256` 并附加到该 release。
 - 它不上传第三方安装包，不读取 `downloads/`。
 

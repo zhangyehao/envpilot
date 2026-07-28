@@ -33,8 +33,10 @@ init_conda()
 {
     local conda_sh
     for conda_sh in \
+        "$HOME/software/miniforge3/etc/profile.d/conda.sh" \
         "$HOME/software/miniconda3/etc/profile.d/conda.sh" \
         "$HOME/software/anaconda3/etc/profile.d/conda.sh" \
+        "$HOME/miniforge3/etc/profile.d/conda.sh" \
         "$HOME/miniconda3/etc/profile.d/conda.sh" \
         "$HOME/anaconda3/etc/profile.d/conda.sh"; do
         [ -r "$conda_sh" ] && . "$conda_sh" && return 0

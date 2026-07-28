@@ -166,7 +166,7 @@ def update_conda_manifest(data: dict[str, Any]) -> bool:
         return False
     data["latest"] = {
         "checked_at": now_iso(),
-        "policy": "vendor latest URLs are used directly; installer version is resolved by upstream at download time",
+        "policy": "vendor latest URLs are used directly on platforms that can run them; Linux glibc 2.17-2.27 falls back to Miniforge latest; installer version is resolved by upstream at download time",
         "assets": [
             {
                 "os": item.get("os"),

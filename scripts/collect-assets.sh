@@ -50,7 +50,7 @@ is_stable_name()
 matches_asset_pattern()
 {
     case "$1" in
-        Miniconda3-*.sh|Miniconda3-*.exe|Anaconda3-*.sh|Anaconda3-*.exe|mihomo-*.gz|mihomo-*.zip|gh_*_linux_*.tar.gz|gh_*_macOS_*.zip|gh_*_windows_*.zip|GitHubCLI*.msi|node-v*.tar.gz|node-v*.tar.xz|node-v*.pkg|node-v*.msi) return 0 ;;
+        Miniforge3-*.sh|Miniforge3-*.pkg|Miniforge3-*.exe|Miniconda3-*.sh|Miniconda3-*.exe|Anaconda3-*.sh|Anaconda3-*.exe|mihomo-*.gz|mihomo-*.zip|gh_*_linux_*.tar.gz|gh_*_macOS_*.zip|gh_*_windows_*.zip|GitHubCLI*.msi|node-v*.tar.gz|node-v*.tar.xz|node-v*.pkg|node-v*.msi) return 0 ;;
         *) return 1 ;;
     esac
 }
