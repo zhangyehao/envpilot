@@ -5,6 +5,46 @@ MIHOMO_BIN="${HOME}/software/mihomo/mihomo"
 CONFIG_DIR="${HOME}/.config/mihomo"
 LOG_FILE="${HOME}/logs/mihomo.log"
 
+command_exists()
+{
+    command -v "$1" >/dev/null 2>&1
+}
+
+proxy_port_socket_listening()
+{
+    local port="$1"
+    local line
+    if command_exists ss; then
+        line="$(ss -lntH "sport = :$port" 2>/dev/null | head -n 1 || true)"
+        [ -n "$line" ] && return 0
+    fi
+    if command_exists lsof; then
+        line="$(lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | awk 'NR == 2 { print; exit }' || true)"
+        [ -n "$line" ] && return 0
+    fi
+    if command_exists netstat; then
+        line="$(netstat -an 2>/dev/null | grep -E "[.:]${port}[[:space:]].*LISTEN" | head -n 1 || true)"
+        [ -n "$line" ] && return 0
+    fi
+    return 1
+}
+
+proxy_port_is_listening()
+{
+    local host="$1"
+    local port="$2"
+    if proxy_port_socket_listening "$port"; then
+        return 0
+    fi
+    if command_exists nc && nc -z -w 1 "$host" "$port" >/dev/null 2>&1; then
+        return 0
+    fi
+    if command_exists timeout && timeout 1 bash -c ": </dev/tcp/$host/$port" >/dev/null 2>&1; then
+        return 0
+    fi
+    return 1
+}
+
 mkdir -p "$(dirname "$LOG_FILE")"
 
 if [ ! -x "$MIHOMO_BIN" ]; then
@@ -18,9 +58,8 @@ if [ ! -s "$CONFIG_DIR/config.yaml" ]; then
     exit 1
 fi
 
-if ss -lntH "sport = :7890" 2>/dev/null | grep -q .; then
+if proxy_port_is_listening 127.0.0.1 7890; then
     echo "[INFO] mihomo already running."
-    ss -lntH "sport = :7890" 2>/dev/null | head -n 1
     exit 0
 fi
 if pgrep -u "$USER" -f "mihomo" >/dev/null 2>&1; then
@@ -35,7 +74,7 @@ mihomo_pid=$!
 attempts=20
 count=0
 while [ "$count" -lt "$attempts" ]; do
-    if ss -lntH "sport = :7890" 2>/dev/null | grep -q .; then
+    if proxy_port_is_listening 127.0.0.1 7890; then
         echo "[INFO] mihomo started. PID=$mihomo_pid"
         echo "[INFO] log file: $LOG_FILE"
         echo "[INFO] proxy: http://127.0.0.1:7890"

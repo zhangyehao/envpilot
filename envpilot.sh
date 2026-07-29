@@ -54,34 +54,44 @@ EOF
 
 parse_args()
 {
+    local arg
     EP_COMMAND="${1:-help}"
+    EP_COMMAND="${EP_COMMAND%$'\r'}"
     shift || true
 
     EP_COMPONENT="all"
-    if [ "$EP_COMMAND" = "install" ] && [ "${1:-}" != "" ] && [ "${1#-}" = "$1" ]; then
-        EP_COMPONENT="$1"
-        shift
+    if [ "$EP_COMMAND" = "install" ] && [ "${1:-}" != "" ]; then
+        arg="${1%$'\r'}"
+        if [ "${arg#-}" = "$arg" ]; then
+            EP_COMPONENT="$arg"
+            shift
+        fi
     fi
 
     while [ "$#" -gt 0 ]; do
-        case "$1" in
+        arg="${1%$'\r'}"
+        case "$arg" in
             --mode)
                 EP_MODE="${2:-}"
+                EP_MODE="${EP_MODE%$'\r'}"
                 [ "$EP_MODE" = "online" ] || [ "$EP_MODE" = "offline" ] || ep_die "--mode must be online or offline"
                 shift 2
                 ;;
             --prefix)
                 EP_PREFIX="${2:-}"
+                EP_PREFIX="${EP_PREFIX%$'\r'}"
                 [ -n "$EP_PREFIX" ] || ep_die "--prefix requires a path"
                 shift 2
                 ;;
             --asset-path)
                 EP_ASSET_PATH="${2:-}"
+                EP_ASSET_PATH="${EP_ASSET_PATH%$'\r'}"
                 [ -n "$EP_ASSET_PATH" ] || ep_die "--asset-path requires a path"
                 shift 2
                 ;;
             --conda-distribution)
                 EP_CONDA_DISTRIBUTION="${2:-}"
+                EP_CONDA_DISTRIBUTION="${EP_CONDA_DISTRIBUTION%$'\r'}"
                 case "$EP_CONDA_DISTRIBUTION" in
                     miniconda|anaconda) ;;
                     *) ep_die "--conda-distribution must be miniconda or anaconda" ;;
@@ -97,7 +107,7 @@ parse_args()
                 exit 0
                 ;;
             *)
-                ep_die "Unknown option: $1"
+                ep_die "Unknown option: $arg"
                 ;;
         esac
     done

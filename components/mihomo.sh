@@ -31,6 +31,41 @@ ep_mihomo_offline_pattern()
     esac
 }
 
+ep_proxy_port_socket_listening()
+{
+    local port="${1:-7890}"
+    local line
+    if ep_command_exists ss; then
+        line="$(ss -lntH "sport = :$port" 2>/dev/null | head -n 1 || true)"
+        [ -n "$line" ] && return 0
+    fi
+    if ep_command_exists lsof; then
+        line="$(lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | awk 'NR == 2 { print; exit }' || true)"
+        [ -n "$line" ] && return 0
+    fi
+    if ep_command_exists netstat; then
+        line="$(netstat -an 2>/dev/null | grep -E "[.:]${port}[[:space:]].*LISTEN" | head -n 1 || true)"
+        [ -n "$line" ] && return 0
+    fi
+    return 1
+}
+
+ep_proxy_port_is_listening()
+{
+    local host="${1:-127.0.0.1}"
+    local port="${2:-7890}"
+    if ep_proxy_port_socket_listening "$port"; then
+        return 0
+    fi
+    if ep_command_exists nc && nc -z -w 1 "$host" "$port" >/dev/null 2>&1; then
+        return 0
+    fi
+    if ep_command_exists timeout && timeout 1 bash -c ": </dev/tcp/$host/$port" >/dev/null 2>&1; then
+        return 0
+    fi
+    return 1
+}
+
 ep_doctor_mihomo()
 {
     local bin cached offline_pattern
@@ -48,10 +83,12 @@ ep_doctor_mihomo()
     else
         ep_warn "mihomo cache: not found in downloads/"
     fi
-    if ep_command_exists ss && ss -lntH "sport = :7890" 2>/dev/null | grep -q .; then
-        ep_log "Proxy port: 7890 is listening"
+    if ep_proxy_port_socket_listening 7890; then
+        ep_log "Proxy port: 127.0.0.1:7890 listening"
+    elif ep_proxy_port_is_listening 127.0.0.1 7890; then
+        ep_log "Proxy port: 127.0.0.1:7890 reachable via TCP connect"
     else
-        ep_warn "Proxy port: 7890 not detected"
+        ep_warn "Proxy port: 127.0.0.1:7890 not detected"
     fi
 }
 

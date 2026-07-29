@@ -268,21 +268,39 @@ process_is_running()
     fi
 }
 
+proxy_port_socket_listening()
+{
+    local port="${1:-$BASHRC_PROXY_PORT}"
+    local line
+    if command_exists ss; then
+        line="$(ss -lntH "sport = :$port" 2>/dev/null | head -n 1 || true)"
+        [ -n "$line" ] && return 0
+    fi
+    if command_exists lsof; then
+        line="$(lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | awk 'NR == 2 { print; exit }' || true)"
+        [ -n "$line" ] && return 0
+    fi
+    if command_exists netstat; then
+        line="$(netstat -an 2>/dev/null | grep -E "[.:]${port}[[:space:]].*LISTEN" | head -n 1 || true)"
+        [ -n "$line" ] && return 0
+    fi
+    return 1
+}
+
 proxy_port_is_listening()
 {
     local host="${1:-$BASHRC_PROXY_HOST}"
     local port="${2:-$BASHRC_PROXY_PORT}"
-    if command_exists ss; then
-        ss -lntH "sport = :$port" 2>/dev/null | grep -q .
-    elif command_exists lsof; then
-        lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | grep -q .
-    elif command_exists netstat; then
-        netstat -an 2>/dev/null | grep -Eq "[.:]${port}[[:space:]].*LISTEN"
-    elif command_exists nc; then
-        nc -z "$host" "$port" >/dev/null 2>&1
-    else
-        return 1
+    if proxy_port_socket_listening "$port"; then
+        return 0
     fi
+    if command_exists nc && nc -z -w 1 "$host" "$port" >/dev/null 2>&1; then
+        return 0
+    fi
+    if command_exists timeout && timeout 1 bash -c ": </dev/tcp/$host/$port" >/dev/null 2>&1; then
+        return 0
+    fi
+    return 1
 }
 
 mihomo_wait_for_port()
@@ -361,6 +379,8 @@ proxy_off()
 
 proxy_status()
 {
+    local host="${BASHRC_PROXY_HOST}"
+    local port="${BASHRC_PROXY_PORT}"
     printf 'mihomo process:\n'
     if command_exists pgrep; then
         pgrep -af "mihomo" || printf 'not running\n'
@@ -368,14 +388,12 @@ proxy_status()
         ps -u "$USER" -o pid=,args= 2>/dev/null | grep -E '(^|/|[[:space:]])mihomo(\.exe)?([[:space:]]|$)' || printf 'not running\n'
     fi
     printf '\nproxy port:\n'
-    if proxy_port_is_listening; then
-        if command_exists ss; then
-            ss -lntH "sport = :$BASHRC_PROXY_PORT" 2>/dev/null | head -n 1 | awk '{print $4 " listening"}'
-        else
-            printf '%s:%s listening\n' "$BASHRC_PROXY_HOST" "$BASHRC_PROXY_PORT"
-        fi
+    if proxy_port_socket_listening "$port"; then
+        printf '%s:%s listening\n' "$host" "$port"
+    elif proxy_port_is_listening "$host" "$port"; then
+        printf '%s:%s reachable via TCP connect\n' "$host" "$port"
     else
-        printf '%s:%s not listening\n' "$BASHRC_PROXY_HOST" "$BASHRC_PROXY_PORT"
+        printf '%s:%s not listening\n' "$host" "$port"
     fi
     printf '\nproxy variables:\n'
     printf 'http_proxy=%s\n' "${http_proxy:-unset}"
