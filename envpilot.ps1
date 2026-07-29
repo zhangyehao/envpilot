@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position=0)]
-    [ValidateSet("doctor","install","apply-shell","rollback","resume","reset","update-manifests","self-test","help")]
+    [ValidateSet("doctor","install","apply-shell","rollback","resume","reset","update-manifests","update-mihomo-cache","self-test","help")]
     [string]$Command = "help",
 
     [Parameter(Position=1)]
@@ -115,16 +115,23 @@ function Invoke-EnvpilotDownload {
     Invoke-WebRequest -Uri $Url -OutFile $Destination -UseBasicParsing
 }
 
+function Find-CachedAsset {
+    param([string]$Pattern)
+    $downloads = Join-Path $Script:Root "downloads"
+    $asset = Get-ChildItem -LiteralPath $downloads -File -Filter $Pattern -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
+    if ($asset) { return $asset.FullName }
+    return $null
+}
+
 function Find-OfflineAsset {
     param([string]$Pattern)
     if ($AssetPath) {
         if (-not (Test-Path -LiteralPath $AssetPath)) { Stop-Envpilot "--asset-path does not exist: $AssetPath" }
         return $AssetPath
     }
-    $downloads = Join-Path $Script:Root "downloads"
-    $asset = Get-ChildItem -LiteralPath $downloads -File -Filter $Pattern -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
+    $asset = Find-CachedAsset $Pattern
     if (-not $asset) { Stop-Envpilot "Offline asset not found in downloads/: $Pattern" }
-    return $asset.FullName
+    return $asset
 }
 
 function Resolve-GitHubAsset {
@@ -180,19 +187,32 @@ function Install-Conda {
 
 function Install-Mihomo {
     $regex = if ($Script:Platform.Arch -eq "amd64") { "mihomo-windows-amd64-compatible-.*\.zip$" } else { "mihomo-windows-arm64-.*\.zip$" }
+    $offlinePattern = if ($Script:Platform.Arch -eq "amd64") { "mihomo-windows-amd64-compatible-*.zip" } else { "mihomo-windows-arm64-*.zip" }
     $installDir = Join-Path $HOME "software/mihomo"
     $bin = Join-Path $installDir "mihomo.exe"
     New-Item -ItemType Directory -Force -Path $installDir | Out-Null
     Write-Info "Selected mihomo asset rule: $regex"
+    Write-Info "Offline asset pattern: $offlinePattern"
     if (-not (Confirm-Step "Install mihomo to $bin?" $true)) { Add-ReportEvent "mihomo" "skipped" "user declined"; return }
     $archive = Join-Path ([System.IO.Path]::GetTempPath()) "envpilot-mihomo.zip"
     if ($Mode -eq "offline") {
-        Copy-Item -LiteralPath (Find-OfflineAsset "mihomo-windows-*.zip") -Destination $archive -Force
-        $source = $archive
+        $source = Find-OfflineAsset $offlinePattern
+        Copy-Item -LiteralPath $source -Destination $archive -Force
     } else {
-        $source = Resolve-GitHubAsset "MetaCubeX" "mihomo" $regex
-        Invoke-EnvpilotDownload $source $archive
+        $source = Find-CachedAsset $offlinePattern
+        if ($source) {
+            Write-Info "Using bundled downloads/ mihomo asset before network: $source"
+            Copy-Item -LiteralPath $source -Destination $archive -Force
+        } else {
+            $source = Resolve-GitHubAsset "MetaCubeX" "mihomo" $regex
+            Invoke-EnvpilotDownload $source $archive
+        }
     }
+    Write-Info "Plan: install mihomo"
+    Write-Info "Source: $source"
+    Write-Info "Target: $bin"
+    Write-Info "Will write: $(Join-Path $installDir "start_mihomo.sh")"
+    Write-Info "Proxy defaults: 127.0.0.1:7890, allow-lan=false, bind-address=127.0.0.1"
     $extract = Join-Path ([System.IO.Path]::GetTempPath()) "envpilot-mihomo"
     Remove-Item -Recurse -Force -LiteralPath $extract -ErrorAction SilentlyContinue
     Expand-Archive -LiteralPath $archive -DestinationPath $extract -Force
@@ -327,21 +347,39 @@ function Update-Manifests {
     & $python.Source $script
     if ($LASTEXITCODE -ne 0) { Stop-Envpilot "Manifest update failed." }
 }
+
+function Update-MihomoCache {
+    $script = Join-Path $Script:Root "scripts/update-mihomo-cache.py"
+    $python = Get-Command python3 -ErrorAction SilentlyContinue
+    if (-not $python) { $python = Get-Command python -ErrorAction SilentlyContinue }
+    if (-not $python) { Stop-Envpilot "python3 or python is required to refresh the mihomo cache" }
+    & $python.Source $script
+    if ($LASTEXITCODE -ne 0) { Stop-Envpilot "mihomo cache refresh failed." }
+}
+
 function Show-Usage {
 @"
 envpilot - cross-platform user-space environment bootstrapper
 
 Usage:
   .\envpilot.ps1 doctor
+      Show system, shell, proxy, and installed tool status.
   .\envpilot.ps1 install [all|mihomo|conda|mamba|codex|github|tmux] [-Mode online|offline] [-Prefix PATH] [-AssetPath PATH] [-Yes]
+      Install selected component(s). Online is the default.
   .\envpilot.ps1 apply-shell
+      Back up and replace the active PowerShell profile.
   .\envpilot.ps1 rollback
+      Restore the most recent envpilot-managed backup.
   .\envpilot.ps1 resume
+      Continue an interrupted install using saved state.
   .\envpilot.ps1 reset
+      Clear saved state so install steps can run again.
   .\envpilot.ps1 update-manifests
+      Refresh manifest latest metadata from upstream.
+  .\envpilot.ps1 update-mihomo-cache
+      Refresh the bundled stable mihomo assets in downloads/.
 "@
 }
-
 try {
     Initialize-Envpilot
     switch ($Command) {
@@ -352,6 +390,7 @@ try {
         "resume" { if (Test-Path $Script:StateFile) { Get-Content $Script:StateFile }; $Component = "all"; Invoke-Install }
         "reset" { Remove-Item -LiteralPath $Script:StateFile -Force -ErrorAction SilentlyContinue; Write-Info "State reset." }
         "update-manifests" { Update-Manifests }
+        "update-mihomo-cache" { Update-MihomoCache }
         "self-test" { & (Join-Path $Script:Root "tests/test-envpilot.ps1") }
         "help" { Show-Usage }
     }
@@ -359,6 +398,3 @@ try {
     Write-Error $_
     exit 1
 }
-
-
-

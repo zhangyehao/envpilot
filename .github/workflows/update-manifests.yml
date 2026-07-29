@@ -13,16 +13,15 @@ jobs:
   update:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Validate current manifests
         run: python scripts/update-manifests.py --check
       - name: Update upstream latest stable metadata
         run: bash envpilot.sh update-manifests
       - name: Open PR if manifests changed
-        uses: peter-evans/create-pull-request@v6
+        uses: peter-evans/create-pull-request@v8
         with:
           commit-message: update envpilot manifests
           title: "[envpilot] update manifests"
           body: "Automated manifest refresh. Review asset rules before merging."
           branch: codex/update-manifests
-

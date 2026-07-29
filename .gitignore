@@ -1,6 +1,8 @@
 # Local/offline payloads
 downloads/*
 !downloads/.gitkeep
+!downloads/mihomo-linux-amd64-compatible-*.gz
+!downloads/mihomo-windows-amd64-compatible-*.zip
 
 # Secrets and generated configs
 *.key
@@ -19,4 +21,3 @@ install-report.json
 Thumbs.db
 .idea/
 .vscode/
-

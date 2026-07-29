@@ -1,324 +1,185 @@
 # envpilot
 
-`envpilot` 是一个面向普通用户的跨平台环境引导工具。目标是在没有管理员权限的新机器或服务器上，尽量自动完成常用环境预安装、代理配置、Shell 配置备份替换、Codex/GitHub/tmux 等工具准备。
-
-它默认优先在线安装，并根据当前系统、CPU 架构、Shell、root/非 root、已有命令和网络代理状态选择合适的安装方式。离线模式用于无外网或受限服务器。
+envpilot 是一个面向非管理员用户的跨平台环境引导仓库，用来在新服务器、工作站或远程主机上，按可控顺序安装常用工具、准备 shell 配置、启用代理、配置 Codex，并保留可回退的操作记录。
 
 ## 快速开始
 
-Linux/macOS/WSL/Git Bash:
+Linux/macOS/WSL/Git Bash：
 
 ```bash
 git clone https://github.com/zhangyehao/envpilot.git
 cd envpilot
 bash envpilot.sh doctor
-bash envpilot.sh install
+bash envpilot.sh install mihomo
 bash envpilot.sh apply-shell
+source ~/.bashrc
+mihomo_start
+proxy_on
+bash envpilot.sh install
 ```
 
-Windows PowerShell:
+Windows PowerShell：
 
 ```powershell
 git clone https://github.com/zhangyehao/envpilot.git
 cd envpilot
 .\envpilot.ps1 doctor
-.\envpilot.ps1 install
+.\envpilot.ps1 install mihomo
 .\envpilot.ps1 apply-shell
 ```
 
-如果服务器不能直接访问外网：
+推荐顺序是先装 `mihomo`，再 `apply-shell`，然后手动 `mihomo_start` 和 `proxy_on`，最后再跑其余安装。这样后续安装尽量不被网络波动卡住。默认不会自动启动代理，也不会在 shell 里偷偷改代理变量。
+
+## 命令
+
+### `doctor`
+只检查，不修改。会输出系统、架构、shell、root/非 root、已安装工具、代理端口和缓存包状态。
+
+### `install`
+安装一个或多个组件。
 
 ```bash
-bash envpilot.sh install --mode offline
-```
-
-将安装包预先放到 `downloads/`，或者使用：
-
-```bash
-bash envpilot.sh install mihomo --mode offline --asset-path /path/to/mihomo.gz
-```
-
-## 常用命令
-
-```bash
-bash envpilot.sh doctor
+bash envpilot.sh install
 bash envpilot.sh install mihomo
 bash envpilot.sh install conda
-bash envpilot.sh install codex
 bash envpilot.sh install github
 bash envpilot.sh install tmux
-bash envpilot.sh apply-shell
-bash envpilot.sh rollback
-bash envpilot.sh resume
-bash envpilot.sh reset
 ```
 
-PowerShell 使用同名命令：
+- `install all` 的默认顺序是 `mihomo -> conda -> mamba -> codex -> github -> tmux`
+- 默认在线安装
+- 可以加 `--mode offline`
+- 可以加 `--asset-path PATH`
+- 可以加 `--prefix PATH`
+- 可以加 `--yes`
 
-```powershell
-.\envpilot.ps1 doctor
-.\envpilot.ps1 install github
-.\envpilot.ps1 rollback
-```
+### `apply-shell`
+备份当前 shell profile，然后替换为 envpilot 模板。
 
-## 交互、中断和恢复
+- Linux 通常处理 `~/.bashrc` 或 `~/.zshrc`
+- Windows 处理 PowerShell profile
+- 会把可迁移的 PATH / module / conda 片段写入 `~/.config/envpilot/shell.local`
 
-- 所有关键输入都会先校验，例如 mihomo 订阅链接、安装路径、是否替换 Shell 配置。
-- 输入错误时可以重新输入。
-- `Ctrl+C` 会退出当前流程，已经完成的组件会记录到 `~/.config/envpilot/state`。
-- 再次运行：
+### `rollback`
+回退最近一次由 envpilot 备份的配置文件。
 
-```bash
-bash envpilot.sh resume
-```
+- 只恢复最后一条备份记录
+- 不是整机回滚
+- 主要用于 shell profile、Codex 配置、mihomo 配置这类文件
 
-会跳过已完成组件并继续。
+### `resume`
+继续上一次中断的安装流程。
 
-如果希望完全重新开始：
+- 会读取状态文件
+- 已完成的步骤会跳过
+- 适合 `Ctrl+C` 后继续跑
 
-```bash
-bash envpilot.sh reset
-```
+### `reset`
+清掉 envpilot 的状态文件，让安装步骤可以重新来。
 
-## 安装报告
+- 不删除已安装的软件
+- 只清理流程状态
 
-每次安装会写入：
+### `update-manifests`
+刷新 manifest 里的上游稳定版本元数据。
 
-```text
-~/.config/envpilot/install-report.json
-~/.config/envpilot/logs/
-```
+### `update-mihomo-cache`
+刷新仓库里保留的两份稳定兼容 mihomo 缓存：
 
-报告包含：
+- `downloads/mihomo-linux-amd64-compatible-*.gz`
+- `downloads/mihomo-windows-amd64-compatible-*.zip`
 
-- 检测到的 OS、架构、Shell、root 状态
-- 安装了什么
-- 为什么选择这个版本或资产
-- 下载来源
-- 安装路径
-- 跳过原因
-- 用户下一步需要执行的命令
+## mihomo
 
-## Shell 配置策略
+安装前会提示先去 [proxy.yanhuoapi.com](https://proxy.yanhuoapi.com/) 注册账号，并复制 **Clash/Mihomo 订阅链接**。
 
-`apply-shell` 会先备份再替换：
+安装逻辑是：
 
-```text
-~/.bashrc.bak.YYYYmmddHHMMSS
-~/.zshrc.bak.YYYYmmddHHMMSS
-PowerShell_profile.ps1.bak.YYYYmmddHHMMSS
-```
+1. 优先使用 `downloads/` 里的对应缓存包
+2. 没有缓存时再去 GitHub Releases 选 stable release
+3. 排除 alpha / beta / rc / prerelease
+4. 安装到 `~/software/mihomo/mihomo`
+5. 写入 `~/software/mihomo/start_mihomo.sh`
 
-模板设计原则：
-
-- 非交互 Shell 不输出、不加载 module、不初始化 Conda、不启动后台服务。
-- 所有命令先检测再使用。
-- API key 不写进主 Shell 配置。
-- 可迁移的 PATH、`module load`、Conda 路径会写入：
-
-```text
-~/.config/envpilot/shell.local
-```
-
-明文密钥不会迁移。请手动写到：
-
-```text
-~/.config/secrets/api.env
-```
-
-示例：
-
-```bash
-mkdir -p ~/.config/secrets
-cp templates/api.env.example ~/.config/secrets/api.env
-chmod 600 ~/.config/secrets/api.env
-vim ~/.config/secrets/api.env
-```
-
-使用密钥运行 Codex：
-
-```bash
-with_secrets codex
-```
-
-## Conda 和 Mamba
-
-默认只安装 Miniconda；如果明确需要 Anaconda，可运行 `bash envpilot.sh install conda --conda-distribution anaconda`。Linux 上 glibc >= 2.28 使用官方最新 Miniconda；glibc 2.17-2.27 会自动选最新仍可安装的官方归档版 Miniconda，不再回退到过旧安装器。Anaconda 也会按同样规则选择最新可安装版本。默认目标目录为 `~/software/miniconda3` 或 `~/software/anaconda3`。
-
-不会执行 `conda init`，也不会自动 `conda activate base`。安装前会打印安装器 URL、离线匹配规则和目标目录；下载时会显示来源、目标文件和进度，避免长时间无输出。
-
-写入的 `.condarc`：
-
-```yaml
-channels:
-  - https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge
-  - https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/bioconda
-show_channel_urls: true
-channel_priority: strict
-```
-
-`mamba` 只用于 Conda 环境求解，不用于安装 `tmux`。
-
-## mihomo 代理
-
-安装前请先在以下网站注册并获取订阅：
-
-```text
-https://proxy.yanhuoapi.com/
-```
-
-复制的是 **Clash/Mihomo 的订阅链接**，不是网页地址、节点名称或 API key。
-
-envpilot 会：
-
-- `bash envpilot.sh install` 默认首先处理 mihomo，然后才处理 Conda、Codex、GitHub CLI、tmux 等其他组件。
-- 在线模式会先查询 MetaCubeX/mihomo stable release，排除 alpha/beta/rc/prerelease，再打印选中的 asset URL。
-- 离线模式会从 `--asset-path` 或 `downloads/` 选择匹配的 `mihomo-*` 安装包。
-- 安装到 `~/software/mihomo/mihomo`。
-- 写入启动脚本 `~/software/mihomo/start_mihomo.sh`。
-- 强制 `allow-lan: false`、`bind-address: 127.0.0.1`、`mixed-port: 7890`。
-- 不会自动启动；需要 `apply-shell` 后手动运行 `mihomo_start`。
-
-常用命令：
+mihomo 不会自动启动。安装后建议手动执行：
 
 ```bash
 mihomo_start
-proxy_status
 proxy_on
-proxy_off
-mihomo_stop
+proxy_status
 ```
 
-检查代理：
+## Conda / Mamba
 
-```bash
-curl --proxy http://127.0.0.1:7890 https://ipinfo.io/ip
-curl -x http://127.0.0.1:7890 -I https://api.openai.com
-```
+- 默认优先安装可用的最新 Miniconda 或 Anaconda
+- 会根据 OS / 架构 / libc 选择可安装版本
+- 不会自动 `conda init`
+- `mamba` 只作为 Conda 环境里的求解器，不用于安装 tmux
 
 ## Codex
 
-Codex 配置使用环境变量密钥：
+Codex 配置使用：
 
 ```toml
 env_key = "OPENAI_API_KEY"
 ```
 
-不会默认写 `~/.codex/auth.json`。
-
-把密钥放入：
+不要默认写入 `auth.json`。推荐把密钥放在：
 
 ```text
 ~/.config/secrets/api.env
 ```
 
-然后运行：
+然后通过：
 
 ```bash
 with_secrets codex
 ```
 
-默认接口地址为：
-
-```text
-https://yanhuoapi.com/v1
-```
-
-可以在安装前覆盖：
-
-```bash
-EP_CODEX_BASE_URL="https://example.com/v1" bash envpilot.sh install codex
-```
-
 ## GitHub
 
-GitHub CLI 用于私有仓库 clone、创建仓库、PR/issue 等工作。普通拉取优先用 HTTPS；如果你已经配置 SSH key 且需要免密码推送，再切换到 SSH。
+普通 clone 优先用 HTTPS，因为很多服务器环境里还没登录 GitHub 账号，SSH key 也未必准备好了。
 
 ```bash
 git clone https://github.com/zhangyehao/envpilot.git
+```
+
+如果你要用 SSH 推送，再执行：
+
+```bash
 gh auth login -h github.com --git-protocol ssh
 ssh -T git@github.com
 ```
 
-如果私有仓库无法 clone，先确认账号是否有 collaborator/team 读权限。
-
 ## tmux
 
-`tmux` 必须是直接可用的命令，不通过 Conda 环境提供。
+tmux 必须是系统里能直接调用的命令，不通过 Conda 提供。
 
-安装优先级：
+优先级：
 
-1. 使用系统已有 `tmux`
-2. 尝试加载 `module load tmux`
-3. root 或 macOS Homebrew 环境使用包管理器
-4. 非 root Linux 构建 `ncurses + libevent + tmux` 到 `~/.local/envpilot`，并链接到 `~/.local/bin/tmux`
+1. 系统自带 tmux
+2. module load tmux
+3. root / 包管理器
+4. 非 root Linux 用户态构建
+5. Windows 原生不承诺，优先 WSL / MSYS2 / Git Bash
 
-Windows 原生不承诺 tmux；如需 tmux，请使用 WSL、MSYS2 或 Git Bash 对应的 Unix 环境。
+## Actions
 
-## 离线资产
+- `test.yml`：语法检查和基础回归测试
+- `update-manifests.yml`：刷新 manifest 的上游稳定元数据
+- `update-mihomo-cache.yml`：刷新 `downloads/` 里的 mihomo 缓存包
+- `release-assets.yml`：只打包 envpilot 自己的 release 产物，不上传第三方安装包
 
-不要把二进制包提交到 Git。`downloads/` 已被 `.gitignore` 忽略，适合维护者或用户在本机暂存第三方安装包。
+## 下载缓存
 
-推荐来源：
+`downloads/` 默认仍然忽略大部分第三方安装包，但允许保留两份受控的 mihomo 缓存文件。其余二进制包仍然不要提交到 Git 历史。
 
-- 用户手动放入 `downloads/`
-- 使用 `--asset-path` 指定本地文件
-- 如必须集中分发，使用单独的 offline-cache 仓库或专用非版本 tag，不要上传到 `v0.x.y` 这类 envpilot 正式 release
+## 报告与状态
 
-`downloads/` 不会被 GitHub Actions 自动填充。Actions 运行在 GitHub-hosted runner 上，不能访问你本机的 `D:\`、`E:\` 或服务器目录。
+每次安装都会写：
 
-## GitHub Actions 触发
+- `~/.config/envpilot/install-report.json`
+- `~/.config/envpilot/logs/`
+- `~/.config/envpilot/state*`
 
-`update-manifests.yml`：
-
-- 每周一自动运行一次。
-- 也可以在 GitHub 网页进入 `Actions` -> `update-manifests` -> `Run workflow` 手动触发。
-- 它会运行 `scripts/update-manifests.py` 查询上游 stable 元数据，当前覆盖 mihomo、GitHub CLI、Codex、Conda 和 tmux。
-- 发现 manifest 变化时自动开 PR，不直接改 `main`。
-- 它不安装软件；实际安装仍由运行时 resolver 根据当前系统、架构、libc、root 状态和 manifest 选择资产。
-
-`release-assets.yml`：
-
-- `v*` tag push 会自动创建/更新 Release，并生成 `envpilot-<version>.tar.gz`、`.zip` 和 `.sha256`。
-- 也可以在 GitHub 网页进入 `Actions` -> `release-assets` -> `Run workflow` 手动补发历史 tag，例如 `v0.1.3` 或 `0.1.3`。
-- 它只打包 envpilot 仓库本身，不上传第三方安装包，也不读取 `downloads/`。
-
-本机收集第三方安装包到 `downloads/`：
-
-```powershell
-.\scripts\collect-assets.ps1 -DryRun
-.\scripts\collect-assets.ps1 -MaxSizeMB 2000
-```
-
-Linux/macOS/WSL：
-
-```bash
-ENVPILOT_ASSET_MAX_SIZE_MB=2000 bash scripts/collect-assets.sh --dry-run
-ENVPILOT_ASSET_MAX_SIZE_MB=2000 bash scripts/collect-assets.sh
-```
-
-如果以后确实需要集中保存第三方离线包，只用于独立缓存仓库或专用非版本 tag，例如：
-
-```powershell
-.\scripts\collect-assets.ps1 -UploadRelease -Tag offline-cache-20260727 -Repo zhangyehao/envpilot-offline-cache
-```
-
-```bash
-bash scripts/collect-assets.sh --upload-release --tag offline-cache-20260727 --repo zhangyehao/envpilot-offline-cache
-```
-## 安全边界
-
-- 不写系统目录，除非当前用户明确以 root 运行并确认。
-- 不提交密钥、订阅链接、mihomo `config.yaml`、Codex `auth.json`。
-- 所有 profile 替换前都有备份。
-- 可用 `rollback` 恢复最近一次备份。
-
-## 维护者文档
-
-新增组件、维护 manifest、CI 更新策略见：
-
-```text
-docs/EXTENDING.zh-CN.md
-docs/EXTENDING.md
-```
-
+这些文件用于诊断、恢复和回退。

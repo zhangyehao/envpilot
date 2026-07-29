@@ -26,6 +26,16 @@ ep_fetch_url()
     ep_download_note "Downloaded: $dest"
 }
 
+ep_find_cached_asset()
+{
+    local pattern="$1"
+    local candidate
+
+    candidate="$(find "$ENVPILOT_ROOT/downloads" -maxdepth 1 -type f -name "$pattern" 2>/dev/null | sort -r | head -n 1 || true)"
+    [ -n "$candidate" ] || return 1
+    printf '%s' "$candidate"
+}
+
 ep_find_offline_asset()
 {
     local pattern="$1"
@@ -38,7 +48,7 @@ ep_find_offline_asset()
         return 0
     fi
 
-    candidate="$(find "$ENVPILOT_ROOT/downloads" -maxdepth 1 -type f -name "$pattern" 2>/dev/null | sort -r | head -n 1 || true)"
+    candidate="$(ep_find_cached_asset "$pattern" 2>/dev/null || true)"
     [ -n "$candidate" ] || ep_die "Offline asset not found in downloads/: $pattern"
     ep_download_note "Using downloads/ offline asset: $candidate"
     printf '%s' "$candidate"

@@ -28,14 +28,18 @@ usage()
 envpilot - cross-platform user-space environment bootstrapper
 
 Usage:
-  bash envpilot.sh doctor
+  bash envpilot.sh doctor             Show system, shell, proxy, and installed tool status.
   bash envpilot.sh install [all|mihomo|conda|mamba|codex|github|tmux] [--mode online|offline] [--prefix PATH] [--asset-path PATH] [--yes]
+                                      Install the selected component(s). Online is the default.
   bash envpilot.sh apply-shell [--yes]
-  bash envpilot.sh rollback
-  bash envpilot.sh resume
-  bash envpilot.sh reset
-  bash envpilot.sh update-manifests
-  bash envpilot.sh self-test
+                                      Back up and replace the active shell profile.
+  bash envpilot.sh rollback           Restore the most recent envpilot-managed backup.
+  bash envpilot.sh resume             Continue an interrupted install using saved state.
+  bash envpilot.sh reset              Clear saved state so install steps can run again.
+  bash envpilot.sh update-manifests   Refresh manifest latest metadata from upstream.
+  bash envpilot.sh update-mihomo-cache
+                                      Refresh the bundled stable mihomo assets in downloads/.
+  bash envpilot.sh self-test          Run the repo test suite.
 
 Options:
   --mode online|offline   Prefer live downloads or local downloads/ assets. Default: online.
@@ -193,6 +197,14 @@ run_update_manifests()
     ep_update_manifests
 }
 
+run_update_mihomo_cache()
+{
+    local python
+    python="$(command -v python3 || command -v python || true)"
+    [ -n "$python" ] || ep_die "python3 or python is required to refresh the mihomo cache"
+    "$python" "$ENVPILOT_ROOT/scripts/update-mihomo-cache.py"
+}
+
 run_self_test()
 {
     bash "$ENVPILOT_ROOT/tests/run-tests.sh"
@@ -209,6 +221,7 @@ main()
         resume) run_resume ;;
         reset) run_reset ;;
         update-manifests) run_update_manifests ;;
+        update-mihomo-cache) run_update_mihomo_cache ;;
         self-test) run_self_test ;;
         help|-h|--help) usage ;;
         *) usage; exit 2 ;;
@@ -216,4 +229,3 @@ main()
 }
 
 main "$@"
-

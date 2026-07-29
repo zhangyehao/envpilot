@@ -8,7 +8,7 @@ jobs:
   linux:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Run shell tests
         run: bash tests/run-tests.sh
       - name: ShellCheck
@@ -20,15 +20,14 @@ jobs:
   macos:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Bash syntax
         run: bash tests/run-tests.sh
 
   windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: PowerShell tests
         shell: pwsh
         run: ./tests/test-envpilot.ps1
-

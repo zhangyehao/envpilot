@@ -21,24 +21,32 @@ ep_mihomo_asset_regex()
 ep_mihomo_offline_pattern()
 {
     case "$EP_OS:$EP_ARCH" in
-        linux:amd64) printf "mihomo-linux-amd64-compatible-*.gz" ;;
-        linux:arm64) printf "mihomo-linux-arm64-*.gz" ;;
-        darwin:amd64) printf "mihomo-darwin-amd64*.gz" ;;
-        darwin:arm64) printf "mihomo-darwin-arm64*.gz" ;;
-        windows-unix:amd64) printf "mihomo-windows-amd64-compatible-*.zip" ;;
-        windows-unix:arm64) printf "mihomo-windows-arm64-*.zip" ;;
+        linux:amd64) printf 'mihomo-linux-amd64-compatible-*.gz' ;;
+        linux:arm64) printf 'mihomo-linux-arm64-*.gz' ;;
+        darwin:amd64) printf 'mihomo-darwin-amd64*.gz' ;;
+        darwin:arm64) printf 'mihomo-darwin-arm64*.gz' ;;
+        windows-unix:amd64) printf 'mihomo-windows-amd64-compatible-*.zip' ;;
+        windows-unix:arm64) printf 'mihomo-windows-arm64-*.zip' ;;
         *) ep_die "No mihomo offline asset pattern for $EP_OS/$EP_ARCH" ;;
     esac
 }
 
 ep_doctor_mihomo()
 {
-    local bin
+    local bin cached offline_pattern
+
     bin="$(ep_mihomo_bin)"
+    offline_pattern="$(ep_mihomo_offline_pattern)"
     if [ -x "$bin" ]; then
         ep_log "mihomo: found at $bin"
     else
         ep_warn "mihomo: not found at $bin"
+    fi
+    cached="$(ep_find_cached_asset "$offline_pattern" 2>/dev/null || true)"
+    if [ -n "$cached" ]; then
+        ep_log "mihomo cache: found at $cached"
+    else
+        ep_warn "mihomo cache: not found in downloads/"
     fi
     if ep_command_exists ss && ss -lntH "sport = :7890" 2>/dev/null | grep -q .; then
         ep_log "Proxy port: 7890 is listening"
@@ -75,7 +83,7 @@ ep_patch_mihomo_config()
 ep_install_mihomo()
 {
     ep_require_unix_runtime
-    local bin install_dir config_dir asset_regex offline_pattern asset archive source subscription version
+    local bin install_dir config_dir asset_regex offline_pattern asset archive source version
     bin="$(ep_mihomo_bin)"
     install_dir="$(dirname "$bin")"
     config_dir="$HOME/.config/mihomo"
@@ -90,10 +98,14 @@ ep_install_mihomo()
     ep_log "Before config download, register at https://proxy.yanhuoapi.com/ and copy the Clash/Mihomo subscription URL."
 
     if [ "$EP_MODE" = "offline" ]; then
-        asset="$(ep_find_offline_asset "$offline_pattern")"
-        source="$asset"
+        source="$(ep_find_offline_asset "$offline_pattern")"
     else
-        source="$(ep_github_asset_url MetaCubeX mihomo "$asset_regex")"
+        source="$(ep_find_cached_asset "$offline_pattern" 2>/dev/null || true)"
+        if [ -n "$source" ]; then
+            ep_log "Using bundled downloads/ mihomo asset before network: $source"
+        else
+            source="$(ep_github_asset_url MetaCubeX mihomo "$asset_regex")"
+        fi
     fi
     ep_log "Plan: install mihomo"
     ep_log "Source: $source"
@@ -109,7 +121,7 @@ ep_install_mihomo()
     }
 
     mkdir -p "$install_dir" "$config_dir" "$HOME/logs"
-    if [ "$EP_MODE" = "offline" ]; then
+    if [ -f "$source" ]; then
         cp "$source" "$archive"
     else
         ep_fetch_url "$source" "$archive"
@@ -128,6 +140,7 @@ ep_install_mihomo()
     cp "$ENVPILOT_ROOT/templates/start_mihomo.sh" "$install_dir/start_mihomo.sh"
     chmod 755 "$install_dir/start_mihomo.sh"
 
+    version=""
     subscription="${ENVPILOT_MIHOMO_SUBSCRIPTION_URL:-}"
     if [ -z "$subscription" ] && [ "$EP_ASSUME_YES" != "1" ]; then
         ep_prompt_optional_url subscription "Paste Clash/Mihomo subscription URL"

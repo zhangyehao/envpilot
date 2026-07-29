@@ -13,25 +13,39 @@ for file in "$ROOT"/lib/*.sh "$ROOT"/components/*.sh "$ROOT"/scripts/*.sh "$ROOT
     bash -n "$file"
 done
 python -c 'import pathlib, sys; path = pathlib.Path(sys.argv[1]); compile(path.read_text(encoding="utf-8"), str(path), "exec")' "$ROOT/scripts/update-manifests.py"
+python -c 'import pathlib, sys; path = pathlib.Path(sys.argv[1]); compile(path.read_text(encoding="utf-8"), str(path), "exec")' "$ROOT/scripts/update-mihomo-cache.py"
 python "$ROOT/scripts/update-manifests.py" --check >/tmp/envpilot-manifest-check.out
+python "$ROOT/scripts/update-mihomo-cache.py" --check >/tmp/envpilot-mihomo-cache-check.out
 
 echo "[TEST] workflow semantics"
 grep -q 'git archive' "$ROOT/.github/workflows/release-assets.yml"
 ! grep -q 'files: downloads/\*' "$ROOT/.github/workflows/release-assets.yml"
-grep -q 'actions/checkout@v6' "$ROOT/.github/workflows/release-assets.yml"
+grep -q 'actions/checkout@v7' "$ROOT/.github/workflows/release-assets.yml"
 grep -q 'softprops/action-gh-release@v3' "$ROOT/.github/workflows/release-assets.yml"
 grep -q 'push:' "$ROOT/.github/workflows/release-assets.yml"
 grep -q 'tags:' "$ROOT/.github/workflows/release-assets.yml"
 grep -q 'generate_release_notes: true' "$ROOT/.github/workflows/release-assets.yml"
 grep -q 'refs/tags/v' "$ROOT/.github/workflows/release-assets.yml"
+grep -q 'actions/checkout@v7' "$ROOT/.github/workflows/update-manifests.yml"
 grep -q 'scripts/update-manifests.py --check' "$ROOT/.github/workflows/update-manifests.yml"
+grep -q 'peter-evans/create-pull-request@v8' "$ROOT/.github/workflows/update-manifests.yml"
+grep -q 'scripts/update-mihomo-cache.py --check' "$ROOT/.github/workflows/update-mihomo-cache.yml"
+grep -q 'scripts/update-mihomo-cache.py' "$ROOT/.github/workflows/update-mihomo-cache.yml"
+grep -q 'peter-evans/create-pull-request@v8' "$ROOT/.github/workflows/update-mihomo-cache.yml"
 
 echo "[TEST] install order and resolver policy"
 grep -q 'for component in mihomo conda mamba codex github tmux' "$ROOT/envpilot.sh"
+grep -q 'update-mihomo-cache' "$ROOT/envpilot.sh"
+grep -q 'ep_find_cached_asset' "$ROOT/lib/download.sh"
+grep -q 'Using bundled downloads/ mihomo asset before network' "$ROOT/components/mihomo.sh"
+grep -q 'Find-CachedAsset' "$ROOT/envpilot.ps1"
 grep -q 'EP_LEGACY_MINICONDA_VERSION' "$ROOT/components/conda.sh"
 grep -q 'ep_mihomo_offline_pattern' "$ROOT/components/mihomo.sh"
 grep -q 'Source URL:' "$ROOT/lib/download.sh"
 ! grep -qi 'miniforge' "$ROOT/components/conda.sh" "$ROOT/manifests/conda.json" "$ROOT/templates/bashrc" "$ROOT/templates/zshrc" "$ROOT/scripts/collect-assets.sh" "$ROOT/scripts/collect-assets.ps1"
+
+grep -q '^!downloads/mihomo-linux-amd64-compatible-\*\.gz$' "$ROOT/.gitignore"
+grep -q '^!downloads/mihomo-windows-amd64-compatible-\*\.zip$' "$ROOT/.gitignore"
 
 (
     ENVPILOT_ROOT="$ROOT"

@@ -1,65 +1,65 @@
 # Extending envpilot
 
-Chinese version: [EXTENDING.zh-CN.md](EXTENDING.zh-CN.md)
+This document is for maintainers who add components, update manifests, or change automation policy.
 
-This document is for maintainers who add components, platforms, or updater logic.
+## Core rules
 
-## Design rules
+- Prefer user-space installs.
+- Do not require administrator privileges unless a platform truly needs it.
+- Explain what will be installed, why that version was chosen, where it will be written, and whether config files will change.
+- Never write secrets, subscription URLs, or generated credentials into tracked profile files.
+- Keep non-interactive shells quiet.
+- Do not auto-start sensitive services unless the user explicitly opts in.
 
-- Keep user-space installation as the default.
-- Detect before using a command.
-- Print what will be installed, why that asset was selected, where it will be installed, and what config will change.
-- Do not commit secrets, subscription URLs, generated configs, logs, or binary installers.
-- Avoid changing shell startup behavior for non-interactive sessions.
-- Do not install direct command-line tools through Conda when users expect them outside Conda environments.
+## Component contract
 
-## Adding a component
+A component usually provides these shell functions:
 
-Add four pieces:
+- `ep_doctor_<name>()`
+- `ep_install_<name>()`
 
-1. `components/<name>.sh`
-2. Optional Windows support in `envpilot.ps1`
-3. `manifests/<name>.json`
-4. Tests and README examples
+The installer should:
 
-The shell component must expose:
+1. detect whether the component is already installed
+2. resolve the platform-specific asset or package manager path
+3. print a short plan before downloading or modifying files
+4. back up any user-owned file before changing it
+5. record state with `ep_state_mark_done <name>`
+6. write a report event for install, skip, or failure
 
-```bash
-ep_doctor_<name>()
-ep_install_<name>()
-```
+If a component needs Windows support, add the PowerShell equivalent in `envpilot.ps1`.
 
-The install function should:
+## Manifest policy
 
-- call `ep_require_unix_runtime` when appropriate
-- detect existing installation first
-- resolve platform-specific assets
-- summarize the action before mutating files
-- call `ep_state_mark_done <name>` on success
-- call `ep_report_event <name> ...` for installed, skipped, or failed states
+Each manifest should describe:
 
-## Manifest rules
-
-Each manifest should document:
-
-- upstream source
-- stable release policy
+- the upstream source
+- stable release selection rules
 - OS and architecture mapping
 - offline filename pattern
-- excluded versions such as alpha, beta, rc, pre, prerelease
-- expected install path and config files
+- exclusions for prerelease content
+- expected install path and config file behavior
 
-The resolver may query upstream APIs at runtime, but must stop with a clear message when no safe match exists.
+Resolvers may query upstream APIs at runtime, but if a safe choice cannot be made, they must stop and tell the user instead of guessing.
 
-## CI/CD strategy
+## Workflow policy
 
-Use three workflow types:
+- `test.yml`: parser / syntax checks and fast regression tests.
+- `update-manifests.yml`: refresh manifest metadata from upstream stable releases and open a PR.
+- `update-mihomo-cache.yml`: refresh the curated stable mihomo cache files under `downloads/` and open a PR.
+- `release-assets.yml`: package envpilot release artifacts only. Do not upload third-party installers there.
 
-- `test.yml`: syntax and fixture tests on every PR and push.
-- `update-manifests.yml`: scheduled or manual manifest refresh through `scripts/update-manifests.py`; writes upstream stable metadata into manifest `latest` fields and opens PRs instead of committing directly to `main`.
-- `release-assets.yml`: automatically runs on `v*` tag push and also supports manual `workflow_dispatch` so maintainers can backfill historical tags. It attaches envpilot-owned `.tar.gz`, `.zip`, and `.sha256` assets to the release tag.
+## Cache and downloads policy
 
-Do not store large binaries in Git history. Third-party offline installers, including Miniconda, Anaconda, mihomo, and related payloads, should stay in local ignored `downloads/` by default. If centralized caching is needed, use a separate offline-cache repository or a dedicated non-version tag instead of normal envpilot `v0.x.y` releases.
+`downloads/` is a local cache for installers and other payloads that the maintainer wants to keep nearby. Most files remain ignored by default.
+
+Current exception policy:
+
+- keep the curated stable `mihomo-linux-amd64-compatible-*.gz`
+- keep the curated stable `mihomo-windows-amd64-compatible-*.zip`
+- continue ignoring other large third-party binaries unless a future policy explicitly adds a new exception
+
+If a new cache file is needed, add a clear rule to `.gitignore`, update the relevant updater, and document the reason in this file.
 
 ## State, resume, and rollback
 
@@ -75,52 +75,39 @@ Rollback log:
 ~/.config/envpilot/rollback.log
 ```
 
-If a component writes a user config, use `ep_backup_file` first. If a component writes multiple files, back up each file separately and keep the most important user-facing file last so `rollback` restores that file by default.
+If a component writes a user config, back it up before writing. If a component writes several files, back them up separately and keep the user-visible config last so `rollback` restores the file the user most likely wants first.
 
-## Shell templates
+`rollback` only restores the latest backup record. It is not a full system rollback.
 
-Rules for `.bashrc`, `.zshrc`, and PowerShell profiles:
+## Shell profile policy
 
-- non-interactive shell must return quietly
-- do not auto-start mihomo unless explicitly enabled
-- do not auto-load secrets by default
-- do not auto-activate Conda base
-- source local overrides from `~/.config/envpilot`
+Shell templates must:
 
-If future templates need more platform-specific behavior, add a new template instead of making one large conditional file.
+- stay quiet in non-interactive shells
+- avoid auto-starting mihomo by default
+- avoid auto-loading secrets by default
+- avoid auto-activating Conda base by default
+- load user-specific additions from `~/.config/envpilot/shell.local`
 
-## Testing new components
+If a profile migration is needed, prefer writing a new template or helper file instead of growing the main profile into a branchy script.
 
-Add fixture tests for:
+## Tests
 
-- missing dependency
-- existing installation
-- online asset resolver excluding prereleases
-- offline missing asset
-- report event creation
-- rollback record creation when configs are changed
+Add fixtures for:
 
-Prefer fast tests that do not download large assets. Network-heavy checks belong in scheduled CI or manual release workflows.
+- already-installed behavior
+- offline missing-asset errors
+- resolver prerelease filtering
+- report generation
+- rollback record creation
+- cache-first mihomo selection
 
+Prefer fast tests that do not download large files. Networked checks belong in scheduled CI or release workflows.
 
-## Offline asset collection
+## Maintenance notes
 
-GitHub Actions runs on GitHub-hosted runners and cannot read a maintainer workstation path such as `D:\software`, `E:\software`, or `~/Downloads`. Collect local installers on the maintainer machine first.
-
-Windows:
-
-```powershell
-.\scripts\collect-assets.ps1 -DryRun
-.\scripts\collect-assets.ps1 -MaxSizeMB 2000
-```
-
-Unix-like:
-
-```bash
-ENVPILOT_ASSET_MAX_SIZE_MB=2000 bash scripts/collect-assets.sh --dry-run
-ENVPILOT_ASSET_MAX_SIZE_MB=2000 bash scripts/collect-assets.sh
-```
-
-The scripts copy matching stable Miniconda/Anaconda/mihomo installers into ignored `downloads/` and write `downloads/assets-index.json`. Treat `downloads/` as a local offline cache and do not commit binary payloads to Git history.
-
-`-UploadRelease` / `--upload-release` is only for a separate offline-cache repository or a dedicated non-version tag. The scripts reject uploading third-party installers to `zhangyehao/envpilot` normal `v0.x.y` releases.
+- Update README, manifests, and tests together when behavior changes.
+- Keep the default behavior conservative.
+- Treat Windows PowerShell and Unix-like shells as separate execution surfaces.
+- When adding a new component or cache policy, update both the implementation and the updater workflow.
+- `update-mihomo-cache` is the local / CI entry point for the curated mihomo cache files.
