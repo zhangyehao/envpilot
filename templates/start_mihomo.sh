@@ -30,7 +30,23 @@ if pgrep -u "$USER" -f "mihomo" >/dev/null 2>&1; then
 fi
 
 nohup "$MIHOMO_BIN" -d "$CONFIG_DIR" >> "$LOG_FILE" 2>&1 &
-echo "[INFO] mihomo started. PID=$!"
-echo "[INFO] log file: $LOG_FILE"
-echo "[INFO] proxy: http://127.0.0.1:7890"
+mihomo_pid=$!
 
+attempts=20
+count=0
+while [ "$count" -lt "$attempts" ]; do
+    if ss -lntH "sport = :7890" 2>/dev/null | grep -q .; then
+        echo "[INFO] mihomo started. PID=$mihomo_pid"
+        echo "[INFO] log file: $LOG_FILE"
+        echo "[INFO] proxy: http://127.0.0.1:7890"
+        exit 0
+    fi
+    sleep 1
+    count=$((count + 1))
+done
+
+echo "[ERROR] mihomo did not open proxy port 7890 within ${attempts}s." >&2
+if [ -s "$LOG_FILE" ]; then
+    tail -n 20 "$LOG_FILE" >&2 || true
+fi
+exit 1

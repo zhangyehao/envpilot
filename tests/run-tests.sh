@@ -41,6 +41,8 @@ grep -q 'Using bundled downloads/ mihomo asset before network' "$ROOT/components
 grep -q 'Find-CachedAsset' "$ROOT/envpilot.ps1"
 grep -q 'EP_LEGACY_MINICONDA_VERSION' "$ROOT/components/conda.sh"
 grep -q 'ep_mihomo_offline_pattern' "$ROOT/components/mihomo.sh"
+grep -q 'mihomo_wait_for_port' "$ROOT/templates/bashrc"
+grep -q 'did not open proxy port' "$ROOT/templates/start_mihomo.sh"
 grep -q 'Source URL:' "$ROOT/lib/download.sh"
 ! grep -qi 'miniforge' "$ROOT/components/conda.sh" "$ROOT/manifests/conda.json" "$ROOT/templates/bashrc" "$ROOT/templates/zshrc" "$ROOT/scripts/collect-assets.sh" "$ROOT/scripts/collect-assets.ps1"
 
