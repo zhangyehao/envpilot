@@ -57,7 +57,7 @@ Use three workflow types:
 
 - `test.yml`: syntax and fixture tests on every PR and push.
 - `update-manifests.yml`: scheduled or manual manifest refresh through `scripts/update-manifests.py`; writes upstream stable metadata into manifest `latest` fields and opens PRs instead of committing directly to `main`.
-- `release-assets.yml`: manual packaging workflow that attaches envpilot-owned `.tar.gz`, `.zip`, and `.sha256` assets to a release tag.
+- `release-assets.yml`: automatically runs on `v*` tag push and also supports manual `workflow_dispatch` so maintainers can backfill historical tags. It attaches envpilot-owned `.tar.gz`, `.zip`, and `.sha256` assets to the release tag.
 
 Do not store large binaries in Git history. Third-party offline installers, including Miniconda, Anaconda, mihomo, and related payloads, should stay in local ignored `downloads/` by default. If centralized caching is needed, use a separate offline-cache repository or a dedicated non-version tag instead of normal envpilot `v0.x.y` releases.
 

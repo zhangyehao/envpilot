@@ -55,7 +55,7 @@ resolver 可以在运行时查询上游 API，但如果无法安全判断应安�
 
 - `test.yml`：每次 push/PR 执行语法检查、fixture 测试和 README 命令检查。
 - `update-manifests.yml`：定时或手动运行 `scripts/update-manifests.py`，查询上游 stable 元数据并写入 manifest 的 `latest` 字段；如有变化自动开 PR，不直接提交到 `main`。
-- `release-assets.yml`：维护者手动触发，用 tag 生成 envpilot 自身的 `.tar.gz`、`.zip` 和 `.sha256` release assets。
+- `release-assets.yml`：在 `v*` tag push 时自动创建/更新 Release，也保留手动触发，方便补发历史 tag。它只生成 envpilot 自身的 `.tar.gz`、`.zip` 和 `.sha256` release assets。
 
 不要把大型二进制包放进 Git 历史。第三方离线安装包（包括 Miniconda、Anaconda、mihomo 等）默认只进入本地 `downloads/`；如需集中缓存，使用单独 offline-cache 仓库或专用非版本 tag，不要混入 envpilot 的 `v0.x.y` 正式 release。
 

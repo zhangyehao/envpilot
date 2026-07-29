@@ -1,6 +1,9 @@
 name: release-assets
 
 on:
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
     inputs:
       tag:
@@ -17,19 +20,23 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Validate tag
+      - name: Resolve tag
         id: resolve_tag
         shell: bash
         run: |
           set -euo pipefail
-          tag="${{ inputs.tag }}"
-          if git rev-parse --verify --quiet "refs/tags/$tag" >/dev/null; then
-            resolved_tag="$tag"
-          elif git rev-parse --verify --quiet "refs/tags/v$tag" >/dev/null; then
-            resolved_tag="v$tag"
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            resolved_tag="${GITHUB_REF_NAME}"
           else
-            echo "Tag not found: $tag" >&2
-            exit 1
+            tag="${{ inputs.tag }}"
+            if git rev-parse --verify --quiet "refs/tags/$tag" >/dev/null; then
+              resolved_tag="$tag"
+            elif git rev-parse --verify --quiet "refs/tags/v$tag" >/dev/null; then
+              resolved_tag="v$tag"
+            else
+              echo "Tag not found: $tag" >&2
+              exit 1
+            fi
           fi
           echo "tag=$resolved_tag" >> "$GITHUB_OUTPUT"
       - name: Build envpilot release archives
@@ -46,5 +53,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.resolve_tag.outputs.tag }}
+          name: ${{ steps.resolve_tag.outputs.tag }}
+          generate_release_notes: true
           files: dist/*
           fail_on_unmatched_files: true

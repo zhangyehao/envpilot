@@ -18,6 +18,9 @@ python "$ROOT/scripts/update-manifests.py" --check >/tmp/envpilot-manifest-check
 echo "[TEST] workflow semantics"
 grep -q 'git archive' "$ROOT/.github/workflows/release-assets.yml"
 ! grep -q 'files: downloads/\*' "$ROOT/.github/workflows/release-assets.yml"
+grep -q 'push:' "$ROOT/.github/workflows/release-assets.yml"
+grep -q 'tags:' "$ROOT/.github/workflows/release-assets.yml"
+grep -q 'generate_release_notes: true' "$ROOT/.github/workflows/release-assets.yml"
 grep -q 'refs/tags/v' "$ROOT/.github/workflows/release-assets.yml"
 grep -q 'scripts/update-manifests.py --check' "$ROOT/.github/workflows/update-manifests.yml"
 

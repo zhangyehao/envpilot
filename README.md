@@ -279,9 +279,9 @@ Windows 原生不承诺 tmux；如需 tmux，请使用 WSL、MSYS2 或 Git Bash 
 
 `release-assets.yml`：
 
-- 只能手动触发：`Actions` -> `release-assets` -> `Run workflow`，输入 release tag，例如 `v0.1.3` 或 `0.1.3`。
-- 它打包 envpilot 仓库本身，生成 `envpilot-<version>.tar.gz`、`.zip` 和 `.sha256` 并附加到该 release。
-- 它不上传第三方安装包，不读取 `downloads/`。
+- `v*` tag push 会自动创建/更新 Release，并生成 `envpilot-<version>.tar.gz`、`.zip` 和 `.sha256`。
+- 也可以在 GitHub 网页进入 `Actions` -> `release-assets` -> `Run workflow` 手动补发历史 tag，例如 `v0.1.3` 或 `0.1.3`。
+- 它只打包 envpilot 仓库本身，不上传第三方安装包，也不读取 `downloads/`。
 
 本机收集第三方安装包到 `downloads/`：
 
