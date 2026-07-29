@@ -48,14 +48,21 @@ grep -q 'Source URL:' "$ROOT/lib/download.sh"
     EP_CONDA_DISTRIBUTION="miniconda"
     legacy_url="$(ep_conda_installer_url)"
     case "$legacy_url" in
-        *Miniconda3-py39_4.12.0-Linux-x86_64.sh) ;;
+        *Miniconda3-py312_24.11.1-0-Linux-x86_64.sh) ;;
         *) echo "Expected archived Miniconda for glibc 2.17, got: $legacy_url" >&2; exit 1 ;;
     esac
     EP_CONDA_DISTRIBUTION="anaconda"
     anaconda_url="$(ep_conda_installer_url)"
     case "$anaconda_url" in
-        *Anaconda3-2025.06-0-Linux-x86_64.sh) ;;
+        *Anaconda3-2025.06-1-Linux-x86_64.sh) ;;
         *) echo "Expected Anaconda installer URL, got: $anaconda_url" >&2; exit 1 ;;
+    esac
+
+    EP_GLIBC_VERSION="2.28"
+    anaconda_latest_url="$(ep_conda_installer_url)"
+    case "$anaconda_latest_url" in
+        *Anaconda3-2025.12-2-Linux-x86_64.sh) ;;
+        *) echo "Expected current Anaconda installer URL, got: $anaconda_latest_url" >&2; exit 1 ;;
     esac
 )
 

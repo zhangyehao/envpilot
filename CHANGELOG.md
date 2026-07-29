@@ -13,7 +13,7 @@
 
 - `install all` now installs mihomo first so proxy setup can happen before other network-heavy components.
 - Online/offline downloads now print source URL or selected offline asset, destination path, and transfer progress before long-running work.
-- Conda selection no longer switches to a third-party distribution; default remains Miniconda, with archived Miniconda selected for Linux glibc 2.17-2.27 and Anaconda available by explicit option.
+- Conda selection no longer switches to a third-party distribution; default remains Miniconda, with the newest archived installer selected automatically for older Linux glibc and Anaconda available by explicit option.
 
 ### Fixed
 
@@ -24,7 +24,7 @@
 ### Changed
 
 - Default clone instructions now use HTTPS so users without GitHub SSH keys can get the repository immediately.
-- Linux Conda selection is now glibc-aware: glibc >= 2.28 uses Miniconda, glibc 2.17-2.27 falls back to Miniforge, and the detected glibc version is recorded in install reports.
+- Linux Conda selection is now glibc-aware: glibc >= 2.28 uses the latest official Miniconda/Anaconda installers, older Linux glibc uses the newest archived official installer that still works, and the detected glibc version is recorded in install reports.
 - Updated asset collection and shell templates so offline cache and config lookup cover Miniforge paths as well.
 
 ### Fixed

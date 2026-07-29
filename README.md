@@ -143,7 +143,7 @@ with_secrets codex
 
 ## Conda 和 Mamba
 
-默认只安装 Miniconda；如果明确需要 Anaconda，可运行 `bash envpilot.sh install conda --conda-distribution anaconda`。Linux 上 glibc >= 2.28 使用 Miniconda latest；glibc 2.17-2.27 不再切换到第三方发行版，而是使用归档的兼容 Miniconda 安装器。默认目标目录为 `~/software/miniconda3` 或 `~/software/anaconda3`。
+默认只安装 Miniconda；如果明确需要 Anaconda，可运行 `bash envpilot.sh install conda --conda-distribution anaconda`。Linux 上 glibc >= 2.28 使用官方最新 Miniconda；glibc 2.17-2.27 会自动选最新仍可安装的官方归档版 Miniconda，不再回退到过旧安装器。Anaconda 也会按同样规则选择最新可安装版本。默认目标目录为 `~/software/miniconda3` 或 `~/software/anaconda3`。
 
 不会执行 `conda init`，也不会自动 `conda activate base`。安装前会打印安装器 URL、离线匹配规则和目标目录；下载时会显示来源、目标文件和进度，避免长时间无输出。
 

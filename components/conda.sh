@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
-EP_LEGACY_MINICONDA_VERSION="${EP_LEGACY_MINICONDA_VERSION:-py39_4.12.0}"
+EP_LEGACY_MINICONDA_VERSION="${EP_LEGACY_MINICONDA_VERSION:-py312_24.11.1-0}"
+EP_LEGACY_ANACONDA_VERSION="${EP_LEGACY_ANACONDA_VERSION:-2025.06-1}"
 
 ep_conda_bin()
 {
@@ -64,6 +65,15 @@ ep_conda_uses_legacy_miniconda()
     ! ep_version_at_least "$EP_GLIBC_VERSION" "2.28"
 }
 
+ep_conda_uses_legacy_anaconda()
+{
+    [ "$(ep_conda_distribution)" = "anaconda" ] || return 1
+    [ "$EP_OS" = "linux" ] || return 1
+    [ "$EP_LIBC" = "glibc" ] || return 1
+    [ "$EP_GLIBC_VERSION" != "unknown" ] || return 1
+    ! ep_version_at_least "$EP_GLIBC_VERSION" "2.28"
+}
+
 ep_conda_installer_url()
 {
     local dist
@@ -83,18 +93,29 @@ ep_conda_installer_url()
                 printf 'https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-aarch64.sh'
             fi
             ;;
-        linux:amd64:anaconda) printf 'https://repo.anaconda.com/archive/Anaconda3-2025.06-0-Linux-x86_64.sh' ;;
-        linux:arm64:anaconda) printf 'https://repo.anaconda.com/archive/Anaconda3-2025.06-0-Linux-aarch64.sh' ;;
+        linux:amd64:anaconda)
+            if ep_conda_uses_legacy_anaconda; then
+                printf 'https://repo.anaconda.com/archive/Anaconda3-%s-Linux-x86_64.sh' "$EP_LEGACY_ANACONDA_VERSION"
+            else
+                printf 'https://repo.anaconda.com/archive/Anaconda3-2025.12-2-Linux-x86_64.sh'
+            fi
+            ;;
+        linux:arm64:anaconda)
+            if ep_conda_uses_legacy_anaconda; then
+                printf 'https://repo.anaconda.com/archive/Anaconda3-%s-Linux-aarch64.sh' "$EP_LEGACY_ANACONDA_VERSION"
+            else
+                printf 'https://repo.anaconda.com/archive/Anaconda3-2025.12-2-Linux-aarch64.sh'
+            fi
+            ;;
         darwin:amd64:miniconda) printf 'https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-x86_64.sh' ;;
         darwin:arm64:miniconda) printf 'https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-arm64.sh' ;;
-        darwin:amd64:anaconda) printf 'https://repo.anaconda.com/archive/Anaconda3-2025.06-0-MacOSX-x86_64.sh' ;;
-        darwin:arm64:anaconda) printf 'https://repo.anaconda.com/archive/Anaconda3-2025.06-0-MacOSX-arm64.sh' ;;
+        darwin:amd64:anaconda) printf 'https://repo.anaconda.com/archive/Anaconda3-%s-MacOSX-x86_64.sh' "$EP_LEGACY_ANACONDA_VERSION" ;;
+        darwin:arm64:anaconda) printf 'https://repo.anaconda.com/archive/Anaconda3-2025.12-2-MacOSX-arm64.sh' ;;
         windows:amd64:miniconda) printf 'https://repo.anaconda.com/miniconda/Miniconda3-latest-Windows-x86_64.exe' ;;
-        windows:amd64:anaconda) printf 'https://repo.anaconda.com/archive/Anaconda3-2025.06-0-Windows-x86_64.exe' ;;
+        windows:amd64:anaconda) printf 'https://repo.anaconda.com/archive/Anaconda3-2025.12-2-Windows-x86_64.exe' ;;
         *) ep_die "No Conda installer rule for $EP_OS/$EP_ARCH/$dist. Use --mode offline --asset-path." ;;
     esac
 }
-
 ep_doctor_conda()
 {
     if conda_path="$(ep_conda_bin 2>/dev/null)"; then
@@ -140,10 +161,12 @@ ep_install_conda()
     ep_log "Component: conda"
     ep_log "Selected $label installer for $EP_OS/$EP_ARCH"
     if ep_conda_uses_legacy_miniconda; then
-        ep_log "Compatibility note: glibc $glibc_version is below current Miniconda's Linux threshold; using archived Miniconda $EP_LEGACY_MINICONDA_VERSION."
+        ep_log "Compatibility note: glibc $glibc_version is below current Miniconda's Linux installer floor; using archived Miniconda $EP_LEGACY_MINICONDA_VERSION."
     fi
-    if [ "$label" = "Anaconda" ] && [ "$EP_OS" = "linux" ] && [ "$EP_LIBC" = "glibc" ] && ! ep_version_at_least "$EP_GLIBC_VERSION" "2.28"; then
-        ep_warn "Anaconda latest may require newer glibc than $EP_GLIBC_VERSION. Use --asset-path with a known-compatible Anaconda installer if this fails."
+    if ep_conda_uses_legacy_anaconda; then
+        ep_log "Compatibility note: glibc $glibc_version is below current Anaconda's Linux installer floor; using archived Anaconda $EP_LEGACY_ANACONDA_VERSION."
+    elif [ "$label" = "Anaconda" ] && [ "$EP_OS" = "darwin" ] && [ "$EP_ARCH" = "amd64" ]; then
+        ep_log "Compatibility note: Anaconda no longer ships a current macOS Intel installer; using archived Anaconda $EP_LEGACY_ANACONDA_VERSION."
     fi
     ep_log "Plan: install $label"
     ep_log "Source: $source"
