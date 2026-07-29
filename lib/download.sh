@@ -78,7 +78,7 @@ ep_github_asset_url()
     local owner="$1"
     local repo="$2"
     local asset_regex="$3"
-    local api tmp url
+    local api tmp url filter
 
     api="https://api.github.com/repos/$owner/$repo/releases"
     tmp="$(mktemp)"
@@ -86,20 +86,9 @@ ep_github_asset_url()
     ep_download_note "Asset regex: $asset_regex"
     ep_fetch_url "$api" "$tmp"
 
+    filter='[.[] | select(.draft == false) | select(.prerelease == false) | select((.tag_name | test("alpha|beta|rc|pre"; "i")) | not) | .assets[] | select(.name | test($re)) | select((.name | test("alpha|beta|rc|pre"; "i")) | not) | .browser_download_url][0] // empty'
     if ep_command_exists jq; then
-        url="$(
-            jq -r --arg re "$asset_regex" '
-              [.[] |
-                select(.draft == false) |
-                select(.prerelease == false) |
-                select((.tag_name | test("alpha|beta|rc|pre"; "i")) | not) |
-                .assets[] |
-                select(.name | test($re)) |
-                select((.name | test("alpha|beta|rc|pre"; "i")) | not) |
-                .browser_download_url
-              ][0] // empty
-            ' "$tmp"
-        )"
+        url="$(jq -r --arg re "$asset_regex" "$filter" "$tmp")"
     else
         url="$(
             grep -E '"browser_download_url":' "$tmp" |
