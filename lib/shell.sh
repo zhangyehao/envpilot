@@ -32,7 +32,7 @@ ep_migrate_shell_local()
         printf '# envpilot shell.local\n'
         printf '# Review these migrated lines before enabling them permanently.\n'
         if [ -f "$old_profile" ]; then
-            grep -E '^[[:space:]]*(export[[:space:]]+PATH=|PATH=|module[[:space:]]+load|[^#]*conda\.sh)' "$old_profile" 2>/dev/null |
+            grep -E '^[[:space:]]*(export[[:space:]]+PATH=|PATH=|module[[:space:]]+load)' "$old_profile" 2>/dev/null |
                 grep -Evi 'KEY|TOKEN|SECRET|PASSWORD|PASSWD|OPENAI_API_KEY|ALPHA_GENOME_API_KEY|GITHUB_TOKEN' || true
         fi
     } > "$local_file.tmp"
