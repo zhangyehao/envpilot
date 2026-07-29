@@ -86,6 +86,7 @@ ep_github_asset_url()
     ep_download_note "Asset regex: $asset_regex"
     ep_fetch_url "$api" "$tmp"
 
+    # shellcheck disable=SC2016 # $re is a jq variable, not a shell variable.
     filter='[.[] | select(.draft == false) | select(.prerelease == false) | select((.tag_name | test("alpha|beta|rc|pre"; "i")) | not) | .assets[] | select(.name | test($re)) | select((.name | test("alpha|beta|rc|pre"; "i")) | not) | .browser_download_url][0] // empty'
     if ep_command_exists jq; then
         url="$(jq -r --arg re "$asset_regex" "$filter" "$tmp")"
