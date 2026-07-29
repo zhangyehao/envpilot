@@ -87,6 +87,34 @@ grep -q '^!downloads/mihomo-windows-amd64-compatible-\*\.zip$' "$ROOT/.gitignore
     esac
 )
 
+echo "[TEST] shell.local migration skips multiline conda init"
+tmp_home="$(mktemp -d)"
+mkdir -p "$tmp_home/.config/envpilot"
+cat > "$tmp_home/.bashrc" <<'EOF'
+export PATH="$HOME/bin:$PATH"
+for conda_sh in \
+    "$HOME/software/miniconda3/etc/profile.d/conda.sh" \
+    "$HOME/software/anaconda3/etc/profile.d/conda.sh" \
+    /opt/conda/etc/profile.d/conda.sh; do
+    [ -r "$conda_sh" ] && . "$conda_sh" && return 0
+done
+EOF
+(
+    HOME="$tmp_home"
+    ENVPILOT_ROOT="$ROOT"
+    # shellcheck source=/dev/null
+    . "$ROOT/lib/common.sh"
+    # shellcheck source=/dev/null
+    . "$ROOT/lib/shell.sh"
+    EP_CONFIG_DIR="$tmp_home/.config/envpilot"
+    ep_migrate_shell_local "$tmp_home/.bashrc" >/dev/null
+)
+if grep -q 'conda\.sh' "$tmp_home/.config/envpilot/shell.local"; then
+    echo "shell.local migration must not copy conda.sh fragments" >&2
+    cat "$tmp_home/.config/envpilot/shell.local" >&2
+    exit 1
+fi
+bash --noprofile --norc -c '. "'"$tmp_home/.config/envpilot/shell.local"'"'
 echo "[TEST] non-interactive bashrc is quiet"
 tmp_home="$(mktemp -d)"
 mkdir -p "$tmp_home/.config/envpilot"
