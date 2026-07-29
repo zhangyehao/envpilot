@@ -83,7 +83,7 @@ ep_patch_mihomo_config()
 ep_install_mihomo()
 {
     ep_require_unix_runtime
-    local bin install_dir config_dir asset_regex offline_pattern asset archive source version
+    local bin install_dir config_dir asset_regex offline_pattern archive source version
     bin="$(ep_mihomo_bin)"
     install_dir="$(dirname "$bin")"
     config_dir="$HOME/.config/mihomo"
