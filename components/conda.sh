@@ -137,16 +137,34 @@ ep_write_condarc()
 ep_install_conda()
 {
     ep_require_unix_runtime
-    if conda_path="$(ep_conda_bin 2>/dev/null)"; then
-        ep_log "Conda already available: $conda_path"
+
+    local target target_conda existing_conda installer url source label pattern glibc_version conda_version
+    target="$(ep_conda_install_target)"
+    target_conda="$target/bin/conda"
+
+    if [ -x "$target_conda" ]; then
+        ep_log "Conda already available at requested target: $target_conda"
         ep_write_condarc
         ep_state_mark_done conda
-        ep_report_event conda skipped "already installed" "$($conda_path --version 2>/dev/null || true)" "" "$conda_path"
+        ep_report_event conda skipped "already installed" "$($target_conda --version 2>/dev/null || true)" "" "$target_conda"
         return 0
     fi
 
-    local target installer url source label pattern glibc_version conda_version
-    target="$(ep_conda_install_target)"
+    if [ -e "$target" ]; then
+        ep_die "Conda target exists but does not contain bin/conda: $target. Move it aside or rerun with --prefix."
+    fi
+
+    if [ "$(ep_conda_distribution)" = "miniconda" ] && existing_conda="$(ep_conda_bin 2>/dev/null)"; then
+        ep_log "Conda already available: $existing_conda"
+        ep_write_condarc
+        ep_state_mark_done conda
+        ep_report_event conda skipped "already installed" "$($existing_conda --version 2>/dev/null || true)" "" "$existing_conda"
+        return 0
+    fi
+
+    if [ "$(ep_conda_distribution)" = "anaconda" ] && existing_conda="$(ep_conda_bin 2>/dev/null)"; then
+        ep_log "Conda already available at $existing_conda, but requested Anaconda target is missing; installing Anaconda side by side."
+    fi
     installer="$(mktemp "${TMPDIR:-/tmp}/envpilot-conda.XXXXXX.sh")"
     url="$(ep_conda_installer_url)"
     label="$(ep_conda_distribution_label)"
