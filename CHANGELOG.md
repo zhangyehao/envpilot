@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.8 - 2026-07-31
+
+### Added
+
+- Added `mihomo port PORT` for one-command Mihomo port switching from both repository entrypoints and loaded shell/profile helpers.
+- The port switch updates `config.yaml`, persists the port in envpilot local shell/profile config, refreshes the installed start script, stops the envpilot-managed process, restarts Mihomo, and reports the current-shell refresh command.
+
+### Changed
+
+- Mihomo start, stop, status, doctor, and install summaries now use the configured proxy port instead of hard-coding `7890`.
 ## 0.1.7 - 2026-07-30
 
 ### Fixed

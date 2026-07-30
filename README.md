@@ -16,6 +16,8 @@ bash envpilot.sh install mihomo
 bash envpilot.sh apply-shell
 source ~/.bashrc
 mihomo start
+# 可选：把代理端口完整切换到 7891
+mihomo port 7891
 proxy_on
 bash envpilot.sh install
 ```
@@ -49,6 +51,7 @@ PowerShell 下可用：
 ```powershell
 .\envpilot.ps1 mihomo status
 .\envpilot.ps1 mihomo stop
+.\envpilot.ps1 mihomo port 7891
 .\envpilot.ps1 restore
 ```
 
@@ -59,8 +62,8 @@ PowerShell 下可用：
 | `doctor` | 只检查，不安装；同时记录本次 restore baseline。 |
 | `install [all|mihomo|conda|mamba|codex|github|tmux]` | 安装组件；默认在线解析，组件可优先使用 `downloads/` 缓存。 |
 | `apply-shell` | 备份并替换当前 shell profile。 |
-| `mihomo start` / `mihomo stop` / `mihomo status` | 在加载 shell 模板后管理 envpilot 安装的 mihomo。 |
-| `bash envpilot.sh mihomo start|stop|status` | 不依赖 shell 模板，直接从仓库目录管理 mihomo。 |
+| `mihomo start` / `mihomo stop` / `mihomo status` / `mihomo port PORT` | 在加载 shell 模板后管理 envpilot 安装的 mihomo，并可一条命令切换代理端口。 |
+| `bash envpilot.sh mihomo start|stop|status|port PORT` | 不依赖 shell 模板，直接从仓库目录管理 mihomo。 |
 | `restore` | 恢复到最近一次 `doctor` 记录的 baseline。 |
 | `rollback` | 只恢复最近一次 envpilot 备份的单个文件。 |
 | `resume` | 继续上一次中断的安装流程。 |
@@ -75,6 +78,7 @@ PowerShell 下可用：
 bash envpilot.sh install conda --conda-distribution anaconda
 bash envpilot.sh install mihomo --mode offline
 bash envpilot.sh install mihomo --asset-path downloads/mihomo-linux-amd64-compatible-v1.19.29.gz
+bash envpilot.sh mihomo port 7891
 bash envpilot.sh install --prefix "$HOME/software"
 ```
 
@@ -94,6 +98,8 @@ bash envpilot.sh install mihomo
 bash envpilot.sh apply-shell
 source ~/.bashrc
 mihomo start
+# 可选：把代理端口完整切换到 7891
+mihomo port 7891
 proxy_on
 bash envpilot.sh install
 ```
@@ -135,6 +141,7 @@ downloads/geoip.metadb
 mihomo start
 mihomo stop
 mihomo status
+mihomo port 7891
 proxy_on
 proxy_off
 proxy_status
@@ -145,9 +152,10 @@ proxy_status
 ```bash
 bash envpilot.sh mihomo status
 bash envpilot.sh mihomo stop
+bash envpilot.sh mihomo port 7891
 ```
 
-`mihomo stop` 只停止 envpilot 管理路径下的 mihomo 进程，不会杀掉其他用户或其他路径的 mihomo。
+`mihomo stop` 只停止 envpilot 管理路径下的 mihomo 进程，不会杀掉其他用户或其他路径的 mihomo。`mihomo port 7891` 会完整修改 `~/.config/mihomo/config.yaml` 的 `mixed-port`，把端口写入 envpilot 本地 shell/profile 配置，重启 envpilot 管理的 mihomo，并刷新当前 shell 的代理变量；未加载 shell 模板时可在仓库目录执行 `bash envpilot.sh mihomo port 7891`。
 
 ## Baseline / Restore
 

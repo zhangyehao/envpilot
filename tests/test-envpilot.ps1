@@ -33,6 +33,7 @@ try {
     $mihomoStatus = (& (Join-Path $Root "envpilot.ps1") mihomo status 6>&1 | Out-String)
     Assert-Match $mihomoStatus "envpilot mihomo binary:" "mihomo status missing binary section"
     Assert-Match $mihomoStatus "proxy port:" "mihomo status missing proxy section"
+    Assert-Match $mihomoStatus "127.0.0.1:" "mihomo status missing configured port"
 
     Write-Host "[TEST] profile template"
     $template = Join-Path $Root "templates/Microsoft.PowerShell_profile.ps1"
@@ -40,6 +41,7 @@ try {
     Assert-Match $templateText "Use-EnvpilotSecrets" "PowerShell profile template does not define Use-EnvpilotSecrets"
     Assert-Match $templateText "function mihomo" "PowerShell profile template does not define mihomo wrapper"
     Assert-Match $templateText "Stop-Mihomo" "PowerShell profile template does not define Stop-Mihomo"
+    Assert-Match $templateText "Set-MihomoPort" "PowerShell profile template does not define Set-MihomoPort"
 
     Write-Host "[TEST] restore fixture"
     $restorePrefix = Join-Path $TempHome "software"

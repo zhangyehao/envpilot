@@ -391,6 +391,32 @@ mihomo_stop()
     return 0
 }
 
+mihomo_port()
+{
+    local port="${1:-}"
+    case "$port" in
+        ''|*[!0-9]*) printf 'Usage: mihomo port PORT (1-65535)\n' >&2; return 2 ;;
+    esac
+    if [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
+        printf 'Usage: mihomo port PORT (1-65535)\n' >&2
+        return 2
+    fi
+    if [ -z "${BASHRC_ENVPILOT_ROOT:-}" ] || [ ! -f "$BASHRC_ENVPILOT_ROOT/envpilot.sh" ]; then
+        printf 'BASHRC_ENVPILOT_ROOT is not set. Run from the repo: bash envpilot.sh mihomo port %s\n' "$port" >&2
+        return 1
+    fi
+
+    bash "$BASHRC_ENVPILOT_ROOT/envpilot.sh" mihomo port "$port" || return $?
+    proxy_off
+    BASHRC_PROXY_PORT="$port"
+    if mihomo_wait_for_port 20; then
+        proxy_on
+        printf 'Current shell proxy variables now use %s:%s.\n' "$BASHRC_PROXY_HOST" "$BASHRC_PROXY_PORT"
+        return 0
+    fi
+    printf 'mihomo switched to port %s, but this shell cannot detect the listener yet.\n' "$BASHRC_PROXY_PORT" >&2
+    return 1
+}
 mihomo()
 {
     local action="${1:-start}"
@@ -398,6 +424,7 @@ mihomo()
         start) shift || true; mihomo_start "$@" ;;
         stop) shift || true; mihomo_stop "$@" ;;
         status) proxy_status ;;
+        port) shift || true; mihomo_port "$@" ;;
         proxy-on) proxy_on ;;
         proxy-off) proxy_off ;;
         run)
@@ -409,7 +436,7 @@ mihomo()
             if [ -x "$BASHRC_MIHOMO_BIN" ]; then
                 "$BASHRC_MIHOMO_BIN" "$@"
             else
-                printf 'Usage: mihomo {start|stop|status|proxy-on|proxy-off|run}\n' >&2
+                printf 'Usage: mihomo {start|stop|status|port PORT|proxy-on|proxy-off|run}\n' >&2
                 return 2
             fi
             ;;
@@ -469,6 +496,8 @@ proxy_status()
     printf 'all_proxy=%s\n' "${all_proxy:-unset}"
 }
 
+[ -r "$BASHRC_LOCAL_FILE" ] && . "$BASHRC_LOCAL_FILE"
+
 if [ "$BASHRC_AUTO_LOAD_MODULES" = "1" ]; then
     hpc_modules_load
 fi
@@ -479,7 +508,6 @@ if [ "$BASHRC_AUTO_ENABLE_PROXY" = "1" ] && proxy_port_is_listening; then
     proxy_on
 fi
 
-[ -r "$BASHRC_LOCAL_FILE" ] && . "$BASHRC_LOCAL_FILE"
 
 alias ..='cd ..'
 alias ...='cd ../..'

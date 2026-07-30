@@ -1,6 +1,10 @@
 # PowerShell profile managed by envpilot.
 $EnvpilotConfigDir = Join-Path $HOME ".config/envpilot"
 $EnvpilotSecrets = Join-Path $HOME ".config/secrets/api.env.ps1"
+$Global:EnvpilotProxyHost = if ($Global:EnvpilotProxyHost) { $Global:EnvpilotProxyHost } else { "127.0.0.1" }
+$Global:EnvpilotProxyPort = if ($Global:EnvpilotProxyPort) { [int]$Global:EnvpilotProxyPort } else { 7890 }
+
+function Write-Info { param([string]$Message) Write-Host "[INFO] $Message" }
 
 function Add-PathFront {
     param([Parameter(Mandatory=$true)][string]$Path)
@@ -26,7 +30,7 @@ function Use-EnvpilotSecrets {
 }
 
 function Enable-EnvpilotProxy {
-    param([string]$HostName = "127.0.0.1", [int]$Port = 7890)
+    param([string]$HostName = $Global:EnvpilotProxyHost, [int]$Port = $Global:EnvpilotProxyPort)
     $proxy = "http://${HostName}:${Port}"
     $env:http_proxy = $proxy
     $env:https_proxy = $proxy
@@ -49,7 +53,7 @@ function Get-MihomoBin {
 }
 
 function Test-MihomoPort {
-    param([string]$HostName = "127.0.0.1", [int]$Port = 7890)
+    param([string]$HostName = $Global:EnvpilotProxyHost, [int]$Port = $Global:EnvpilotProxyPort)
     $listen = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue | Where-Object {
         $_.LocalAddress -in @($HostName, "0.0.0.0", "::", "::1")
     } | Select-Object -First 1
@@ -65,7 +69,7 @@ function Start-Mihomo {
     if (-not (Test-Path -LiteralPath (Join-Path $configDir "config.yaml"))) {
         throw "mihomo config not found: $(Join-Path $configDir 'config.yaml')"
     }
-    if (Test-MihomoPort) {
+    if (Test-MihomoPort -Port $Global:EnvpilotProxyPort) {
         Write-Info "mihomo already running."
         return
     }
@@ -110,10 +114,10 @@ function Get-MihomoStatus {
     }
     Write-Host ""
     Write-Host "proxy port:"
-    if (Test-MihomoPort) {
-        Write-Host "  127.0.0.1:7890 listening"
+    if (Test-MihomoPort -Port $Global:EnvpilotProxyPort) {
+        Write-Host "  127.0.0.1:$Global:EnvpilotProxyPort listening"
     } else {
-        Write-Host "  127.0.0.1:7890 not listening"
+        Write-Host "  127.0.0.1:$Global:EnvpilotProxyPort not listening"
     }
     Write-Host ""
     Write-Host "proxy variables:"
@@ -125,6 +129,45 @@ function Get-MihomoStatus {
     Write-Host "  all_proxy=$allProxy"
 }
 
+function Set-EnvpilotYamlScalar {
+    param([string]$Path, [string]$Key, [string]$Value)
+    $lines = [System.Collections.Generic.List[string]]::new()
+    if (Test-Path -LiteralPath $Path) {
+        foreach ($line in Get-Content -LiteralPath $Path) { [void]$lines.Add($line) }
+    }
+    $found = $false
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        if ($lines[$i] -match "^\s*$([regex]::Escape($Key))\s*:") {
+            $lines[$i] = "${Key}: $Value"
+            $found = $true
+        }
+    }
+    if (-not $found) { $lines.Insert(0, "${Key}: $Value") }
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Path) | Out-Null
+    [System.IO.File]::WriteAllLines($Path, $lines, [System.Text.UTF8Encoding]::new($false))
+}
+
+function Set-MihomoPort {
+    param([Parameter(Mandatory=$true)][int]$Port)
+    if ($Port -lt 1 -or $Port -gt 65535) { throw "Usage: mihomo port PORT (1-65535)" }
+    $bin = Get-MihomoBin
+    $configDir = Join-Path $HOME ".config/mihomo"
+    $config = Join-Path $configDir "config.yaml"
+    if (-not (Test-Path -LiteralPath $bin)) { throw "mihomo executable not found: $bin" }
+    if (-not (Test-Path -LiteralPath $config)) { throw "mihomo config not found: $config" }
+    Set-EnvpilotYamlScalar -Path $config -Key "allow-lan" -Value "false"
+    Set-EnvpilotYamlScalar -Path $config -Key "mixed-port" -Value ([string]$Port)
+    Set-EnvpilotYamlScalar -Path $config -Key "bind-address" -Value "127.0.0.1"
+    $localProfile = Join-Path $EnvpilotConfigDir "profile.local.ps1"
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $localProfile) | Out-Null
+    "`$EnvpilotProxyPort = $Port" | Set-Content -LiteralPath $localProfile -Encoding UTF8
+    Stop-Mihomo
+    $Global:EnvpilotProxyPort = $Port
+    Start-Mihomo
+    Disable-EnvpilotProxy
+    Enable-EnvpilotProxy
+    Write-Info "Current PowerShell proxy variables now use $($Global:EnvpilotProxyHost):$($Global:EnvpilotProxyPort)."
+}
 function mihomo {
     param(
         [Parameter(Position=0)]
@@ -136,6 +179,7 @@ function mihomo {
         "start" { Start-Mihomo; break }
         "stop" { Stop-Mihomo; break }
         "status" { Get-MihomoStatus; break }
+        "port" { Set-MihomoPort -Port ([int]$Args[0]); break }
         "proxy-on" { Enable-EnvpilotProxy; break }
         "proxy-off" { Disable-EnvpilotProxy; break }
         default {

@@ -7,6 +7,9 @@ param(
     [Parameter(Position=1)]
     [string]$Component = "all",
 
+    [Parameter(Position=2)]
+    [string]$Value,
+
     [ValidateSet("online","offline")]
     [string]$Mode = "online",
 
@@ -195,6 +198,80 @@ function Get-MihomoBin {
     return (Join-Path $HOME "software/mihomo/mihomo.exe")
 }
 
+function Test-EnvpilotPort {
+    param([string]$Port)
+    if ($Port -notmatch '^\d+$') { return $false }
+    $number = [int]$Port
+    return ($number -ge 1 -and $number -le 65535)
+}
+
+function Get-MihomoConfigPath {
+    return (Join-Path $HOME ".config/mihomo/config.yaml")
+}
+
+function Get-MihomoProxyPort {
+    $local = Join-Path $Script:ConfigDir "profile.local.ps1"
+    if (Test-Path -LiteralPath $local) {
+        $match = Select-String -LiteralPath $local -Pattern '^\s*\$EnvpilotProxyPort\s*=\s*(\d+)\s*$' | Select-Object -Last 1
+        if ($match -and (Test-EnvpilotPort $match.Matches[0].Groups[1].Value)) { return [int]$match.Matches[0].Groups[1].Value }
+    }
+    $config = Get-MihomoConfigPath
+    if (Test-Path -LiteralPath $config) {
+        $match = Select-String -LiteralPath $config -Pattern '^\s*mixed-port:\s*(\d+)\s*$' | Select-Object -Last 1
+        if ($match -and (Test-EnvpilotPort $match.Matches[0].Groups[1].Value)) { return [int]$match.Matches[0].Groups[1].Value }
+    }
+    return 7890
+}
+
+function Set-YamlScalar {
+    param([string]$Path, [string]$Key, [string]$Value)
+    $lines = [System.Collections.Generic.List[string]]::new()
+    if (Test-Path -LiteralPath $Path) {
+        foreach ($line in Get-Content -LiteralPath $Path) { [void]$lines.Add($line) }
+    }
+    $found = $false
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        if ($lines[$i] -match "^\s*$([regex]::Escape($Key))\s*:") {
+            $lines[$i] = "${Key}: $Value"
+            $found = $true
+        }
+    }
+    if (-not $found) { $lines.Insert(0, "${Key}: $Value") }
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Path) | Out-Null
+    [System.IO.File]::WriteAllLines($Path, $lines, [System.Text.UTF8Encoding]::new($false))
+}
+
+function Set-MihomoConfigPort {
+    param([int]$Port)
+    $config = Get-MihomoConfigPath
+    Set-YamlScalar -Path $config -Key "allow-lan" -Value "false"
+    Set-YamlScalar -Path $config -Key "mixed-port" -Value ([string]$Port)
+    Set-YamlScalar -Path $config -Key "bind-address" -Value "127.0.0.1"
+}
+
+function Set-EnvpilotProfileLocalPort {
+    param([int]$Port)
+    $local = Join-Path $Script:ConfigDir "profile.local.ps1"
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $local) | Out-Null
+    Backup-File $local
+    $lines = [System.Collections.Generic.List[string]]::new()
+    if (Test-Path -LiteralPath $local) {
+        foreach ($line in Get-Content -LiteralPath $local) { [void]$lines.Add($line) }
+    } else {
+        [void]$lines.Add("# envpilot profile.local.ps1")
+    }
+    $found = $false
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        if ($lines[$i] -match '^\s*\$EnvpilotProxyPort\s*=') {
+            $lines[$i] = "`$EnvpilotProxyPort = $Port"
+            $found = $true
+        }
+    }
+    if (-not $found) { [void]$lines.Add("`$EnvpilotProxyPort = $Port") }
+    [System.IO.File]::WriteAllLines($local, $lines, [System.Text.UTF8Encoding]::new($false))
+    Write-Info "Wrote mihomo proxy port to $($local): $Port"
+}
+
 function New-BaselineSlug {
     param([string]$Path)
     $slug = $Path -replace "^([A-Za-z]):", "drive_`$1"
@@ -340,24 +417,25 @@ function Stop-MihomoProcesses {
 }
 
 function Start-MihomoProcess {
+    param([int]$Port = (Get-MihomoProxyPort))
     $bin = Get-MihomoBin
     $configDir = Join-Path $HOME ".config/mihomo"
     $config = Join-Path $configDir "config.yaml"
-    if (Test-MihomoPort) {
-        Write-Info "Proxy port 127.0.0.1:7890 is already listening."
+    if (Test-MihomoPort -Port $Port) {
+        Write-Info "Proxy port 127.0.0.1:$Port is already listening."
         return
     }
     if (-not (Test-Path -LiteralPath $bin)) { Stop-Envpilot "mihomo executable not found: $bin" }
     if (-not (Test-Path -LiteralPath $config)) { Stop-Envpilot "mihomo config not found: $config" }
     Start-Process -WindowStyle Hidden -FilePath $bin -ArgumentList @("-d", $configDir) | Out-Null
     for ($i = 0; $i -lt 20; $i++) {
-        if (Test-MihomoPort) {
-            Write-Info "mihomo proxy port is listening: 127.0.0.1:7890"
+        if (Test-MihomoPort -Port $Port) {
+            Write-Info "mihomo proxy port is listening: 127.0.0.1:$Port"
             return
         }
         Start-Sleep -Seconds 1
     }
-    Stop-Envpilot "mihomo did not open proxy port 127.0.0.1:7890 within 20 seconds."
+    Stop-Envpilot "mihomo did not open proxy port 127.0.0.1:$Port within 20 seconds."
 }
 
 function Show-MihomoStatus {
@@ -381,7 +459,37 @@ function Show-MihomoStatus {
     }
     Write-Host ""
     Write-Host "proxy port:"
-    if (Test-MihomoPort) { Write-Host "  127.0.0.1:7890 listening" } else { Write-Host "  127.0.0.1:7890 not detected" }
+    $port = Get-MihomoProxyPort
+    if (Test-MihomoPort -Port $port) { Write-Host "  127.0.0.1:$port listening" } else { Write-Host "  127.0.0.1:$port not detected" }
+}
+
+function Set-MihomoPort {
+    param([string]$Port)
+    if (-not (Test-EnvpilotPort $Port)) { Stop-Envpilot "Invalid port: ${Port}. Use an integer from 1 to 65535." }
+    $portNumber = [int]$Port
+    $oldPort = Get-MihomoProxyPort
+    $config = Get-MihomoConfigPath
+    $bin = Get-MihomoBin
+    if (-not (Test-Path -LiteralPath $bin)) { Stop-Envpilot "mihomo executable not found: $bin" }
+    if (-not (Test-Path -LiteralPath $config)) { Stop-Envpilot "mihomo config not found: $config. Run: .\envpilot.ps1 install mihomo" }
+
+    Write-Info "Plan: switch mihomo proxy port"
+    Write-Info "Current port: 127.0.0.1:$oldPort"
+    Write-Info "New port: 127.0.0.1:$portNumber"
+    Write-Info "Will update: $config"
+    Write-Info "Will update: $(Join-Path $Script:ConfigDir 'profile.local.ps1')"
+    Write-Info "Will restart envpilot-managed mihomo."
+
+    Backup-File $config
+    Set-MihomoConfigPort -Port $portNumber
+    Set-EnvpilotProfileLocalPort -Port $portNumber
+    Stop-MihomoProcesses -Quiet
+    if ($oldPort -ne $portNumber -and (Test-MihomoPort -Port $portNumber)) {
+        Stop-Envpilot "Target proxy port 127.0.0.1:$portNumber is already listening after stopping envpilot mihomo. Choose another port."
+    }
+    Start-MihomoProcess -Port $portNumber
+    Write-Info "Switched mihomo proxy port to 127.0.0.1:$portNumber"
+    Write-Info "For current PowerShell variables, reload profile or run: Disable-EnvpilotProxy; Enable-EnvpilotProxy -Port $portNumber"
 }
 
 function Invoke-MihomoCommand {
@@ -390,7 +498,8 @@ function Invoke-MihomoCommand {
         "start" { Start-MihomoProcess }
         "stop" { Stop-MihomoProcesses }
         "status" { Show-MihomoStatus }
-        default { Stop-Envpilot "Unknown mihomo action: $Component. Use start, stop, or status." }
+        "port" { Set-MihomoPort -Port $Value }
+        default { Stop-Envpilot "Unknown mihomo action: $Component. Use start, stop, status, or port PORT." }
     }
 }
 
@@ -543,7 +652,8 @@ function Install-Mihomo {
     Write-Info "Target: $bin"
     Write-Info "Will write: $(Join-Path $installDir "start_mihomo.sh")"
     Write-Info "Will hydrate data: $countryPath and $geoipPath"
-    Write-Info "Proxy defaults: 127.0.0.1:7890, allow-lan=false, bind-address=127.0.0.1"
+    $port = Get-MihomoProxyPort
+    Write-Info "Proxy defaults: 127.0.0.1:$port, allow-lan=false, bind-address=127.0.0.1"
     $extract = Join-Path ([System.IO.Path]::GetTempPath()) "envpilot-mihomo"
     Remove-Item -Recurse -Force -LiteralPath $extract -ErrorAction SilentlyContinue
     Expand-Archive -LiteralPath $archive -DestinationPath $extract -Force
@@ -704,7 +814,7 @@ Usage:
       Restore the most recent envpilot-managed backup.
   .\envpilot.ps1 restore
       Restore envpilot-managed changes to the latest doctor baseline.
-  .\envpilot.ps1 mihomo [start|stop|status]
+  .\envpilot.ps1 mihomo [start|stop|status|port PORT]
       Manage the envpilot-installed mihomo process.
   .\envpilot.ps1 resume
       Continue an interrupted install using saved state.
@@ -717,7 +827,7 @@ Usage:
 "@
 }
 try {
-    if ($Command -notin @("help", "mihomo")) {
+    if ($Command -notin @("help")) {
         Initialize-Envpilot
     }
     switch ($Command) {

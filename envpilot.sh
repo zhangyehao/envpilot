@@ -37,7 +37,7 @@ Usage:
                                       Back up and replace the active shell profile.
   bash envpilot.sh rollback           Restore the most recent envpilot-managed backup.
   bash envpilot.sh restore            Restore envpilot-managed changes to the latest doctor baseline.
-  bash envpilot.sh mihomo [start|stop|status]
+  bash envpilot.sh mihomo [start|stop|status|port PORT]
                                       Manage the envpilot-installed mihomo process.
   bash envpilot.sh resume             Continue an interrupted install using saved state.
   bash envpilot.sh reset              Clear saved state so install steps can run again.
@@ -76,6 +76,13 @@ parse_args()
         arg="${1%$'\r'}"
         if [ "${arg#-}" = "$arg" ]; then
             EP_MIHOMO_ACTION="$arg"
+            shift
+        fi
+    fi
+    if [ "$EP_COMMAND" = "mihomo" ] && [ "$EP_MIHOMO_ACTION" = "port" ] && [ "${1:-}" != "" ]; then
+        arg="${1%$'\r'}"
+        if [ "${arg#-}" = "$arg" ]; then
+            EP_MIHOMO_PORT="$arg"
             shift
         fi
     fi
@@ -213,8 +220,9 @@ run_restore()
 
 run_mihomo()
 {
+    ep_init
     ep_platform_detect
-    ep_mihomo_cli "$EP_MIHOMO_ACTION"
+    ep_mihomo_cli "$EP_MIHOMO_ACTION" "$EP_MIHOMO_PORT"
 }
 
 run_reset()

@@ -4,6 +4,8 @@ set -euo pipefail
 MIHOMO_BIN="${HOME}/software/mihomo/mihomo"
 CONFIG_DIR="${HOME}/.config/mihomo"
 LOG_FILE="${HOME}/logs/mihomo.log"
+MIHOMO_PROXY_HOST="${MIHOMO_PROXY_HOST:-127.0.0.1}"
+MIHOMO_PROXY_PORT="${MIHOMO_PROXY_PORT:-}"
 
 command_exists()
 {
@@ -45,6 +47,20 @@ proxy_port_is_listening()
     return 1
 }
 
+if [ -z "$MIHOMO_PROXY_PORT" ] && [ -r "$HOME/.config/envpilot/shell.local" ]; then
+    MIHOMO_PROXY_PORT="$(grep -E '^[[:space:]]*(export[[:space:]]+)?BASHRC_PROXY_PORT=' "$HOME/.config/envpilot/shell.local" 2>/dev/null | tail -n 1 | sed -E 's/^[[:space:]]*(export[[:space:]]+)?BASHRC_PROXY_PORT=//' | tr -d "\"'[:space:]" || true)"
+fi
+if [ -z "$MIHOMO_PROXY_PORT" ] && [ -r "$CONFIG_DIR/config.yaml" ]; then
+    MIHOMO_PROXY_PORT="$(grep -E '^[[:space:]]*mixed-port:[[:space:]]*[0-9]+' "$CONFIG_DIR/config.yaml" 2>/dev/null | tail -n 1 | sed -E 's/^[^:]+:[[:space:]]*([0-9]+).*/\1/' || true)"
+fi
+case "${MIHOMO_PROXY_PORT:-}" in
+    ''|*[!0-9]*) MIHOMO_PROXY_PORT=7890 ;;
+esac
+if [ "$MIHOMO_PROXY_PORT" -lt 1 ] || [ "$MIHOMO_PROXY_PORT" -gt 65535 ]; then
+    echo "[ERROR] invalid mihomo proxy port: $MIHOMO_PROXY_PORT" >&2
+    exit 1
+fi
+
 mkdir -p "$(dirname "$LOG_FILE")"
 
 if [ ! -x "$MIHOMO_BIN" ]; then
@@ -58,13 +74,13 @@ if [ ! -s "$CONFIG_DIR/config.yaml" ]; then
     exit 1
 fi
 
-if proxy_port_is_listening 127.0.0.1 7890; then
+if proxy_port_is_listening "$MIHOMO_PROXY_HOST" "$MIHOMO_PROXY_PORT"; then
     echo "[INFO] mihomo already running."
     exit 0
 fi
-if pgrep -u "$USER" -f "mihomo" >/dev/null 2>&1; then
+if pgrep -u "$USER" -f "$MIHOMO_BIN" >/dev/null 2>&1; then
     echo "[INFO] mihomo already running."
-    pgrep -u "$USER" -af "mihomo"
+    pgrep -u "$USER" -af "$MIHOMO_BIN"
     exit 0
 fi
 
@@ -74,17 +90,17 @@ mihomo_pid=$!
 attempts=20
 count=0
 while [ "$count" -lt "$attempts" ]; do
-    if proxy_port_is_listening 127.0.0.1 7890; then
+    if proxy_port_is_listening "$MIHOMO_PROXY_HOST" "$MIHOMO_PROXY_PORT"; then
         echo "[INFO] mihomo started. PID=$mihomo_pid"
         echo "[INFO] log file: $LOG_FILE"
-        echo "[INFO] proxy: http://127.0.0.1:7890"
+        echo "[INFO] proxy: http://${MIHOMO_PROXY_HOST}:${MIHOMO_PROXY_PORT}"
         exit 0
     fi
     sleep 1
     count=$((count + 1))
 done
 
-echo "[ERROR] mihomo did not open proxy port 7890 within ${attempts}s." >&2
+echo "[ERROR] mihomo did not open proxy port ${MIHOMO_PROXY_HOST}:${MIHOMO_PROXY_PORT} within ${attempts}s." >&2
 if [ -s "$LOG_FILE" ]; then
     tail -n 20 "$LOG_FILE" >&2 || true
 fi

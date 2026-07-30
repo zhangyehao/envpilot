@@ -44,8 +44,10 @@ grep -q 'for component in mihomo conda mamba codex github tmux' "$ROOT/envpilot.
 grep -q 'update-mihomo-cache' "$ROOT/envpilot.sh"
 grep -q 'restore) run_restore' "$ROOT/envpilot.sh"
 grep -q 'mihomo) run_mihomo' "$ROOT/envpilot.sh"
+grep -q 'port PORT' "$ROOT/envpilot.sh"
 grep -q 'EP_MIHOMO_ACTION' "$ROOT/lib/common.sh"
 grep -q 'ep_mihomo_cli' "$ROOT/components/mihomo.sh"
+grep -q 'ep_switch_mihomo_port' "$ROOT/components/mihomo.sh"
 grep -q 'ep_find_cached_asset' "$ROOT/lib/download.sh"
 grep -q 'ep_capture_doctor_baseline' "$ROOT/lib/baseline.sh"
 grep -q 'ep_restore_doctor_baseline' "$ROOT/lib/baseline.sh"
@@ -58,9 +60,11 @@ grep -q 'Install-MihomoDataAssets' "$ROOT/envpilot.ps1"
 grep -q 'EP_LEGACY_MINICONDA_VERSION' "$ROOT/components/conda.sh"
 grep -q 'ep_mihomo_offline_pattern' "$ROOT/components/mihomo.sh"
 grep -q 'mihomo_wait_for_port' "$ROOT/templates/bashrc"
+grep -q 'mihomo_port()' "$ROOT/templates/bashrc"
 grep -q 'mihomo()' "$ROOT/templates/bashrc"
 grep -q 'envpilot_restore()' "$ROOT/templates/bashrc"
 grep -q 'mihomo()' "$ROOT/templates/zshrc"
+grep -q 'mihomo_port()' "$ROOT/templates/zshrc"
 grep -q 'envpilot_restore()' "$ROOT/templates/zshrc"
 grep -q 'did not open proxy port' "$ROOT/templates/start_mihomo.sh"
 grep -q 'Source URL:' "$ROOT/lib/download.sh"
@@ -191,6 +195,42 @@ status_check="$(
     bash --noprofile --norc -ic '. "'"$ROOT/templates/bashrc"'"; proxy_status' 2>/dev/null
 )"
 printf '%s\n' "$status_check" | grep -q 'reachable via TCP connect'
+
+echo "[TEST] mihomo port switch updates config and shell.local"
+tmp_home="$(mktemp -d)"
+mkdir -p "$tmp_home/.config/mihomo" "$tmp_home/software/mihomo"
+cat > "$tmp_home/.config/mihomo/config.yaml" <<'EOF'
+allow-lan: true
+mixed-port: 7890
+bind-address: 0.0.0.0
+EOF
+printf '%s\n' '#!/usr/bin/env sh' > "$tmp_home/software/mihomo/mihomo"
+chmod +x "$tmp_home/software/mihomo/mihomo"
+(
+    HOME="$tmp_home"
+    ENVPILOT_ROOT="$ROOT"
+    # shellcheck source=/dev/null
+    . "$ROOT/lib/common.sh"
+    # shellcheck source=/dev/null
+    . "$ROOT/lib/platform.sh"
+    # shellcheck source=/dev/null
+    . "$ROOT/lib/download.sh"
+    # shellcheck source=/dev/null
+    . "$ROOT/components/mihomo.sh"
+    ep_init
+    ep_platform_detect >/dev/null
+    ep_stop_mihomo() { printf 'stop:%s\n' "$1" >> "$HOME/events"; }
+    ep_start_mihomo() { printf 'start:%s\n' "$1" >> "$HOME/events"; }
+    ep_proxy_port_is_listening() { return 1; }
+    ep_switch_mihomo_port 7891 >/tmp/envpilot-port-switch.out
+)
+grep -q 'mixed-port: 7891' "$tmp_home/.config/mihomo/config.yaml"
+grep -q 'allow-lan: false' "$tmp_home/.config/mihomo/config.yaml"
+grep -q 'bind-address: 127.0.0.1' "$tmp_home/.config/mihomo/config.yaml"
+grep -q '^BASHRC_PROXY_PORT=7891$' "$tmp_home/.config/envpilot/shell.local"
+grep -q '^stop:7890$' "$tmp_home/events"
+grep -q '^start:7891$' "$tmp_home/events"
+rm -rf "$tmp_home"
 echo "[TEST] doctor baseline restore"
 tmp_home="$(mktemp -d)"
 mkdir -p "$tmp_home/.config/envpilot" "$tmp_home/.config/mihomo"
@@ -280,7 +320,7 @@ grep -q 'env_key = "OPENAI_API_KEY"' "$ROOT/components/codex.sh"
 ! grep -q 'requires_openai_auth = true' "$ROOT/components/codex.sh"
 
 echo "[TEST] version"
-grep -q '^0\.1\.7$' "$ROOT/VERSION"
+grep -q '^0\.1\.8$' "$ROOT/VERSION"
 
 echo "[TEST] secret patterns are ignored"
 grep -q '^api.env$' "$ROOT/.gitignore"
@@ -289,6 +329,7 @@ grep -q 'geoip.metadb' "$ROOT/scripts/update-mihomo-cache.py"
 grep -q 'country.mmdb' "$ROOT/scripts/collect-assets.sh"
 grep -q 'geoip.metadb' "$ROOT/scripts/collect-assets.ps1"
 grep -q 'function mihomo' "$ROOT/templates/Microsoft.PowerShell_profile.ps1"
+grep -q 'Set-MihomoPort' "$ROOT/templates/Microsoft.PowerShell_profile.ps1"
 grep -q 'Restore-Baseline' "$ROOT/envpilot.ps1"
 grep -q '^config.yaml$' "$ROOT/.gitignore"
 
