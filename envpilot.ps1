@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position=0)]
-    [ValidateSet("doctor","install","apply-shell","rollback","resume","reset","update-manifests","update-mihomo-cache","self-test","help")]
+    [ValidateSet("doctor","install","apply-shell","rollback","restore","mihomo","resume","reset","update-manifests","update-mihomo-cache","self-test","help")]
     [string]$Command = "help",
 
     [Parameter(Position=1)]
@@ -19,6 +19,8 @@ $Script:Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Script:ConfigDir = if ($env:ENVPILOT_CONFIG_DIR) { $env:ENVPILOT_CONFIG_DIR } else { Join-Path $HOME ".config/envpilot" }
 $Script:StateFile = Join-Path $Script:ConfigDir "state.ps1.txt"
 $Script:RollbackLog = Join-Path $Script:ConfigDir "rollback.ps1.tsv"
+$Script:BaselineDir = Join-Path $Script:ConfigDir "baseline"
+$Script:BaselineFile = Join-Path $Script:BaselineDir "baseline.tsv"
 $Script:ReportFile = Join-Path $Script:ConfigDir "install-report.json"
 $Script:RunId = Get-Date -Format "yyyyMMddHHmmss"
 $Script:Events = @()
@@ -31,7 +33,6 @@ function Stop-Envpilot { param([string]$Message) throw "[ERROR] $Message" }
 function Initialize-Envpilot {
     New-Item -ItemType Directory -Force -Path $Script:ConfigDir | Out-Null
     New-Item -ItemType Directory -Force -Path (Join-Path $Script:ConfigDir "logs") | Out-Null
-    New-Item -ItemType Directory -Force -Path (Join-Path $HOME ".local/bin") | Out-Null
 }
 
 function Test-Command {
@@ -190,8 +191,277 @@ function Install-MihomoDataAssets {
     Install-MihomoDataAsset -Name "geoip.metadb" -ConfigDir $ConfigDir
 }
 
+function Get-MihomoBin {
+    return (Join-Path $HOME "software/mihomo/mihomo.exe")
+}
+
+function New-BaselineSlug {
+    param([string]$Path)
+    $slug = $Path -replace "^([A-Za-z]):", "drive_`$1"
+    $slug = $slug -replace "^[\\/]+", ""
+    $slug = $slug -replace "[\\/:\s]", "_"
+    $slug = $slug -replace "[^A-Za-z0-9_.-]", "_"
+    return $slug
+}
+
+function Add-BaselineEntry {
+    param([string]$Kind, [string]$Name, [string]$Target, [bool]$Present, [string]$Snapshot = "", [string]$Detail = "")
+    $presentValue = if ($Present) { "1" } else { "0" }
+    [void]$Script:BaselineRows.Add("$Kind`t$Name`t$Target`t$presentValue`t$Snapshot`t$Detail")
+}
+
+function Add-BaselineFile {
+    param([string]$Name, [string]$Target)
+    if (Test-Path -LiteralPath $Target) {
+        $snapshotRel = "files/$(New-BaselineSlug $Target)"
+        $snapshotAbs = Join-Path $Script:BaselineDir $snapshotRel
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $snapshotAbs) | Out-Null
+        Copy-Item -LiteralPath $Target -Destination $snapshotAbs -Force
+        Add-BaselineEntry -Kind "file" -Name $Name -Target $Target -Present $true -Snapshot $snapshotRel
+    } else {
+        Add-BaselineEntry -Kind "file" -Name $Name -Target $Target -Present $false
+    }
+}
+
+function Add-BaselineDir {
+    param([string]$Name, [string]$Target)
+    Add-BaselineEntry -Kind "dir" -Name $Name -Target $Target -Present (Test-Path -LiteralPath $Target -PathType Container)
+}
+
+function Add-BaselineTool {
+    param([string]$Name, [string]$Path = "")
+    if (-not $Path) {
+        $cmd = Get-Command $Name -ErrorAction SilentlyContinue
+        if ($cmd) { $Path = $cmd.Source }
+    }
+    Add-BaselineEntry -Kind "tool" -Name $Name -Target $Path -Present ([bool]$Path)
+}
+
+function Save-Baseline {
+    Remove-Item -LiteralPath $Script:BaselineDir -Recurse -Force -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Force -Path (Join-Path $Script:BaselineDir "files") | Out-Null
+    $Script:BaselineRows = [System.Collections.Generic.List[string]]::new()
+    [void]$Script:BaselineRows.Add("# envpilot doctor baseline")
+    [void]$Script:BaselineRows.Add("# captured_at=$((Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ"))")
+    [void]$Script:BaselineRows.Add("# platform=$($Script:Platform.OS)/$($Script:Platform.Arch)")
+    [void]$Script:BaselineRows.Add("# prefix=$Prefix")
+
+    Add-BaselineFile -Name "powershell-profile" -Target $PROFILE.CurrentUserCurrentHost
+    Add-BaselineFile -Name "powershell-local" -Target (Join-Path $Script:ConfigDir "profile.local.ps1")
+    Add-BaselineFile -Name "condarc" -Target (Join-Path $HOME ".condarc")
+    Add-BaselineFile -Name "mihomo-config" -Target (Join-Path $HOME ".config/mihomo/config.yaml")
+    Add-BaselineFile -Name "mihomo-country" -Target (Join-Path $HOME ".config/mihomo/country.mmdb")
+    Add-BaselineFile -Name "mihomo-geoip" -Target (Join-Path $HOME ".config/mihomo/geoip.metadb")
+    Add-BaselineFile -Name "mihomo-bin" -Target (Get-MihomoBin)
+    Add-BaselineFile -Name "mihomo-start" -Target (Join-Path $HOME "software/mihomo/start_mihomo.sh")
+    Add-BaselineFile -Name "mihomo-log" -Target (Join-Path $HOME "logs/mihomo.log")
+    Add-BaselineFile -Name "mihomo-state-log" -Target (Join-Path $HOME ".local/state/mihomo/start.log")
+    Add-BaselineFile -Name "codex-config" -Target (Join-Path $HOME ".codex/config.toml")
+    Add-BaselineFile -Name "codex-secrets" -Target (Join-Path $HOME ".config/secrets/api.env.example")
+    Add-BaselineFile -Name "gh-link" -Target (Join-Path $HOME ".local/bin/gh.exe")
+    Add-BaselineFile -Name "tmux-link" -Target (Join-Path $HOME ".local/bin/tmux")
+
+    Add-BaselineDir -Name "conda-miniconda-prefix" -Target (Join-Path $Prefix "miniconda3")
+    Add-BaselineDir -Name "conda-anaconda-prefix" -Target (Join-Path $Prefix "anaconda3")
+    Add-BaselineDir -Name "github-prefix" -Target (Join-Path $Prefix "github-cli")
+    Add-BaselineDir -Name "mihomo-prefix" -Target (Join-Path $HOME "software/mihomo")
+    Add-BaselineDir -Name "nvm-dir" -Target (Join-Path $HOME ".nvm")
+    Add-BaselineDir -Name "tmux-prefix" -Target (Join-Path $HOME ".local/envpilot")
+
+    Add-BaselineTool -Name "conda"
+    Add-BaselineTool -Name "mamba"
+    Add-BaselineTool -Name "codex"
+    Add-BaselineTool -Name "gh"
+    Add-BaselineTool -Name "tmux"
+    $mihomoBin = Get-MihomoBin
+    Add-BaselineTool -Name "mihomo" -Path ($(if (Test-Path -LiteralPath $mihomoBin) { $mihomoBin } else { "" }))
+
+    [System.IO.File]::WriteAllLines($Script:BaselineFile, $Script:BaselineRows, [System.Text.UTF8Encoding]::new($false))
+    Write-Info "Captured doctor baseline: $Script:BaselineFile"
+}
+
+function Test-EnvpilotSafePath {
+    param([string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path)) { return $false }
+    try {
+        $full = [System.IO.Path]::GetFullPath($Path)
+        foreach ($root in @($HOME, $Prefix, $Script:ConfigDir)) {
+            if ([string]::IsNullOrWhiteSpace($root)) { continue }
+            $rootFull = [System.IO.Path]::GetFullPath($root).TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
+            $rootPrefix = $rootFull + [System.IO.Path]::DirectorySeparatorChar
+            if ($full.StartsWith($rootPrefix, [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
+        }
+    } catch {
+        return $false
+    }
+    return $false
+}
+
+function Remove-EnvpilotPath {
+    param([string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) { return }
+    if (-not (Test-EnvpilotSafePath $Path)) {
+        Write-Warn "Skip unsafe restore target: $Path"
+        return
+    }
+    Remove-Item -LiteralPath $Path -Recurse -Force
+}
+
+function Test-MihomoPort {
+    param([string]$HostName = "127.0.0.1", [int]$Port = 7890)
+    $listen = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue | Where-Object {
+        $_.LocalAddress -in @($HostName, "0.0.0.0", "::", "::1")
+    } | Select-Object -First 1
+    return [bool]$listen
+}
+
+function Stop-MihomoProcesses {
+    param([switch]$Quiet)
+    $bin = Get-MihomoBin
+    $resolvedBin = $null
+    $stopped = 0
+    if (Test-Path -LiteralPath $bin) {
+        $resolvedBin = (Resolve-Path -LiteralPath $bin).Path
+    }
+    Get-Process -Name "mihomo" -ErrorAction SilentlyContinue | ForEach-Object {
+        try {
+            $processPath = $_.Path
+            if (($resolvedBin -and $processPath -eq $resolvedBin) -or ($processPath -like "*\software\mihomo\mihomo.exe")) {
+                Stop-Process -Id $_.Id -Force
+                $stopped += 1
+                Write-Info "Stopped mihomo process: $($_.Id)"
+            }
+        } catch {
+        }
+    }
+    if ($stopped -eq 0 -and -not $Quiet) {
+        Write-Info "No envpilot-managed mihomo process found."
+    }
+}
+
+function Start-MihomoProcess {
+    $bin = Get-MihomoBin
+    $configDir = Join-Path $HOME ".config/mihomo"
+    $config = Join-Path $configDir "config.yaml"
+    if (Test-MihomoPort) {
+        Write-Info "Proxy port 127.0.0.1:7890 is already listening."
+        return
+    }
+    if (-not (Test-Path -LiteralPath $bin)) { Stop-Envpilot "mihomo executable not found: $bin" }
+    if (-not (Test-Path -LiteralPath $config)) { Stop-Envpilot "mihomo config not found: $config" }
+    Start-Process -WindowStyle Hidden -FilePath $bin -ArgumentList @("-d", $configDir) | Out-Null
+    for ($i = 0; $i -lt 20; $i++) {
+        if (Test-MihomoPort) {
+            Write-Info "mihomo proxy port is listening: 127.0.0.1:7890"
+            return
+        }
+        Start-Sleep -Seconds 1
+    }
+    Stop-Envpilot "mihomo did not open proxy port 127.0.0.1:7890 within 20 seconds."
+}
+
+function Show-MihomoStatus {
+    $bin = Get-MihomoBin
+    $resolvedBin = if (Test-Path -LiteralPath $bin) { (Resolve-Path -LiteralPath $bin).Path } else { $null }
+    Write-Host "envpilot mihomo binary:"
+    if ($resolvedBin) { Write-Host "  $resolvedBin" } else { Write-Host "  not found: $bin" }
+    Write-Host ""
+    Write-Host "mihomo process:"
+    $processes = @(Get-Process -Name "mihomo" -ErrorAction SilentlyContinue | Where-Object {
+        try {
+            ($resolvedBin -and $_.Path -eq $resolvedBin) -or ($_.Path -like "*\software\mihomo\mihomo.exe")
+        } catch {
+            $false
+        }
+    })
+    if ($processes.Count -eq 0) {
+        Write-Host "  not running"
+    } else {
+        foreach ($process in $processes) { Write-Host "  $($process.Id) $($process.Path)" }
+    }
+    Write-Host ""
+    Write-Host "proxy port:"
+    if (Test-MihomoPort) { Write-Host "  127.0.0.1:7890 listening" } else { Write-Host "  127.0.0.1:7890 not detected" }
+}
+
+function Invoke-MihomoCommand {
+    $action = if ([string]::IsNullOrWhiteSpace($Component) -or $Component -eq "all") { "status" } else { $Component.ToLowerInvariant() }
+    switch ($action) {
+        "start" { Start-MihomoProcess }
+        "stop" { Stop-MihomoProcesses }
+        "status" { Show-MihomoStatus }
+        default { Stop-Envpilot "Unknown mihomo action: $Component. Use start, stop, or status." }
+    }
+}
+
+function Restore-BaselineTool {
+    param([string]$Name)
+    switch ($Name) {
+        "mamba" {
+            if (Test-Command conda) {
+                try { conda remove -n base -y mamba | Out-Null } catch { Write-Warn "Could not remove mamba from Conda base." }
+            }
+        }
+        "codex" {
+            if (Test-Command npm) {
+                try { npm uninstall -g "@openai/codex" | Out-Null } catch { Write-Warn "Could not uninstall Codex from npm global packages." }
+            }
+        }
+        "mihomo" {
+            Remove-EnvpilotPath (Get-MihomoBin)
+        }
+        "gh" {
+            if (Test-Command winget) {
+                try { winget uninstall --id GitHub.cli --silent | Out-Null } catch { Write-Warn "Could not uninstall GitHub CLI with winget." }
+            }
+        }
+    }
+}
+
+function Restore-Baseline {
+    if (-not (Test-Path -LiteralPath $Script:BaselineFile)) { Stop-Envpilot "No doctor baseline found. Run: .\envpilot.ps1 doctor" }
+    Write-Info "Restoring doctor baseline from $Script:BaselineFile"
+    Stop-MihomoProcesses
+
+    foreach ($line in Get-Content -LiteralPath $Script:BaselineFile) {
+        if ([string]::IsNullOrWhiteSpace($line) -or $line.StartsWith("#")) { continue }
+        $parts = $line -split "`t", 6
+        if ($parts.Count -lt 4) { continue }
+        $kind = $parts[0]
+        $name = $parts[1]
+        $target = $parts[2]
+        $present = $parts[3]
+        $snapshot = if ($parts.Count -ge 5) { $parts[4] } else { "" }
+
+        switch ($kind) {
+            "file" {
+                if ($present -eq "1") {
+                    $snapshotPath = Join-Path $Script:BaselineDir $snapshot
+                    if (Test-Path -LiteralPath $snapshotPath) {
+                        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target) | Out-Null
+                        Copy-Item -LiteralPath $snapshotPath -Destination $target -Force
+                        Write-Info "Restored file: $target"
+                    } else {
+                        Write-Warn "Missing snapshot for ${name}: $snapshotPath"
+                    }
+                } else {
+                    Remove-EnvpilotPath $target
+                }
+            }
+            "dir" {
+                if ($present -eq "0") { Remove-EnvpilotPath $target }
+            }
+            "tool" {
+                if ($present -eq "0") { Restore-BaselineTool $name }
+            }
+        }
+    }
+    Remove-Item -LiteralPath $Script:StateFile -Force -ErrorAction SilentlyContinue
+    Write-Info "Baseline restore complete."
+}
 function Show-Doctor {
     $Script:Platform = Get-EnvpilotPlatform
+    Save-Baseline
     Write-Info "OS: $($Script:Platform.OS)"
     Write-Info "Architecture: $($Script:Platform.Arch)"
     Write-Info "Administrator: $($Script:Platform.IsRoot)"
@@ -432,6 +702,10 @@ Usage:
       Back up and replace the active PowerShell profile.
   .\envpilot.ps1 rollback
       Restore the most recent envpilot-managed backup.
+  .\envpilot.ps1 restore
+      Restore envpilot-managed changes to the latest doctor baseline.
+  .\envpilot.ps1 mihomo [start|stop|status]
+      Manage the envpilot-installed mihomo process.
   .\envpilot.ps1 resume
       Continue an interrupted install using saved state.
   .\envpilot.ps1 reset
@@ -443,12 +717,16 @@ Usage:
 "@
 }
 try {
-    Initialize-Envpilot
+    if ($Command -notin @("help", "mihomo")) {
+        Initialize-Envpilot
+    }
     switch ($Command) {
         "doctor" { Show-Doctor }
         "install" { Invoke-Install }
         "apply-shell" { Apply-ShellProfile }
         "rollback" { Rollback-Latest }
+        "restore" { Restore-Baseline }
+        "mihomo" { Invoke-MihomoCommand }
         "resume" { if (Test-Path $Script:StateFile) { Get-Content $Script:StateFile }; $Component = "all"; Invoke-Install }
         "reset" { Remove-Item -LiteralPath $Script:StateFile -Force -ErrorAction SilentlyContinue; Write-Info "State reset." }
         "update-manifests" { Update-Manifests }

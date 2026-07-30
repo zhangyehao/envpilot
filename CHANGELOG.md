@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.6 - 2026-07-30
+
+### Changed
+
+- `doctor` now captures a restore baseline under `~/.config/envpilot/baseline/`.
+- Added `restore` to return envpilot-managed files, directories, and tool state to the latest doctor baseline.
+- Added `mihomo stop` / `mihomo status` shell helpers and `envpilot.sh mihomo start|stop|status`.
+
+### Fixed
+
+- Baseline restore now avoids manual teardown of Mihomo, shell edits, and user-space install paths when an install fails.
+- PowerShell and Bash entrypoints now expose the same restore semantics.
+
 ## 0.1.5 - 2026-07-30
 
 ### Changed

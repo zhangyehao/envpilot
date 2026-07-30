@@ -42,7 +42,14 @@ grep -q 'peter-evans/create-pull-request@v8' "$ROOT/.github/workflows/update-mih
 echo "[TEST] install order and resolver policy"
 grep -q 'for component in mihomo conda mamba codex github tmux' "$ROOT/envpilot.sh"
 grep -q 'update-mihomo-cache' "$ROOT/envpilot.sh"
+grep -q 'restore) run_restore' "$ROOT/envpilot.sh"
+grep -q 'mihomo) run_mihomo' "$ROOT/envpilot.sh"
+grep -q 'EP_MIHOMO_ACTION' "$ROOT/lib/common.sh"
+grep -q 'ep_mihomo_cli' "$ROOT/components/mihomo.sh"
 grep -q 'ep_find_cached_asset' "$ROOT/lib/download.sh"
+grep -q 'ep_capture_doctor_baseline' "$ROOT/lib/baseline.sh"
+grep -q 'ep_restore_doctor_baseline' "$ROOT/lib/baseline.sh"
+grep -q 'mihomo-bin' "$ROOT/lib/baseline.sh"
 grep -q 'Using bundled downloads/ mihomo asset before network' "$ROOT/components/mihomo.sh"
 grep -q 'Using bundled downloads/ mihomo data asset before network' "$ROOT/components/mihomo.sh"
 grep -q 'meta-rules-dat' "$ROOT/components/mihomo.sh"
@@ -51,6 +58,10 @@ grep -q 'Install-MihomoDataAssets' "$ROOT/envpilot.ps1"
 grep -q 'EP_LEGACY_MINICONDA_VERSION' "$ROOT/components/conda.sh"
 grep -q 'ep_mihomo_offline_pattern' "$ROOT/components/mihomo.sh"
 grep -q 'mihomo_wait_for_port' "$ROOT/templates/bashrc"
+grep -q 'mihomo()' "$ROOT/templates/bashrc"
+grep -q 'envpilot_restore()' "$ROOT/templates/bashrc"
+grep -q 'mihomo()' "$ROOT/templates/zshrc"
+grep -q 'envpilot_restore()' "$ROOT/templates/zshrc"
 grep -q 'did not open proxy port' "$ROOT/templates/start_mihomo.sh"
 grep -q 'Source URL:' "$ROOT/lib/download.sh"
 ! grep -qi 'miniforge' "$ROOT/components/conda.sh" "$ROOT/manifests/conda.json" "$ROOT/templates/bashrc" "$ROOT/templates/zshrc" "$ROOT/scripts/collect-assets.sh" "$ROOT/scripts/collect-assets.ps1"
@@ -180,6 +191,83 @@ status_check="$(
     bash --noprofile --norc -ic '. "'"$ROOT/templates/bashrc"'"; proxy_status' 2>/dev/null
 )"
 printf '%s\n' "$status_check" | grep -q 'reachable via TCP connect'
+echo "[TEST] doctor baseline restore"
+tmp_home="$(mktemp -d)"
+mkdir -p "$tmp_home/.config/envpilot" "$tmp_home/.config/mihomo"
+cat > "$tmp_home/.bashrc" <<'EOF'
+export PATH="$HOME/bin:$PATH"
+EOF
+cat > "$tmp_home/.condarc" <<'EOF'
+channels:
+  - defaults
+EOF
+cat > "$tmp_home/.config/mihomo/config.yaml" <<'EOF'
+mixed-port: 7890
+EOF
+cat > "$tmp_home/.config/envpilot/shell.local" <<'EOF'
+BASHRC_UMASK=027
+EOF
+mkdir -p "$tmp_home/software/mihomo"
+printf '%s\n' keep > "$tmp_home/software/mihomo/keep.txt"
+(
+    HOME="$tmp_home"
+    ENVPILOT_ROOT="$ROOT"
+    # shellcheck source=/dev/null
+    . "$ROOT/lib/common.sh"
+    # shellcheck source=/dev/null
+    . "$ROOT/lib/platform.sh"
+    # shellcheck source=/dev/null
+    . "$ROOT/lib/shell.sh"
+    # shellcheck source=/dev/null
+    . "$ROOT/lib/baseline.sh"
+    # shellcheck source=/dev/null
+    . "$ROOT/components/mihomo.sh"
+    EP_PREFIX="$tmp_home/software"
+    EP_OS="linux"
+    EP_ARCH="amd64"
+    EP_LIBC="glibc"
+    EP_SHELL_NAME="bash"
+    EP_CONFIG_DIR="$tmp_home/.config/envpilot"
+    EP_BASELINE_DIR="$tmp_home/.config/envpilot/baseline"
+    EP_BASELINE_FILE="$tmp_home/.config/envpilot/baseline/baseline.tsv"
+    ep_capture_doctor_baseline >/dev/null
+)
+printf 'changed\n' > "$tmp_home/.bashrc"
+rm -f "$tmp_home/.condarc"
+printf 'changed\n' > "$tmp_home/.config/mihomo/config.yaml"
+printf '%s\n' '#!/usr/bin/env sh' > "$tmp_home/software/mihomo/mihomo"
+chmod +x "$tmp_home/software/mihomo/mihomo"
+printf 'changed\n' > "$tmp_home/.config/envpilot/shell.local"
+(
+    HOME="$tmp_home"
+    ENVPILOT_ROOT="$ROOT"
+    # shellcheck source=/dev/null
+    . "$ROOT/lib/common.sh"
+    # shellcheck source=/dev/null
+    . "$ROOT/lib/platform.sh"
+    # shellcheck source=/dev/null
+    . "$ROOT/lib/shell.sh"
+    # shellcheck source=/dev/null
+    . "$ROOT/lib/baseline.sh"
+    # shellcheck source=/dev/null
+    . "$ROOT/components/mihomo.sh"
+    EP_PREFIX="$tmp_home/software"
+    EP_OS="linux"
+    EP_ARCH="amd64"
+    EP_LIBC="glibc"
+    EP_SHELL_NAME="bash"
+    EP_CONFIG_DIR="$tmp_home/.config/envpilot"
+    EP_BASELINE_DIR="$tmp_home/.config/envpilot/baseline"
+    EP_BASELINE_FILE="$tmp_home/.config/envpilot/baseline/baseline.tsv"
+    ep_restore_doctor_baseline >/tmp/envpilot-restore.out 2>&1
+)
+grep -q 'export PATH' "$tmp_home/.bashrc"
+grep -q 'channels:' "$tmp_home/.condarc"
+grep -q 'mixed-port: 7890' "$tmp_home/.config/mihomo/config.yaml"
+test ! -e "$tmp_home/software/mihomo/mihomo"
+grep -q 'keep' "$tmp_home/software/mihomo/keep.txt"
+grep -q 'BASHRC_UMASK=027' "$tmp_home/.config/envpilot/shell.local"
+rm -rf "$tmp_home"
 echo "[TEST] doctor works with isolated HOME"
 HOME="$tmp_home" bash "$ROOT/envpilot.sh" doctor >/tmp/envpilot-doctor.out 2>&1
 grep -q 'envpilot doctor' /tmp/envpilot-doctor.out
@@ -192,7 +280,7 @@ grep -q 'env_key = "OPENAI_API_KEY"' "$ROOT/components/codex.sh"
 ! grep -q 'requires_openai_auth = true' "$ROOT/components/codex.sh"
 
 echo "[TEST] version"
-grep -q '^0\.1\.5$' "$ROOT/VERSION"
+grep -q '^0\.1\.6$' "$ROOT/VERSION"
 
 echo "[TEST] secret patterns are ignored"
 grep -q '^api.env$' "$ROOT/.gitignore"
@@ -200,6 +288,8 @@ grep -q 'country.mmdb' "$ROOT/scripts/update-mihomo-cache.py"
 grep -q 'geoip.metadb' "$ROOT/scripts/update-mihomo-cache.py"
 grep -q 'country.mmdb' "$ROOT/scripts/collect-assets.sh"
 grep -q 'geoip.metadb' "$ROOT/scripts/collect-assets.ps1"
+grep -q 'function mihomo' "$ROOT/templates/Microsoft.PowerShell_profile.ps1"
+grep -q 'Restore-Baseline' "$ROOT/envpilot.ps1"
 grep -q '^config.yaml$' "$ROOT/.gitignore"
 
 rm -rf "$tmp_home"

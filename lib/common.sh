@@ -7,12 +7,15 @@ EP_ASSUME_YES="${EP_ASSUME_YES:-0}"
 EP_CONDA_DISTRIBUTION="${EP_CONDA_DISTRIBUTION:-miniconda}"
 EP_COMMAND="${EP_COMMAND:-}"
 EP_COMPONENT="${EP_COMPONENT:-all}"
+EP_MIHOMO_ACTION="${EP_MIHOMO_ACTION:-status}"
 EP_RUN_ID=""
 EP_CONFIG_DIR=""
 EP_STATE_FILE=""
 EP_REPORT_FILE=""
 EP_LOG_FILE=""
 EP_ROLLBACK_LOG=""
+EP_BASELINE_DIR=""
+EP_BASELINE_FILE=""
 
 ep_timestamp()
 {
@@ -33,7 +36,9 @@ ep_init()
     EP_REPORT_FILE="$EP_CONFIG_DIR/install-report.json"
     EP_LOG_FILE="$EP_CONFIG_DIR/logs/envpilot-$EP_RUN_ID.log"
     EP_ROLLBACK_LOG="$EP_CONFIG_DIR/rollback.log"
-    mkdir -p "$EP_CONFIG_DIR/logs" "$EP_CONFIG_DIR/backups" "$HOME/.local/bin"
+    EP_BASELINE_DIR="$EP_CONFIG_DIR/baseline"
+    EP_BASELINE_FILE="$EP_BASELINE_DIR/baseline.tsv"
+    mkdir -p "$EP_CONFIG_DIR/logs" "$EP_CONFIG_DIR/backups"
     trap ep_on_interrupt INT TERM
 }
 

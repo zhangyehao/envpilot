@@ -119,6 +119,122 @@ ep_proxy_port_is_listening()
     return 1
 }
 
+ep_stop_mihomo()
+{
+    local bin user_name pids pid stopped i
+    bin="$(ep_mihomo_bin)"
+    user_name="${USER:-$(id -un 2>/dev/null || true)}"
+    stopped="0"
+
+    [ -n "$user_name" ] || return 0
+
+    if ep_command_exists pkill; then
+        if pkill -u "$user_name" -f "$bin" >/dev/null 2>&1; then
+            stopped="1"
+        fi
+    else
+        pids="$(ps -u "$user_name" -o pid=,args= 2>/dev/null | awk -v pat="$bin" 'index($0, pat) { print $1 }' || true)"
+        for pid in $pids; do
+            kill "$pid" >/dev/null 2>&1 && stopped="1"
+        done
+    fi
+
+    if [ "$stopped" = "1" ]; then
+        i=0
+        while [ "$i" -lt 10 ]; do
+            if ! ep_proxy_port_is_listening 127.0.0.1 7890; then
+                ep_log "Stopped mihomo: $bin"
+                return 0
+            fi
+            sleep 1
+            i=$((i + 1))
+        done
+        ep_warn "mihomo stop was requested, but proxy port 127.0.0.1:7890 is still reachable. Another process may be listening."
+    else
+        ep_log "No envpilot-managed mihomo process found."
+    fi
+}
+
+ep_start_mihomo()
+{
+    local bin start_script log_file i
+    bin="$(ep_mihomo_bin)"
+    start_script="$(dirname "$bin")/start_mihomo.sh"
+    log_file="$HOME/logs/mihomo.log"
+
+    ep_require_unix_runtime
+    if ep_proxy_port_is_listening 127.0.0.1 7890; then
+        ep_log "Proxy port 127.0.0.1:7890 is already listening."
+        return 0
+    fi
+    if [ -x "$start_script" ]; then
+        "$start_script"
+    elif [ -x "$bin" ]; then
+        [ -s "$HOME/.config/mihomo/config.yaml" ] || ep_die "mihomo config not found: $HOME/.config/mihomo/config.yaml"
+        mkdir -p "$(dirname "$log_file")"
+        nohup "$bin" -d "$HOME/.config/mihomo" >> "$log_file" 2>&1 < /dev/null &
+    else
+        ep_die "mihomo executable not found: $bin"
+    fi
+
+    i=0
+    while [ "$i" -lt 20 ]; do
+        if ep_proxy_port_is_listening 127.0.0.1 7890; then
+            ep_log "mihomo proxy port is listening: 127.0.0.1:7890"
+            return 0
+        fi
+        sleep 1
+        i=$((i + 1))
+    done
+    ep_die "mihomo did not open proxy port 127.0.0.1:7890 within 20 seconds. Check: $log_file"
+}
+
+ep_status_mihomo()
+{
+    local bin user_name pids
+    bin="$(ep_mihomo_bin)"
+    user_name="${USER:-$(id -un 2>/dev/null || true)}"
+
+    printf 'envpilot mihomo binary:\n'
+    if [ -x "$bin" ]; then
+        printf '  %s\n' "$bin"
+    else
+        printf '  not found: %s\n' "$bin"
+    fi
+    printf '\nmihomo process:\n'
+    if [ -n "$user_name" ] && ep_command_exists pgrep; then
+        pgrep -u "$user_name" -af "$bin" || printf '  not running\n'
+    elif [ -n "$user_name" ]; then
+        pids="$(ps -u "$user_name" -o pid=,args= 2>/dev/null | awk -v pat="$bin" 'index($0, pat) { print }' || true)"
+        if [ -n "$pids" ]; then
+            printf '%s\n' "$pids"
+        else
+            printf '  not running\n'
+        fi
+    else
+        printf '  not running\n'
+    fi
+    printf '\nproxy port:\n'
+    if ep_proxy_port_socket_listening 7890; then
+        printf '  127.0.0.1:7890 listening\n'
+    elif ep_proxy_port_is_listening 127.0.0.1 7890; then
+        printf '  127.0.0.1:7890 reachable via TCP connect\n'
+    else
+        printf '  127.0.0.1:7890 not detected\n'
+    fi
+}
+
+ep_mihomo_cli()
+{
+    local action="${1:-status}"
+    case "$action" in
+        start) ep_start_mihomo ;;
+        stop) ep_stop_mihomo ;;
+        status) ep_status_mihomo ;;
+        *) ep_die "Unknown mihomo action: $action. Use start, stop, or status." ;;
+    esac
+}
+
 ep_doctor_mihomo()
 {
     local bin cached offline_pattern config_dir geo_path

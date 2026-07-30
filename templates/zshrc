@@ -5,6 +5,15 @@ export ENVPILOT_CONFIG_DIR="${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}"
 export BASHRC_SECRETS_FILE="${BASHRC_SECRETS_FILE:-$HOME/.config/secrets/api.env}"
 export BASHRC_PROXY_HOST="${BASHRC_PROXY_HOST:-127.0.0.1}"
 export BASHRC_PROXY_PORT="${BASHRC_PROXY_PORT:-7890}"
+export BASHRC_MIHOMO_BIN="${BASHRC_MIHOMO_BIN:-$HOME/software/mihomo/mihomo}"
+export BASHRC_MIHOMO_START_SCRIPT="${BASHRC_MIHOMO_START_SCRIPT:-$HOME/software/mihomo/start_mihomo.sh}"
+export BASHRC_MIHOMO_LOG="${BASHRC_MIHOMO_LOG:-$HOME/logs/mihomo.log}"
+export BASHRC_ENVPILOT_ROOT="${BASHRC_ENVPILOT_ROOT:-}"
+
+command_exists()
+{
+    command -v "$1" >/dev/null 2>&1
+}
 
 path_prepend()
 {
@@ -59,6 +68,157 @@ proxy_off()
     unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY no_proxy NO_PROXY
 }
 
+proxy_port_socket_listening()
+{
+    local port="${1:-$BASHRC_PROXY_PORT}"
+    local line
+    if command_exists ss; then
+        line="$(ss -lntH "sport = :$port" 2>/dev/null | head -n 1 || true)"
+        [ -n "$line" ] && return 0
+    fi
+    if command_exists lsof; then
+        line="$(lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | awk 'NR == 2 { print; exit }' || true)"
+        [ -n "$line" ] && return 0
+    fi
+    if command_exists netstat; then
+        line="$(netstat -an 2>/dev/null | grep -E "[.:]${port}[[:space:]].*LISTEN" | head -n 1 || true)"
+        [ -n "$line" ] && return 0
+    fi
+    return 1
+}
+
+proxy_port_is_listening()
+{
+    local host="${1:-$BASHRC_PROXY_HOST}"
+    local port="${2:-$BASHRC_PROXY_PORT}"
+    if proxy_port_socket_listening "$port"; then
+        return 0
+    fi
+    if command_exists nc && nc -z -w 1 "$host" "$port" >/dev/null 2>&1; then
+        return 0
+    fi
+    return 1
+}
+
+mihomo_wait_for_port()
+{
+    local attempts="${1:-20}"
+    local i=0
+    while [ "$i" -lt "$attempts" ]; do
+        if proxy_port_is_listening; then
+            return 0
+        fi
+        sleep 1
+        i=$((i + 1))
+    done
+    return 1
+}
+
+mihomo_wait_for_port_clear()
+{
+    local attempts="${1:-10}"
+    local i=0
+    while [ "$i" -lt "$attempts" ]; do
+        if ! proxy_port_is_listening; then
+            return 0
+        fi
+        sleep 1
+        i=$((i + 1))
+    done
+    return 1
+}
+
+mihomo_start()
+{
+    mkdir -p "$(dirname "$BASHRC_MIHOMO_LOG")" 2>/dev/null || true
+    if proxy_port_is_listening; then
+        return 0
+    fi
+    if [ -x "$BASHRC_MIHOMO_START_SCRIPT" ]; then
+        "$BASHRC_MIHOMO_START_SCRIPT"
+    elif [ -x "$BASHRC_MIHOMO_BIN" ]; then
+        nohup "$BASHRC_MIHOMO_BIN" -d "$HOME/.config/mihomo" >> "$BASHRC_MIHOMO_LOG" 2>&1 < /dev/null &
+    else
+        printf 'mihomo executable or start script not found.\n' >&2
+        return 1
+    fi
+    mihomo_wait_for_port 20 || { printf 'mihomo did not open proxy port %s within 20 seconds.\n' "$BASHRC_PROXY_PORT" >&2; return 1; }
+}
+
+mihomo_stop()
+{
+    local user_name="${USER:-$(id -un 2>/dev/null || true)}"
+    local pids pid stopped
+    stopped="0"
+    [ -n "$user_name" ] || return 0
+    if command_exists pkill; then
+        pkill -u "$user_name" -f "$BASHRC_MIHOMO_BIN" >/dev/null 2>&1 && stopped="1"
+    else
+        pids="$(ps -u "$user_name" -o pid=,args= 2>/dev/null | awk -v pat="$BASHRC_MIHOMO_BIN" 'index($0, pat) { print $1 }' || true)"
+        for pid in $pids; do
+            kill "$pid" >/dev/null 2>&1 && stopped="1"
+        done
+    fi
+    if [ "$stopped" = "1" ]; then
+        mihomo_wait_for_port_clear 10 || { printf 'mihomo stop was requested, but proxy port %s is still reachable. Another process may be listening.\n' "$BASHRC_PROXY_PORT" >&2; return 1; }
+        printf 'mihomo stopped.\n'
+    fi
+}
+
+proxy_status()
+{
+    local user_name="${USER:-$(id -un 2>/dev/null || true)}"
+    printf 'mihomo process:\n'
+    if [ -n "$user_name" ] && command_exists pgrep; then
+        pgrep -u "$user_name" -af "mihomo" || printf 'not running\n'
+    else
+        ps -u "$user_name" -o pid=,args= 2>/dev/null | grep -E '(^|/|[[:space:]])mihomo(\.exe)?([[:space:]]|$)' || printf 'not running\n'
+    fi
+    printf '\nproxy port:\n'
+    if proxy_port_socket_listening "$BASHRC_PROXY_PORT"; then
+        printf '%s:%s listening\n' "$BASHRC_PROXY_HOST" "$BASHRC_PROXY_PORT"
+    elif proxy_port_is_listening "$BASHRC_PROXY_HOST" "$BASHRC_PROXY_PORT"; then
+        printf '%s:%s reachable via TCP connect\n' "$BASHRC_PROXY_HOST" "$BASHRC_PROXY_PORT"
+    else
+        printf '%s:%s not listening\n' "$BASHRC_PROXY_HOST" "$BASHRC_PROXY_PORT"
+    fi
+    printf '\nproxy variables:\n'
+    printf 'http_proxy=%s\n' "${http_proxy:-unset}"
+    printf 'https_proxy=%s\n' "${https_proxy:-unset}"
+    printf 'all_proxy=%s\n' "${all_proxy:-unset}"
+}
+
+mihomo()
+{
+    local action="${1:-start}"
+    case "$action" in
+        start) shift || true; mihomo_start "$@" ;;
+        stop) shift || true; mihomo_stop "$@" ;;
+        status) proxy_status ;;
+        proxy-on) proxy_on ;;
+        proxy-off) proxy_off ;;
+        run)
+            shift || true
+            [ -x "$BASHRC_MIHOMO_BIN" ] || { printf 'mihomo executable not found: %s\n' "$BASHRC_MIHOMO_BIN" >&2; return 1; }
+            "$BASHRC_MIHOMO_BIN" "$@"
+            ;;
+        *)
+            [ -x "$BASHRC_MIHOMO_BIN" ] || { printf 'Usage: mihomo {start|stop|status|proxy-on|proxy-off|run}\n' >&2; return 2; }
+            "$BASHRC_MIHOMO_BIN" "$@"
+            ;;
+    esac
+}
+
+envpilot_restore()
+{
+    if [ -z "${BASHRC_ENVPILOT_ROOT:-}" ] || [ ! -f "$BASHRC_ENVPILOT_ROOT/envpilot.sh" ]; then
+        printf 'BASHRC_ENVPILOT_ROOT is not set. Run from the repo: bash envpilot.sh restore\n' >&2
+        return 1
+    fi
+    bash "$BASHRC_ENVPILOT_ROOT/envpilot.sh" restore "$@" || return $?
+    proxy_off
+    [ -r "$HOME/.zshrc" ] && . "$HOME/.zshrc"
+}
 with_secrets()
 {
     local secret_file="$BASHRC_SECRETS_FILE"

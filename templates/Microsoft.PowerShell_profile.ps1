@@ -44,6 +44,109 @@ function Disable-EnvpilotProxy {
     }
 }
 
+function Get-MihomoBin {
+    Join-Path $HOME "software/mihomo/mihomo.exe"
+}
+
+function Test-MihomoPort {
+    param([string]$HostName = "127.0.0.1", [int]$Port = 7890)
+    $listen = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue | Where-Object {
+        $_.LocalAddress -in @($HostName, "0.0.0.0", "::", "::1")
+    } | Select-Object -First 1
+    return [bool]$listen
+}
+
+function Start-Mihomo {
+    $bin = Get-MihomoBin
+    $configDir = Join-Path $HOME ".config/mihomo"
+    if (-not (Test-Path -LiteralPath $bin)) {
+        throw "mihomo executable not found: $bin"
+    }
+    if (-not (Test-Path -LiteralPath (Join-Path $configDir "config.yaml"))) {
+        throw "mihomo config not found: $(Join-Path $configDir 'config.yaml')"
+    }
+    if (Test-MihomoPort) {
+        Write-Info "mihomo already running."
+        return
+    }
+    Start-Process -WindowStyle Hidden -FilePath $bin -ArgumentList @("-d", $configDir) | Out-Null
+    Write-Info "mihomo start requested."
+}
+
+function Stop-Mihomo {
+    $bin = Get-MihomoBin
+    $processes = @(Get-Process -Name mihomo -ErrorAction SilentlyContinue | Where-Object {
+        try {
+            $_.Path -eq $bin -or $_.Path -like "*\software\mihomo\mihomo.exe"
+        } catch {
+            $false
+        }
+    })
+    foreach ($process in $processes) {
+        Stop-Process -Id $process.Id -Force
+    }
+    if ($processes.Count -gt 0) {
+        Start-Sleep -Seconds 1
+        Write-Info "mihomo stopped."
+    }
+}
+
+function Get-MihomoStatus {
+    $bin = Get-MihomoBin
+    $processes = @(Get-Process -Name mihomo -ErrorAction SilentlyContinue | Where-Object {
+        try {
+            $_.Path -eq $bin -or $_.Path -like "*\software\mihomo\mihomo.exe"
+        } catch {
+            $false
+        }
+    })
+    Write-Host "mihomo process:"
+    if ($processes.Count -eq 0) {
+        Write-Host "  not running"
+    } else {
+        foreach ($process in $processes) {
+            Write-Host "  $($process.Id) $($process.Path)"
+        }
+    }
+    Write-Host ""
+    Write-Host "proxy port:"
+    if (Test-MihomoPort) {
+        Write-Host "  127.0.0.1:7890 listening"
+    } else {
+        Write-Host "  127.0.0.1:7890 not listening"
+    }
+    Write-Host ""
+    Write-Host "proxy variables:"
+    $httpProxy = if ([string]::IsNullOrWhiteSpace($env:http_proxy)) { 'unset' } else { $env:http_proxy }
+    $httpsProxy = if ([string]::IsNullOrWhiteSpace($env:https_proxy)) { 'unset' } else { $env:https_proxy }
+    $allProxy = if ([string]::IsNullOrWhiteSpace($env:all_proxy)) { 'unset' } else { $env:all_proxy }
+    Write-Host "  http_proxy=$httpProxy"
+    Write-Host "  https_proxy=$httpsProxy"
+    Write-Host "  all_proxy=$allProxy"
+}
+
+function mihomo {
+    param(
+        [Parameter(Position=0)]
+        [string]$Action = "start",
+        [Parameter(ValueFromRemainingArguments=$true)]
+        [string[]]$Args
+    )
+    switch ($Action.ToLowerInvariant()) {
+        "start" { Start-Mihomo; break }
+        "stop" { Stop-Mihomo; break }
+        "status" { Get-MihomoStatus; break }
+        "proxy-on" { Enable-EnvpilotProxy; break }
+        "proxy-off" { Disable-EnvpilotProxy; break }
+        default {
+            $bin = Get-MihomoBin
+            if (-not (Test-Path -LiteralPath $bin)) {
+                throw "mihomo executable not found: $bin"
+            }
+            & $bin $Action @Args
+        }
+    }
+}
 $localProfile = Join-Path $EnvpilotConfigDir "profile.local.ps1"
 if (Test-Path -LiteralPath $localProfile) {
     . $localProfile

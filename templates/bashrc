@@ -16,6 +16,7 @@ BASHRC_MIHOMO_LOG="${BASHRC_MIHOMO_LOG:-$HOME/.local/state/mihomo/start.log}"
 BASHRC_PROXY_HOST="${BASHRC_PROXY_HOST:-127.0.0.1}"
 BASHRC_PROXY_PORT="${BASHRC_PROXY_PORT:-7890}"
 BASHRC_LOCAL_FILE="${BASHRC_LOCAL_FILE:-$HOME/.config/envpilot/shell.local}"
+BASHRC_ENVPILOT_ROOT="${BASHRC_ENVPILOT_ROOT:-}"
 
 command_exists()
 {
@@ -349,14 +350,81 @@ mihomo_start()
     fi
     return 1
 }
+mihomo_wait_for_port_clear()
+{
+    local attempts="${1:-10}"
+    local i=0
+    while [ "$i" -lt "$attempts" ]; do
+        if ! proxy_port_is_listening; then
+            return 0
+        fi
+        sleep 1
+        i=$((i + 1))
+    done
+    return 1
+}
+
 mihomo_stop()
 {
+    local user_name="${USER:-$(id -un 2>/dev/null || true)}"
+    local pids pid stopped
+    stopped="0"
+    [ -n "$user_name" ] || return 0
+
     if command_exists pkill; then
-        pkill -u "$USER" -f "$BASHRC_MIHOMO_BIN"
+        pkill -u "$user_name" -f "$BASHRC_MIHOMO_BIN" >/dev/null 2>&1 && stopped="1"
     else
-        printf 'pkill not found; stop mihomo manually.\n' >&2
+        pids="$(ps -u "$user_name" -o pid=,args= 2>/dev/null | awk -v pat="$BASHRC_MIHOMO_BIN" 'index($0, pat) { print $1 }' || true)"
+        for pid in $pids; do
+            kill "$pid" >/dev/null 2>&1 && stopped="1"
+        done
+    fi
+
+    if [ "$stopped" = "1" ]; then
+        if mihomo_wait_for_port_clear 10; then
+            printf 'mihomo stopped.\n'
+            return 0
+        fi
+        printf 'mihomo stop was requested, but proxy port %s is still reachable. Another process may be listening.\n' "$BASHRC_PROXY_PORT" >&2
         return 1
     fi
+    return 0
+}
+
+mihomo()
+{
+    local action="${1:-start}"
+    case "$action" in
+        start) shift || true; mihomo_start "$@" ;;
+        stop) shift || true; mihomo_stop "$@" ;;
+        status) proxy_status ;;
+        proxy-on) proxy_on ;;
+        proxy-off) proxy_off ;;
+        run)
+            shift || true
+            [ -x "$BASHRC_MIHOMO_BIN" ] || { printf 'mihomo executable not found: %s\n' "$BASHRC_MIHOMO_BIN" >&2; return 1; }
+            "$BASHRC_MIHOMO_BIN" "$@"
+            ;;
+        *)
+            if [ -x "$BASHRC_MIHOMO_BIN" ]; then
+                "$BASHRC_MIHOMO_BIN" "$@"
+            else
+                printf 'Usage: mihomo {start|stop|status|proxy-on|proxy-off|run}\n' >&2
+                return 2
+            fi
+            ;;
+    esac
+}
+
+envpilot_restore()
+{
+    if [ -z "${BASHRC_ENVPILOT_ROOT:-}" ] || [ ! -f "$BASHRC_ENVPILOT_ROOT/envpilot.sh" ]; then
+        printf 'BASHRC_ENVPILOT_ROOT is not set. Run from the repo: bash envpilot.sh restore\n' >&2
+        return 1
+    fi
+    bash "$BASHRC_ENVPILOT_ROOT/envpilot.sh" restore "$@" || return $?
+    proxy_off
+    [ -r "$HOME/.bashrc" ] && . "$HOME/.bashrc"
 }
 
 proxy_on()
@@ -383,7 +451,7 @@ proxy_status()
     local port="${BASHRC_PROXY_PORT}"
     printf 'mihomo process:\n'
     if command_exists pgrep; then
-        pgrep -af "mihomo" || printf 'not running\n'
+        pgrep -u "${USER:-$(id -un 2>/dev/null || true)}" -af "mihomo" || printf 'not running\n'
     else
         ps -u "$USER" -o pid=,args= 2>/dev/null | grep -E '(^|/|[[:space:]])mihomo(\.exe)?([[:space:]]|$)' || printf 'not running\n'
     fi

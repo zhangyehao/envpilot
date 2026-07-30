@@ -62,7 +62,7 @@ Current exception policy:
 
 If a new cache file is needed, add a clear rule to `.gitignore`, update the relevant updater, and document the reason in this file.
 
-## State, resume, and rollback
+## State, resume, rollback, and restore
 
 State file:
 
@@ -76,9 +76,19 @@ Rollback log:
 ~/.config/envpilot/rollback.log
 ```
 
-If a component writes a user config, back it up before writing. If a component writes several files, back them up separately and keep the user-visible config last so `rollback` restores the file the user most likely wants first.
+Doctor baseline:
+
+```text
+~/.config/envpilot/baseline/baseline.tsv
+~/.config/envpilot/baseline/files/
+```
 
 `rollback` only restores the latest backup record. It is not a full system rollback.
+`restore` replays the latest doctor baseline and is the right entry point when an install fails and the user wants to return to the initial state without manually stopping mihomo or cleaning up user-space paths. If a component creates a managed file inside a directory that may already exist, record that file explicitly in the baseline; do not rely only on directory absence.
+
+A subprocess cannot unset proxy variables in the parent shell. Shell templates therefore provide `envpilot_restore`, which runs restore and then clears the current shell proxy variables.
+
+If a component writes a user config, back it up before writing. If a component writes several files, back them up separately and keep the user-visible config last so `rollback` restores the file the user most likely wants first.
 
 ## Shell profile policy
 

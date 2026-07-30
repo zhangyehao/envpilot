@@ -15,6 +15,8 @@ ENVPILOT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$ENVPILOT_ROOT/lib/shell.sh"
 # shellcheck source=lib/rollback.sh
 . "$ENVPILOT_ROOT/lib/rollback.sh"
+# shellcheck source=lib/baseline.sh
+. "$ENVPILOT_ROOT/lib/baseline.sh"
 
 for __envpilot_component in "$ENVPILOT_ROOT"/components/*.sh; do
     # shellcheck source=/dev/null
@@ -28,12 +30,15 @@ usage()
 envpilot - cross-platform user-space environment bootstrapper
 
 Usage:
-  bash envpilot.sh doctor             Show system, shell, proxy, and installed tool status.
+  bash envpilot.sh doctor             Show status and capture a restore baseline.
   bash envpilot.sh install [all|mihomo|conda|mamba|codex|github|tmux] [--mode online|offline] [--prefix PATH] [--asset-path PATH] [--yes]
                                       Install the selected component(s). Online is the default.
   bash envpilot.sh apply-shell [--yes]
                                       Back up and replace the active shell profile.
   bash envpilot.sh rollback           Restore the most recent envpilot-managed backup.
+  bash envpilot.sh restore            Restore envpilot-managed changes to the latest doctor baseline.
+  bash envpilot.sh mihomo [start|stop|status]
+                                      Manage the envpilot-installed mihomo process.
   bash envpilot.sh resume             Continue an interrupted install using saved state.
   bash envpilot.sh reset              Clear saved state so install steps can run again.
   bash envpilot.sh update-manifests   Refresh manifest latest metadata from upstream.
@@ -64,6 +69,13 @@ parse_args()
         arg="${1%$'\r'}"
         if [ "${arg#-}" = "$arg" ]; then
             EP_COMPONENT="$arg"
+            shift
+        fi
+    fi
+    if [ "$EP_COMMAND" = "mihomo" ] && [ "${1:-}" != "" ]; then
+        arg="${1%$'\r'}"
+        if [ "${arg#-}" = "$arg" ]; then
+            EP_MIHOMO_ACTION="$arg"
             shift
         fi
     fi
@@ -119,6 +131,7 @@ run_doctor()
     ep_platform_detect
     ep_log "envpilot doctor"
     ep_platform_print
+    ep_capture_doctor_baseline
     ep_doctor_conda
     ep_doctor_mamba
     ep_doctor_mihomo
@@ -191,6 +204,19 @@ run_resume()
     run_install
 }
 
+run_restore()
+{
+    ep_init
+    ep_platform_detect
+    ep_restore_doctor_baseline
+}
+
+run_mihomo()
+{
+    ep_platform_detect
+    ep_mihomo_cli "$EP_MIHOMO_ACTION"
+}
+
 run_reset()
 {
     ep_init
@@ -228,6 +254,8 @@ main()
         install) run_install ;;
         apply-shell) run_apply_shell ;;
         rollback) ep_init; ep_rollback_latest ;;
+        restore) run_restore ;;
+        mihomo) run_mihomo ;;
         resume) run_resume ;;
         reset) run_reset ;;
         update-manifests) run_update_manifests ;;
