@@ -146,6 +146,50 @@ function Resolve-GitHubAsset {
     return $asset.browser_download_url
 }
 
+
+function Get-MihomoDataUrl {
+    param([string]$Name)
+    switch ($Name) {
+        "country.mmdb" { return "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/country.mmdb" }
+        "geoip.metadb" { return "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geoip.metadb" }
+        default { Stop-Envpilot "No mihomo data asset rule for $Name" }
+    }
+}
+
+function Install-MihomoDataAsset {
+    param([string]$Name, [string]$ConfigDir)
+    New-Item -ItemType Directory -Force -Path $ConfigDir | Out-Null
+    $target = Join-Path $ConfigDir $Name
+    $source = $null
+    if ($Mode -eq "offline") {
+        $source = Find-OfflineAsset $Name
+    } else {
+        $source = Find-CachedAsset $Name
+        if ($source) {
+            Write-Info "Using bundled downloads/ mihomo data asset before network: $source"
+        } else {
+            $source = Get-MihomoDataUrl $Name
+        }
+    }
+    Write-Info "Geodata asset: $Name"
+    Write-Info "Source: $source"
+    Write-Info "Target: $target"
+    Backup-File $target
+    if ($source -match "^https?://") {
+        $tmp = Join-Path ([System.IO.Path]::GetTempPath()) "envpilot-mihomo-data.tmp"
+        Invoke-EnvpilotDownload $source $tmp
+        Move-Item -LiteralPath $tmp -Destination $target -Force
+    } else {
+        Copy-Item -LiteralPath $source -Destination $target -Force
+    }
+}
+
+function Install-MihomoDataAssets {
+    param([string]$ConfigDir)
+    Install-MihomoDataAsset -Name "country.mmdb" -ConfigDir $ConfigDir
+    Install-MihomoDataAsset -Name "geoip.metadb" -ConfigDir $ConfigDir
+}
+
 function Show-Doctor {
     $Script:Platform = Get-EnvpilotPlatform
     Write-Info "OS: $($Script:Platform.OS)"
@@ -159,8 +203,21 @@ function Show-Doctor {
             Write-Warn "${cmd}: not found"
         }
     }
+    $mihomoDir = Join-Path $HOME ".config/mihomo"
+    foreach ($asset in "country.mmdb", "geoip.metadb") {
+        $path = Join-Path $mihomoDir $asset
+        if (Test-Path -LiteralPath $path) {
+            Write-Info "mihomo data: found at $path"
+        } else {
+            $cached = Find-CachedAsset $asset
+            if ($cached) {
+                Write-Info "mihomo data cache: found at $cached"
+            } else {
+                Write-Warn "mihomo data: $asset not found in $mihomoDir or downloads/"
+            }
+        }
+    }
 }
-
 function Install-Conda {
     if (Test-Command conda) {
         Add-ReportEvent "conda" "skipped" "already installed" (& conda --version 2>$null) "" ((Get-Command conda).Source)
@@ -190,6 +247,9 @@ function Install-Mihomo {
     $offlinePattern = if ($Script:Platform.Arch -eq "amd64") { "mihomo-windows-amd64-compatible-*.zip" } else { "mihomo-windows-arm64-*.zip" }
     $installDir = Join-Path $HOME "software/mihomo"
     $bin = Join-Path $installDir "mihomo.exe"
+    $configDir = Join-Path $HOME ".config/mihomo"
+    $countryPath = Join-Path $configDir "country.mmdb"
+    $geoipPath = Join-Path $configDir "geoip.metadb"
     New-Item -ItemType Directory -Force -Path $installDir | Out-Null
     Write-Info "Selected mihomo asset rule: $regex"
     Write-Info "Offline asset pattern: $offlinePattern"
@@ -212,6 +272,7 @@ function Install-Mihomo {
     Write-Info "Source: $source"
     Write-Info "Target: $bin"
     Write-Info "Will write: $(Join-Path $installDir "start_mihomo.sh")"
+    Write-Info "Will hydrate data: $countryPath and $geoipPath"
     Write-Info "Proxy defaults: 127.0.0.1:7890, allow-lan=false, bind-address=127.0.0.1"
     $extract = Join-Path ([System.IO.Path]::GetTempPath()) "envpilot-mihomo"
     Remove-Item -Recurse -Force -LiteralPath $extract -ErrorAction SilentlyContinue
@@ -219,10 +280,11 @@ function Install-Mihomo {
     $exe = Get-ChildItem -LiteralPath $extract -Recurse -File -Filter "mihomo*.exe" | Select-Object -First 1
     if (-not $exe) { Stop-Envpilot "Could not find mihomo executable in archive." }
     Copy-Item -LiteralPath $exe.FullName -Destination $bin -Force
-    Add-ReportEvent "mihomo" "installed" "installed mihomo binary; subscription config is user supplied" "" $source $bin
+    Copy-Item -LiteralPath (Join-Path $Script:Root "templates/start_mihomo.sh") -Destination (Join-Path $installDir "start_mihomo.sh") -Force
+    Install-MihomoDataAssets -ConfigDir $configDir
+    Add-ReportEvent "mihomo" "installed" "installed mihomo binary and GeoIP data; subscription config is user supplied" "" $source $bin
     Mark-StateDone "mihomo"
 }
-
 function Install-Codex {
     Write-Info "Codex config will use env_key=OPENAI_API_KEY and will not write auth.json."
     if (-not (Test-Command npm)) {

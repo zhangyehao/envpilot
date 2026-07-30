@@ -36,6 +36,7 @@ grep -q 'scripts/update-manifests.py --check' "$ROOT/.github/workflows/update-ma
 grep -q 'peter-evans/create-pull-request@v8' "$ROOT/.github/workflows/update-manifests.yml"
 grep -q 'scripts/update-mihomo-cache.py --check' "$ROOT/.github/workflows/update-mihomo-cache.yml"
 grep -q 'scripts/update-mihomo-cache.py' "$ROOT/.github/workflows/update-mihomo-cache.yml"
+grep -q 'country.mmdb' "$ROOT/.github/workflows/update-mihomo-cache.yml"
 grep -q 'peter-evans/create-pull-request@v8' "$ROOT/.github/workflows/update-mihomo-cache.yml"
 
 echo "[TEST] install order and resolver policy"
@@ -43,7 +44,10 @@ grep -q 'for component in mihomo conda mamba codex github tmux' "$ROOT/envpilot.
 grep -q 'update-mihomo-cache' "$ROOT/envpilot.sh"
 grep -q 'ep_find_cached_asset' "$ROOT/lib/download.sh"
 grep -q 'Using bundled downloads/ mihomo asset before network' "$ROOT/components/mihomo.sh"
+grep -q 'Using bundled downloads/ mihomo data asset before network' "$ROOT/components/mihomo.sh"
+grep -q 'meta-rules-dat' "$ROOT/components/mihomo.sh"
 grep -q 'Find-CachedAsset' "$ROOT/envpilot.ps1"
+grep -q 'Install-MihomoDataAssets' "$ROOT/envpilot.ps1"
 grep -q 'EP_LEGACY_MINICONDA_VERSION' "$ROOT/components/conda.sh"
 grep -q 'ep_mihomo_offline_pattern' "$ROOT/components/mihomo.sh"
 grep -q 'mihomo_wait_for_port' "$ROOT/templates/bashrc"
@@ -53,6 +57,8 @@ grep -q 'Source URL:' "$ROOT/lib/download.sh"
 
 grep -q '^!downloads/mihomo-linux-amd64-compatible-\*\.gz$' "$ROOT/.gitignore"
 grep -q '^!downloads/mihomo-windows-amd64-compatible-\*\.zip$' "$ROOT/.gitignore"
+grep -q '^!downloads/country\.mmdb$' "$ROOT/.gitignore"
+grep -q '^!downloads/geoip\.metadb$' "$ROOT/.gitignore"
 
 (
     ENVPILOT_ROOT="$ROOT"
@@ -186,10 +192,14 @@ grep -q 'env_key = "OPENAI_API_KEY"' "$ROOT/components/codex.sh"
 ! grep -q 'requires_openai_auth = true' "$ROOT/components/codex.sh"
 
 echo "[TEST] version"
-grep -q '^0\.1\.4$' "$ROOT/VERSION"
+grep -q '^0\.1\.5$' "$ROOT/VERSION"
 
 echo "[TEST] secret patterns are ignored"
 grep -q '^api.env$' "$ROOT/.gitignore"
+grep -q 'country.mmdb' "$ROOT/scripts/update-mihomo-cache.py"
+grep -q 'geoip.metadb' "$ROOT/scripts/update-mihomo-cache.py"
+grep -q 'country.mmdb' "$ROOT/scripts/collect-assets.sh"
+grep -q 'geoip.metadb' "$ROOT/scripts/collect-assets.ps1"
 grep -q '^config.yaml$' "$ROOT/.gitignore"
 
 rm -rf "$tmp_home"

@@ -43,6 +43,8 @@ $patterns = @(
     "Anaconda3-*.exe",
     "mihomo-*.gz",
     "mihomo-*.zip",
+    "country.mmdb",
+    "geoip.metadb",
     "gh_*_linux_*.tar.gz",
     "gh_*_macOS_*.zip",
     "gh_*_windows_*.zip",

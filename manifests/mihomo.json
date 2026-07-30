@@ -35,6 +35,20 @@
       "regex": "mihomo-windows-arm64-.*\\.zip$"
     }
   ],
+  "data_assets": [
+    {
+      "name": "country.mmdb",
+      "source": "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/country.mmdb",
+      "target": "~/.config/mihomo/country.mmdb",
+      "purpose": "MMDB GeoIP data used before Mihomo can reach upstream geodata URLs"
+    },
+    {
+      "name": "geoip.metadb",
+      "source": "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geoip.metadb",
+      "target": "~/.config/mihomo/geoip.metadb",
+      "purpose": "MetaDB GeoIP data used by GEOIP rules in restricted network environments"
+    }
+  ],
   "security_defaults": {
     "allow_lan": false,
     "listen_host": "127.0.0.1",

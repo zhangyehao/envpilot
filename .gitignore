@@ -3,6 +3,8 @@ downloads/*
 !downloads/.gitkeep
 !downloads/mihomo-linux-amd64-compatible-*.gz
 !downloads/mihomo-windows-amd64-compatible-*.zip
+!downloads/country.mmdb
+!downloads/geoip.metadb
 
 # Secrets and generated configs
 *.key

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.5 - 2026-07-30
+
+### Changed
+
+- `update-mihomo-cache` now refreshes the curated Mihomo Linux/Windows amd64 binaries plus `country.mmdb` and `geoip.metadb` from MetaCubeX `meta-rules-dat`.
+- `install mihomo` now hydrates `~/.config/mihomo/country.mmdb` and `~/.config/mihomo/geoip.metadb` from `downloads/` first, falling back to upstream only when needed.
+
+### Fixed
+
+- Prevented Mihomo startup from depending on runtime GitHub downloads for GeoIP data on restricted servers.
+
 ## 0.1.4 - 2026-07-28
 
 ### Fixed

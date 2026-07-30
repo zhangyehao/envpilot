@@ -46,7 +46,7 @@ Resolvers may query upstream APIs at runtime, but if a safe choice cannot be mad
 
 - `test.yml`: parser / syntax checks and fast regression tests.
 - `update-manifests.yml`: refresh manifest metadata from upstream stable releases and open a PR.
-- `update-mihomo-cache.yml`: refresh the curated stable mihomo cache files under `downloads/` and open a PR.
+- `update-mihomo-cache.yml`: refresh the curated stable mihomo cache files and Mihomo GeoIP sidecar data under `downloads/`, then open a PR.
 - `release-assets.yml`: package envpilot release artifacts only. Do not upload third-party installers there.
 
 ## Cache and downloads policy
@@ -57,6 +57,7 @@ Current exception policy:
 
 - keep the curated stable `mihomo-linux-amd64-compatible-*.gz`
 - keep the curated stable `mihomo-windows-amd64-compatible-*.zip`
+- keep `country.mmdb` and `geoip.metadb` from MetaCubeX `meta-rules-dat` because Mihomo may need them before proxy access is available
 - continue ignoring other large third-party binaries unless a future policy explicitly adds a new exception
 
 If a new cache file is needed, add a clear rule to `.gitignore`, update the relevant updater, and document the reason in this file.
@@ -111,3 +112,12 @@ Prefer fast tests that do not download large files. Networked checks belong in s
 - Treat Windows PowerShell and Unix-like shells as separate execution surfaces.
 - When adding a new component or cache policy, update both the implementation and the updater workflow.
 - `update-mihomo-cache` is the local / CI entry point for the curated mihomo cache files.
+
+## Mihomo GeoIP data
+
+Mihomo can fail during startup on restricted servers if it must download GeoIP data before the proxy is available. The installer therefore treats these as sidecar assets:
+
+- `downloads/country.mmdb` -> `~/.config/mihomo/country.mmdb`
+- `downloads/geoip.metadb` -> `~/.config/mihomo/geoip.metadb`
+
+`install mihomo` copies these from `downloads/` first. In online mode it falls back to `https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/`. Offline mode fails clearly if the local sidecar file is missing.

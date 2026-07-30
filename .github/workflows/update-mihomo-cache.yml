@@ -23,5 +23,5 @@ jobs:
         with:
           commit-message: refresh bundled mihomo cache
           title: "[envpilot] refresh bundled mihomo cache"
-          body: "Automated refresh of the bundled stable mihomo Linux/Windows amd64 cache files."
+          body: "Automated refresh of the bundled stable mihomo Linux/Windows amd64 cache files plus country.mmdb and geoip.metadb."
           branch: codex/update-mihomo-cache

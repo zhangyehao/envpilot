@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Refresh bundled stable mihomo cache assets from upstream releases."""
+"""Refresh bundled stable mihomo binaries and GeoIP data assets."""
 
 from __future__ import annotations
 
@@ -26,6 +26,18 @@ RULES = (
     {
         "name": "windows-amd64",
         "regex": re.compile(r"^mihomo-windows-amd64-compatible-v[^/]+\.zip$"),
+    },
+)
+GEO_ASSETS = (
+    {
+        "name": "country.mmdb",
+        "label": "country-mmdb",
+        "url": "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/country.mmdb",
+    },
+    {
+        "name": "geoip.metadb",
+        "label": "geoip-metadb",
+        "url": "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geoip.metadb",
     },
 )
 
@@ -120,6 +132,13 @@ def refresh_cache() -> int:
         download_file(url, dest)
         prune_old_assets(rule["regex"], dest)
 
+    for item in GEO_ASSETS:
+        name = str(item["name"])
+        url = str(item["url"])
+        dest = DOWNLOADS / name
+        print(f"{item['label']}: {name}")
+        download_file(url, dest)
+
     print(f"updated_at: {now_iso()}")
     return 0
 
@@ -133,6 +152,12 @@ def check_cache() -> int:
             print(f"{rule['name']}: {found[0]}")
         else:
             print(f"{rule['name']}: missing")
+    for item in GEO_ASSETS:
+        path = DOWNLOADS / str(item["name"])
+        if path.is_file():
+            print(f"{item['label']}: {path.name}")
+        else:
+            print(f"{item['label']}: missing")
     return 0
 
 

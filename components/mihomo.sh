@@ -31,6 +31,59 @@ ep_mihomo_offline_pattern()
     esac
 }
 
+ep_mihomo_data_asset_url()
+{
+    case "$1" in
+        country.mmdb|geoip.metadb)
+            printf 'https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/%s' "$1"
+            ;;
+        *) ep_die "No mihomo data asset rule for $1" ;;
+    esac
+}
+
+ep_install_mihomo_data_asset()
+{
+    local name="$1"
+    local config_dir="$2"
+    local source target archive
+
+    target="$config_dir/$name"
+    archive="$(mktemp "${TMPDIR:-/tmp}/envpilot-mihomo-data.XXXXXX")"
+
+    if [ "$EP_MODE" = "offline" ]; then
+        source="$(ep_find_offline_asset "$name")"
+    else
+        source="$(ep_find_cached_asset "$name" 2>/dev/null || true)"
+        if [ -n "$source" ]; then
+            ep_log "Using bundled downloads/ mihomo data asset before network: $source"
+        else
+            source="$(ep_mihomo_data_asset_url "$name")"
+        fi
+    fi
+
+    ep_log "Geodata asset: $name"
+    ep_log "Source: $source"
+    ep_log "Target: $target"
+    ep_backup_file "$target"
+
+    if [ -f "$source" ]; then
+        cp "$source" "$target"
+    else
+        ep_fetch_url "$source" "$archive"
+        mv "$archive" "$target"
+        archive=""
+    fi
+
+    rm -f "$archive"
+}
+
+ep_install_mihomo_data_assets()
+{
+    local config_dir="$1"
+    ep_install_mihomo_data_asset country.mmdb "$config_dir"
+    ep_install_mihomo_data_asset geoip.metadb "$config_dir"
+}
+
 ep_proxy_port_socket_listening()
 {
     local port="${1:-7890}"
@@ -68,9 +121,10 @@ ep_proxy_port_is_listening()
 
 ep_doctor_mihomo()
 {
-    local bin cached offline_pattern
+    local bin cached offline_pattern config_dir geo_path
 
     bin="$(ep_mihomo_bin)"
+    config_dir="$HOME/.config/mihomo"
     offline_pattern="$(ep_mihomo_offline_pattern)"
     if [ -x "$bin" ]; then
         ep_log "mihomo: found at $bin"
@@ -83,6 +137,18 @@ ep_doctor_mihomo()
     else
         ep_warn "mihomo cache: not found in downloads/"
     fi
+    for geo_path in country.mmdb geoip.metadb; do
+        if [ -f "$config_dir/$geo_path" ]; then
+            ep_log "mihomo data: found at $config_dir/$geo_path"
+        else
+            cached="$(ep_find_cached_asset "$geo_path" 2>/dev/null || true)"
+            if [ -n "$cached" ]; then
+                ep_log "mihomo data cache: found at $cached"
+            else
+                ep_warn "mihomo data: $geo_path not found in $config_dir or downloads/"
+            fi
+        fi
+    done
     if ep_proxy_port_socket_listening 7890; then
         ep_log "Proxy port: 127.0.0.1:7890 listening"
     elif ep_proxy_port_is_listening 127.0.0.1 7890; then
@@ -148,6 +214,7 @@ ep_install_mihomo()
     ep_log "Source: $source"
     ep_log "Target: $bin"
     ep_log "Will write: $install_dir/start_mihomo.sh"
+    ep_log "Will hydrate data: $config_dir/country.mmdb and $config_dir/geoip.metadb"
     ep_log "Optional config: $config_dir/config.yaml"
     ep_log "Proxy defaults: 127.0.0.1:7890, allow-lan=false, bind-address=127.0.0.1"
 
@@ -176,6 +243,7 @@ ep_install_mihomo()
     chmod 755 "$bin"
     cp "$ENVPILOT_ROOT/templates/start_mihomo.sh" "$install_dir/start_mihomo.sh"
     chmod 755 "$install_dir/start_mihomo.sh"
+    ep_install_mihomo_data_assets "$config_dir"
 
     version=""
     subscription="${ENVPILOT_MIHOMO_SUBSCRIPTION_URL:-}"
