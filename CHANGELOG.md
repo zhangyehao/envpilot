@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.7 - 2026-07-30
+
+### Fixed
+
+- Suppressed ShellCheck SC2034 for the cross-file `EP_BASELINE_FILE` variable used by the baseline restore module.
+- Reissued the patch release after the `v0.1.6` Linux ShellCheck job failed on the tag run.
 ## 0.1.6 - 2026-07-30
 
 ### Changed

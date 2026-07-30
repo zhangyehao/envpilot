@@ -280,7 +280,7 @@ grep -q 'env_key = "OPENAI_API_KEY"' "$ROOT/components/codex.sh"
 ! grep -q 'requires_openai_auth = true' "$ROOT/components/codex.sh"
 
 echo "[TEST] version"
-grep -q '^0\.1\.6$' "$ROOT/VERSION"
+grep -q '^0\.1\.7$' "$ROOT/VERSION"
 
 echo "[TEST] secret patterns are ignored"
 grep -q '^api.env$' "$ROOT/.gitignore"

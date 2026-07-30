@@ -37,6 +37,8 @@ ep_init()
     EP_LOG_FILE="$EP_CONFIG_DIR/logs/envpilot-$EP_RUN_ID.log"
     EP_ROLLBACK_LOG="$EP_CONFIG_DIR/rollback.log"
     EP_BASELINE_DIR="$EP_CONFIG_DIR/baseline"
+    # Used by lib/baseline.sh after common.sh is sourced by envpilot.sh.
+    # shellcheck disable=SC2034
     EP_BASELINE_FILE="$EP_BASELINE_DIR/baseline.tsv"
     mkdir -p "$EP_CONFIG_DIR/logs" "$EP_CONFIG_DIR/backups"
     trap ep_on_interrupt INT TERM
