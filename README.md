@@ -4,6 +4,8 @@ envpilot 是面向非管理员用户的跨平台环境引导仓库，用于在�
 
 当前重点支持 Mihomo、Conda/Anaconda、Mamba、Codex、GitHub CLI 和 tmux。默认在线安装；Mihomo 和地理数据可优先使用仓库内的受控缓存。
 
+同步更新Gitee
+
 ## 快速开始
 
 ### Linux / macOS / WSL / Git Bash
