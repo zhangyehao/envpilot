@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.10 - 2026-07-31
+
+### Fixed
+
+- Replaced the architecture-aware bootstrap regression test's clone of the full cache-bearing repository with a tiny local Git fixture, preventing Linux termination and macOS stalls in GitHub Actions.
+- Updated the fake Mihomo process used by Unix CI to exit cleanly on `SIGTERM`, avoiding unnecessary stop timeouts and leaked test processes.
+- Reissued the patch release after the `v0.1.9` Linux and macOS shell-test jobs failed or stalled in the test fixture rather than product code.
+
 ## 0.1.9 - 2026-07-31
 
 ### Added

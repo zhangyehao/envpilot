@@ -248,7 +248,8 @@ if command -v pgrep >/dev/null 2>&1 && command -v pkill >/dev/null 2>&1 && [ -n 
     cat > "$tmp_home/software/mihomo/mihomo" <<'EOF'
 #!/usr/bin/env bash
 : > "$MIHOMO_TEST_MARKER"
-trap 'rm -f "$MIHOMO_TEST_MARKER"' EXIT INT TERM
+trap 'rm -f "$MIHOMO_TEST_MARKER"' EXIT
+trap 'rm -f "$MIHOMO_TEST_MARKER"; exit 0' INT TERM
 while :; do sleep 1; done
 EOF
     chmod +x "$tmp_home/software/mihomo/mihomo"
@@ -304,8 +305,27 @@ else
 fi
 
 echo "[TEST] architecture-aware sparse clone"
+fixture_repo="$(mktemp -d)"
 clone_parent="$(mktemp -d)"
-GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$ROOT" GIT_CONFIG_KEY_1=safe.directory GIT_CONFIG_VALUE_1="$ROOT/.git" ENVPILOT_REPO_URL="$ROOT"     bash "$ROOT/bootstrap.sh" "$clone_parent/envpilot" >/tmp/envpilot-bootstrap.out 2>&1
+mkdir -p "$fixture_repo/downloads"
+printf 'fixture\n' > "$fixture_repo/README.md"
+printf 'linux\n' > "$fixture_repo/downloads/mihomo-linux-amd64-compatible-vTEST.gz"
+printf 'windows\n' > "$fixture_repo/downloads/mihomo-windows-amd64-compatible-vTEST.zip"
+printf 'country\n' > "$fixture_repo/downloads/country.mmdb"
+printf 'geoip\n' > "$fixture_repo/downloads/geoip.metadb"
+: > "$fixture_repo/downloads/.gitkeep"
+git -C "$fixture_repo" init -q
+git -C "$fixture_repo" branch -M main
+git -C "$fixture_repo" config user.name envpilot-test
+git -C "$fixture_repo" config user.email envpilot-test@example.invalid
+git -C "$fixture_repo" config uploadpack.allowFilter true
+git -C "$fixture_repo" config uploadpack.allowAnySHA1InWant true
+git -C "$fixture_repo" add .
+git -C "$fixture_repo" commit -qm fixture
+if ! ENVPILOT_REPO_URL="file://$fixture_repo" bash "$ROOT/bootstrap.sh" "$clone_parent/envpilot" >/tmp/envpilot-bootstrap.out 2>&1; then
+    cat /tmp/envpilot-bootstrap.out >&2
+    exit 1
+fi
 case "$(uname -s)" in
     MINGW*|MSYS*|CYGWIN*)
         compgen -G "$clone_parent/envpilot/downloads/mihomo-windows-amd64-compatible-*.zip" >/dev/null
@@ -315,10 +335,14 @@ case "$(uname -s)" in
         compgen -G "$clone_parent/envpilot/downloads/mihomo-linux-amd64-compatible-*.gz" >/dev/null
         ! compgen -G "$clone_parent/envpilot/downloads/mihomo-windows-amd64-compatible-*.zip" >/dev/null
         ;;
+    Darwin)
+        ! compgen -G "$clone_parent/envpilot/downloads/mihomo-linux-amd64-compatible-*.gz" >/dev/null
+        ! compgen -G "$clone_parent/envpilot/downloads/mihomo-windows-amd64-compatible-*.zip" >/dev/null
+        ;;
 esac
 test -f "$clone_parent/envpilot/downloads/country.mmdb"
 test -f "$clone_parent/envpilot/downloads/geoip.metadb"
-rm -rf "$clone_parent"
+rm -rf "$clone_parent" "$fixture_repo"
 
 echo "[TEST] doctor baseline restore"
 tmp_home="$(mktemp -d)"
@@ -409,7 +433,7 @@ grep -q 'env_key = "OPENAI_API_KEY"' "$ROOT/components/codex.sh"
 ! grep -q 'requires_openai_auth = true' "$ROOT/components/codex.sh"
 
 echo "[TEST] version"
-grep -q '^0\.1\.9$' "$ROOT/VERSION"
+grep -q '^0\.1\.10$' "$ROOT/VERSION"
 
 echo "[TEST] secret patterns are ignored"
 grep -q '^api.env$' "$ROOT/.gitignore"
