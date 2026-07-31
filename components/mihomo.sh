@@ -5,6 +5,42 @@ ep_mihomo_bin()
     printf '%s/software/mihomo/mihomo' "$HOME"
 }
 
+ep_mihomo_config_file()
+{
+    printf '%s/.config/mihomo/config.yaml' "$HOME"
+}
+
+ep_mihomo_shell_local_file()
+{
+    printf '%s/shell.local' "${EP_CONFIG_DIR:-$HOME/.config/envpilot}"
+}
+
+ep_mihomo_script()
+{
+    printf '%s/software/mihomo/%s' "$HOME" "$1"
+}
+
+ep_mihomo_runtime_dir()
+{
+    local user_name host_name
+    user_name="${USER:-$(id -un 2>/dev/null || true)}"
+    host_name="${HOSTNAME:-$(hostname 2>/dev/null || true)}"
+    [ -n "$user_name" ] || ep_die "Cannot determine current user for Mihomo runtime."
+    [ -n "$host_name" ] || ep_die "Cannot determine current host for Mihomo runtime."
+    case "$user_name" in
+        *[!A-Za-z0-9_.-]*|*..*) ep_die "Unsafe user name for Mihomo runtime directory: $user_name" ;;
+    esac
+    case "$host_name" in
+        *[!A-Za-z0-9_.-]*|*..*) ep_die "Unsafe host name for Mihomo runtime directory: $host_name" ;;
+    esac
+    printf '/tmp/%s_mihomo_%s' "$user_name" "$host_name"
+}
+
+ep_mihomo_runtime_bin()
+{
+    printf '%s/mihomo' "$(ep_mihomo_runtime_dir)"
+}
+
 ep_port_is_valid()
 {
     case "${1:-}" in
@@ -17,20 +53,23 @@ ep_require_port()
 {
     local port="${1:-}"
     ep_port_is_valid "$port" || ep_die "Invalid port: ${port:-empty}. Use an integer from 1 to 65535."
+    if [ "${EP_IS_ROOT:-false}" != "true" ] && [ "$port" -le 1024 ]; then
+        ep_die "Port $port requires elevated privileges; choose a port greater than 1024."
+    fi
     printf '%s' "$port"
 }
 
-ep_mihomo_config_file()
+ep_require_mihomo_ports()
 {
-    printf '%s/.config/mihomo/config.yaml' "$HOME"
+    local proxy_port api_port
+    proxy_port="$(ep_require_port "${1:-}")"
+    api_port="$(ep_require_port "${2:-}")"
+    [ "$proxy_port" != "$api_port" ] ||
+        ep_die "Proxy and API ports must be different."
+    printf '%s %s' "$proxy_port" "$api_port"
 }
 
-ep_mihomo_shell_local_file()
-{
-    printf '%s/shell.local' "${EP_CONFIG_DIR:-$HOME/.config/envpilot}"
-}
-
-ep_mihomo_config_port()
+ep_mihomo_config_proxy_port()
 {
     local config value
     config="$(ep_mihomo_config_file)"
@@ -40,12 +79,23 @@ ep_mihomo_config_port()
     printf '%s' "$value"
 }
 
+ep_mihomo_config_api_port()
+{
+    local config value
+    config="$(ep_mihomo_config_file)"
+    [ -r "$config" ] || return 1
+    value="$(grep -E '^[[:space:]]*external-controller:[[:space:]]*(127\.0\.0\.1|localhost):[0-9]+' "$config" 2>/dev/null | tail -n 1 | sed -E 's|^.*:([0-9]+)[[:space:]]*$|\1|' || true)"
+    ep_port_is_valid "$value" || return 1
+    printf '%s' "$value"
+}
+
 ep_mihomo_shell_local_port()
 {
+    local key="$1"
     local file value
     file="$(ep_mihomo_shell_local_file)"
     [ -r "$file" ] || return 1
-    value="$(grep -E '^[[:space:]]*(export[[:space:]]+)?BASHRC_PROXY_PORT=' "$file" 2>/dev/null | tail -n 1 | sed -E 's/^[[:space:]]*(export[[:space:]]+)?BASHRC_PROXY_PORT=//' | tr -d "\"'[:space:]" || true)"
+    value="$(grep -E "^[[:space:]]*(export[[:space:]]+)?${key}=" "$file" 2>/dev/null | tail -n 1 | sed -E "s/^[[:space:]]*(export[[:space:]]+)?${key}=//" | tr -d "\"'[:space:]" || true)"
     ep_port_is_valid "$value" || return 1
     printf '%s' "$value"
 }
@@ -53,49 +103,83 @@ ep_mihomo_shell_local_port()
 ep_mihomo_proxy_port()
 {
     local port
-    if ep_port_is_valid "${BASHRC_PROXY_PORT:-}"; then
+    if ep_port_is_valid "${MIHOMO_PROXY_PORT:-}"; then
+        printf '%s' "$MIHOMO_PROXY_PORT"
+    elif ep_port_is_valid "${BASHRC_PROXY_PORT:-}"; then
         printf '%s' "$BASHRC_PROXY_PORT"
-    elif port="$(ep_mihomo_shell_local_port 2>/dev/null)"; then
+    elif port="$(ep_mihomo_shell_local_port MIHOMO_PROXY_PORT 2>/dev/null)"; then
         printf '%s' "$port"
-    elif port="$(ep_mihomo_config_port 2>/dev/null)"; then
+    elif port="$(ep_mihomo_shell_local_port BASHRC_PROXY_PORT 2>/dev/null)"; then
+        printf '%s' "$port"
+    elif port="$(ep_mihomo_config_proxy_port 2>/dev/null)"; then
         printf '%s' "$port"
     else
-        printf '7890'
+        printf '42290'
     fi
 }
 
-ep_mihomo_set_shell_local_port()
+ep_mihomo_api_port()
 {
-    local port file tmp
-    port="$(ep_require_port "${1:-}")"
+    local port
+    if ep_port_is_valid "${MIHOMO_API_PORT:-}"; then
+        printf '%s' "$MIHOMO_API_PORT"
+    elif port="$(ep_mihomo_shell_local_port MIHOMO_API_PORT 2>/dev/null)"; then
+        printf '%s' "$port"
+    elif port="$(ep_mihomo_config_api_port 2>/dev/null)"; then
+        printf '%s' "$port"
+    else
+        printf '60290'
+    fi
+}
+
+ep_mihomo_set_shell_local_ports()
+{
+    local proxy_port api_port file tmp
+    read -r proxy_port api_port <<EOF
+$(ep_require_mihomo_ports "${1:-}" "${2:-}")
+EOF
     file="$(ep_mihomo_shell_local_file)"
     mkdir -p "$(dirname "$file")"
     [ -e "$file" ] && ep_backup_file "$file"
     tmp="$(mktemp "${file}.tmp.XXXXXX")"
     if [ -f "$file" ]; then
-        awk -v key="BASHRC_PROXY_PORT" -v value="$port" '
-            BEGIN { done = 0 }
-            $0 ~ "^[[:space:]]*(export[[:space:]]+)?" key "=" { print key "=" value; done = 1; next }
+        awk -v proxy="$proxy_port" -v api="$api_port" '
+            BEGIN { proxy_done = 0; api_done = 0 }
+            /^[[:space:]]*(export[[:space:]]+)?BASHRC_PROXY_PORT=/ { next }
+            /^[[:space:]]*(export[[:space:]]+)?MIHOMO_PROXY_PORT=/ {
+                if (!proxy_done) print "MIHOMO_PROXY_PORT=" proxy
+                proxy_done = 1
+                next
+            }
+            /^[[:space:]]*(export[[:space:]]+)?MIHOMO_API_PORT=/ {
+                if (!api_done) print "MIHOMO_API_PORT=" api
+                api_done = 1
+                next
+            }
             { print }
-            END { if (!done) print key "=" value }
+            END {
+                if (!proxy_done) print "MIHOMO_PROXY_PORT=" proxy
+                if (!api_done) print "MIHOMO_API_PORT=" api
+            }
         ' "$file" > "$tmp"
     else
-        printf '# envpilot shell.local\nBASHRC_PROXY_PORT=%s\n' "$port" > "$tmp"
+        printf '# envpilot shell.local\nMIHOMO_PROXY_PORT=%s\nMIHOMO_API_PORT=%s\n' "$proxy_port" "$api_port" > "$tmp"
     fi
     mv "$tmp" "$file"
     chmod 600 "$file" 2>/dev/null || true
-    ep_log "Wrote mihomo proxy port to $file: $port"
+    ep_log "Wrote Mihomo ports to $file: proxy=$proxy_port API=$api_port"
 }
 
-ep_mihomo_refresh_start_script()
+ep_mihomo_refresh_scripts()
 {
-    local start_script template
-    start_script="$(dirname "$(ep_mihomo_bin)")/start_mihomo.sh"
-    template="$ENVPILOT_ROOT/templates/start_mihomo.sh"
-    if [ -f "$template" ] && [ -d "$(dirname "$start_script")" ]; then
-        cp "$template" "$start_script"
-        chmod 755 "$start_script"
-    fi
+    local name target
+    for name in mihomo_common.sh start_mihomo.sh stop_mihomo.sh status_mihomo.sh update_mihomo_subscription.sh; do
+        target="$(ep_mihomo_script "$name")"
+        if [ -f "$ENVPILOT_ROOT/templates/$name" ] && [ -d "$(dirname "$target")" ]; then
+            cp "$ENVPILOT_ROOT/templates/$name" "$target"
+            chmod 755 "$target"
+        fi
+    done
 }
 
 ep_mihomo_shell_reload_hint()
@@ -105,7 +189,6 @@ ep_mihomo_shell_reload_hint()
         *) printf 'source ~/.bashrc' ;;
     esac
 }
-
 ep_mihomo_asset_regex()
 {
     case "$EP_OS:$EP_ARCH" in
@@ -187,7 +270,7 @@ ep_install_mihomo_data_assets()
 
 ep_proxy_port_socket_listening()
 {
-    local port="${1:-7890}"
+    local port="${1:-$(ep_mihomo_proxy_port)}"
     local line
     if ep_command_exists ss; then
         line="$(ss -lntH "sport = :$port" 2>/dev/null | head -n 1 || true)"
@@ -207,7 +290,7 @@ ep_proxy_port_socket_listening()
 ep_proxy_port_is_listening()
 {
     local host="${1:-127.0.0.1}"
-    local port="${2:-7890}"
+    local port="${2:-$(ep_mihomo_proxy_port)}"
     if ep_proxy_port_socket_listening "$port"; then
         return 0
     fi
@@ -220,175 +303,153 @@ ep_proxy_port_is_listening()
     return 1
 }
 
-ep_stop_mihomo()
+ep_mihomo_runtime_running()
 {
-    local port="${1:-}" bin user_name pids pid stopped i
-    if [ -n "$port" ]; then
-        port="$(ep_require_port "$port")"
-    else
-        port="$(ep_mihomo_proxy_port)"
-    fi
-    bin="$(ep_mihomo_bin)"
+    local runtime_bin user_name
+    runtime_bin="$(ep_mihomo_runtime_bin)"
     user_name="${USER:-$(id -un 2>/dev/null || true)}"
-    stopped="0"
+    [ -n "$user_name" ] || return 1
+    pgrep -u "$user_name" -f "$runtime_bin" >/dev/null 2>&1
+}
 
-    [ -n "$user_name" ] || return 0
-
-    if ep_command_exists pkill; then
-        if pkill -u "$user_name" -f "$bin" >/dev/null 2>&1; then
-            stopped="1"
-        fi
-    else
-        pids="$(ps -u "$user_name" -o pid=,args= 2>/dev/null | awk -v pat="$bin" 'index($0, pat) { print $1 }' || true)"
-        for pid in $pids; do
-            kill "$pid" >/dev/null 2>&1 && stopped="1"
-        done
-    fi
-
-    if [ "$stopped" = "1" ]; then
-        i=0
-        while [ "$i" -lt 10 ]; do
-            if ! ep_proxy_port_is_listening 127.0.0.1 "$port"; then
-                ep_log "Stopped mihomo: $bin"
-                return 0
-            fi
-            sleep 1
-            i=$((i + 1))
-        done
-        ep_warn "mihomo stop was requested, but proxy port 127.0.0.1:$port is still reachable. Another process may be listening."
-    else
-        ep_log "No envpilot-managed mihomo process found."
+ep_cleanup_mihomo_runtime()
+{
+    local runtime_dir
+    runtime_dir="$(ep_mihomo_runtime_dir)"
+    case "$runtime_dir" in
+        /tmp/*_mihomo_*) ;;
+        *) ep_warn "Skip unsafe Mihomo runtime cleanup target: $runtime_dir"; return 0 ;;
+    esac
+    if [ -d "$runtime_dir" ]; then
+        rm -rf -- "$runtime_dir"
+        ep_log "Removed Mihomo runtime directory: $runtime_dir"
     fi
 }
 
 ep_start_mihomo()
 {
-    local port="${1:-}" bin config_file log_file i
-    if [ -n "$port" ]; then
-        port="$(ep_require_port "$port")"
-    else
-        port="$(ep_mihomo_proxy_port)"
-    fi
-    bin="$(ep_mihomo_bin)"
-    config_file="$(ep_mihomo_config_file)"
-    log_file="$HOME/logs/mihomo.log"
+    local proxy_port api_port start_script
+    proxy_port="$(ep_mihomo_proxy_port)"
+    api_port="$(ep_mihomo_api_port)"
+    read -r proxy_port api_port <<EOF
+$(ep_require_mihomo_ports "$proxy_port" "$api_port")
+EOF
+    ep_mihomo_refresh_scripts
+    start_script="$(ep_mihomo_script start_mihomo.sh)"
+    [ -x "$start_script" ] || ep_die "Mihomo start script not found: $start_script"
+    MIHOMO_PROXY_PORT="$proxy_port" MIHOMO_API_PORT="$api_port" "$start_script"
+}
 
-    ep_require_unix_runtime
-    if ep_proxy_port_is_listening 127.0.0.1 "$port"; then
-        ep_log "Proxy port 127.0.0.1:$port is already listening."
-        return 0
+ep_stop_mihomo()
+{
+    local proxy_port api_port stop_script
+    proxy_port="$(ep_mihomo_proxy_port)"
+    api_port="$(ep_mihomo_api_port)"
+    ep_mihomo_refresh_scripts
+    stop_script="$(ep_mihomo_script stop_mihomo.sh)"
+    if [ -x "$stop_script" ]; then
+        MIHOMO_PROXY_PORT="$proxy_port" MIHOMO_API_PORT="$api_port" "$stop_script"
+        return
     fi
-    if [ -x "$bin" ]; then
-        [ -s "$config_file" ] || ep_die "mihomo config not found: $config_file"
-        mkdir -p "$(dirname "$log_file")"
-        MIHOMO_PROXY_PORT="$port" nohup "$bin" -d "$HOME/.config/mihomo" >> "$log_file" 2>&1 < /dev/null &
-    else
-        ep_die "mihomo executable not found: $bin"
-    fi
-
-    i=0
-    while [ "$i" -lt 20 ]; do
-        if ep_proxy_port_is_listening 127.0.0.1 "$port"; then
-            ep_log "mihomo proxy port is listening: 127.0.0.1:$port"
-            return 0
-        fi
-        sleep 1
-        i=$((i + 1))
-    done
-    ep_die "mihomo did not open proxy port 127.0.0.1:$port within 20 seconds. Check: $log_file"
+    ep_log "No envpilot-managed mihomo process found."
 }
 
 ep_status_mihomo()
 {
-    local bin user_name pids port
-    bin="$(ep_mihomo_bin)"
-    user_name="${USER:-$(id -un 2>/dev/null || true)}"
-    port="$(ep_mihomo_proxy_port)"
+    local proxy_port api_port status_script
+    proxy_port="$(ep_mihomo_proxy_port)"
+    api_port="$(ep_mihomo_api_port)"
+    ep_mihomo_refresh_scripts
+    status_script="$(ep_mihomo_script status_mihomo.sh)"
+    if [ -x "$status_script" ]; then
+        MIHOMO_PROXY_PORT="$proxy_port" MIHOMO_API_PORT="$api_port" "$status_script"
+        return
+    fi
+    ep_die "Mihomo status script not found: $status_script"
+}
 
-    printf 'envpilot mihomo binary:\n'
-    if [ -x "$bin" ]; then
-        printf '  %s\n' "$bin"
-    else
-        printf '  not found: %s\n' "$bin"
+ep_update_mihomo_subscription()
+{
+    local subscription="${1:-}" proxy_port api_port update_script
+    proxy_port="$(ep_mihomo_proxy_port)"
+    api_port="$(ep_mihomo_api_port)"
+    ep_mihomo_refresh_scripts
+    update_script="$(ep_mihomo_script update_mihomo_subscription.sh)"
+    [ -x "$update_script" ] || ep_die "Mihomo subscription update script not found: $update_script"
+    MIHOMO_PROXY_PORT="$proxy_port" MIHOMO_API_PORT="$api_port" "$update_script" "$subscription"
+}
+
+ep_switch_mihomo_ports()
+{
+    local proxy_port api_port old_proxy old_api config bin reload_hint
+    read -r proxy_port api_port <<EOF
+$(ep_require_mihomo_ports "${1:-}" "${2:-}")
+EOF
+    config="$(ep_mihomo_config_file)"
+    bin="$(ep_mihomo_bin)"
+    [ -x "$bin" ] || ep_die "mihomo executable not found: $bin"
+    [ -s "$config" ] || ep_die "mihomo config not found: $config. Run: bash envpilot.sh install mihomo"
+
+    old_proxy="$(ep_mihomo_proxy_port)"
+    old_api="$(ep_mihomo_api_port)"
+    ep_log "Plan: switch Mihomo proxy and API ports"
+    ep_log "Current: proxy=127.0.0.1:$old_proxy API=127.0.0.1:$old_api"
+    ep_log "New:     proxy=127.0.0.1:$proxy_port API=127.0.0.1:$api_port"
+    ep_log "Will update: $config"
+    ep_log "Will update: $(ep_mihomo_shell_local_file)"
+    ep_log "Will restart envpilot-managed Mihomo."
+
+    ep_stop_mihomo
+    if ep_proxy_port_is_listening 127.0.0.1 "$proxy_port"; then
+        MIHOMO_PROXY_PORT="$old_proxy" MIHOMO_API_PORT="$old_api" ep_start_mihomo || true
+        ep_die "Target proxy port 127.0.0.1:$proxy_port is already in use. Choose another port."
     fi
-    printf '\nmihomo process:\n'
-    if [ -n "$user_name" ] && ep_command_exists pgrep; then
-        pgrep -u "$user_name" -af "$bin" || printf '  not running\n'
-    elif [ -n "$user_name" ]; then
-        pids="$(ps -u "$user_name" -o pid=,args= 2>/dev/null | awk -v pat="$bin" 'index($0, pat) { print }' || true)"
-        if [ -n "$pids" ]; then
-            printf '%s\n' "$pids"
-        else
-            printf '  not running\n'
-        fi
-    else
-        printf '  not running\n'
+    if ep_proxy_port_is_listening 127.0.0.1 "$api_port"; then
+        MIHOMO_PROXY_PORT="$old_proxy" MIHOMO_API_PORT="$old_api" ep_start_mihomo || true
+        ep_die "Target API port 127.0.0.1:$api_port is already in use. Choose another port."
     fi
-    printf '\nproxy port:\n'
-    if ep_proxy_port_socket_listening "$port"; then
-        printf '  127.0.0.1:%s listening\n' "$port"
-    elif ep_proxy_port_is_listening 127.0.0.1 "$port"; then
-        printf '  127.0.0.1:%s reachable via TCP connect\n' "$port"
-    else
-        printf '  127.0.0.1:%s not detected\n' "$port"
-    fi
+
+    ep_backup_file "$config"
+    ep_patch_mihomo_config "$config" "$proxy_port" "$api_port"
+    ep_mihomo_set_shell_local_ports "$proxy_port" "$api_port"
+    ep_mihomo_refresh_scripts
+    MIHOMO_PROXY_PORT="$proxy_port" MIHOMO_API_PORT="$api_port" ep_start_mihomo
+
+    reload_hint="$(ep_mihomo_shell_reload_hint)"
+    ep_log "Switched Mihomo ports: proxy=$proxy_port API=$api_port"
+    ep_log "For current shell variables, run: proxy_off; $reload_hint; proxy_on"
 }
 
 ep_switch_mihomo_port()
 {
-    local port old_port config bin reload_hint
-    port="$(ep_require_port "${1:-}")"
-    config="$(ep_mihomo_config_file)"
-    bin="$(ep_mihomo_bin)"
-
-    [ -x "$bin" ] || ep_die "mihomo executable not found: $bin"
-    [ -s "$config" ] || ep_die "mihomo config not found: $config. Run: bash envpilot.sh install mihomo"
-
-    old_port="$(ep_mihomo_proxy_port)"
-    ep_log "Plan: switch mihomo proxy port"
-    ep_log "Current port: 127.0.0.1:$old_port"
-    ep_log "New port: 127.0.0.1:$port"
-    ep_log "Will update: $config"
-    ep_log "Will update: $(ep_mihomo_shell_local_file)"
-    ep_log "Will restart envpilot-managed mihomo."
-
-    ep_backup_file "$config"
-    ep_patch_mihomo_config "$config" "$port"
-    ep_mihomo_set_shell_local_port "$port"
-    ep_mihomo_refresh_start_script
-
-    ep_stop_mihomo "$old_port"
-    if [ "$old_port" != "$port" ] && ep_proxy_port_is_listening 127.0.0.1 "$port"; then
-        ep_die "Target proxy port 127.0.0.1:$port is already listening after stopping envpilot mihomo. Choose another port."
-    fi
-    ep_start_mihomo "$port"
-
-    reload_hint="$(ep_mihomo_shell_reload_hint)"
-    ep_log "Switched mihomo proxy port to 127.0.0.1:$port"
-    ep_log "For current shell variables, run: proxy_off; $reload_hint; proxy_on"
+    ep_switch_mihomo_ports "${1:-}" "$(ep_mihomo_api_port)"
 }
 
 ep_mihomo_cli()
 {
     local action="${1:-status}"
-    local port="${2:-}"
+    local value1="${2:-}"
+    local value2="${3:-}"
     case "$action" in
         start) ep_start_mihomo ;;
         stop) ep_stop_mihomo ;;
         status) ep_status_mihomo ;;
-        port) ep_switch_mihomo_port "$port" ;;
-        *) ep_die "Unknown mihomo action: $action. Use start, stop, status, or port PORT." ;;
+        port) ep_switch_mihomo_port "$value1" ;;
+        ports) ep_switch_mihomo_ports "$value1" "$value2" ;;
+        update-subscription|subscription) ep_update_mihomo_subscription "$value1" ;;
+        *) ep_die "Unknown Mihomo action: $action. Use start, stop, status, port PORT, ports PROXY_PORT API_PORT, or update-subscription [URL]." ;;
     esac
 }
-
 ep_doctor_mihomo()
 {
-    local bin cached offline_pattern config_dir geo_path port
+    local bin cached offline_pattern config_dir geo_path proxy_port api_port runtime_bin
 
     bin="$(ep_mihomo_bin)"
+    runtime_bin="$(ep_mihomo_runtime_bin)"
     config_dir="$HOME/.config/mihomo"
     offline_pattern="$(ep_mihomo_offline_pattern)"
-    port="$(ep_mihomo_proxy_port)"
+    proxy_port="$(ep_mihomo_proxy_port)"
+    api_port="$(ep_mihomo_api_port)"
     if [ -x "$bin" ]; then
         ep_log "mihomo: found at $bin"
     else
@@ -396,9 +457,9 @@ ep_doctor_mihomo()
     fi
     cached="$(ep_find_cached_asset "$offline_pattern" 2>/dev/null || true)"
     if [ -n "$cached" ]; then
-        ep_log "mihomo cache: found at $cached"
+        ep_log "mihomo cache for $EP_OS/$EP_ARCH: found at $cached"
     else
-        ep_warn "mihomo cache: not found in downloads/"
+        ep_warn "mihomo cache for $EP_OS/$EP_ARCH: not found in downloads/"
     fi
     for geo_path in country.mmdb geoip.metadb; do
         if [ -f "$config_dir/$geo_path" ]; then
@@ -412,15 +473,23 @@ ep_doctor_mihomo()
             fi
         fi
     done
-    if ep_proxy_port_socket_listening "$port"; then
-        ep_log "Proxy port: 127.0.0.1:$port listening"
-    elif ep_proxy_port_is_listening 127.0.0.1 "$port"; then
-        ep_log "Proxy port: 127.0.0.1:$port reachable via TCP connect"
+    ep_log "Mihomo ports: proxy=127.0.0.1:$proxy_port API=127.0.0.1:$api_port"
+    if ep_proxy_port_is_listening 127.0.0.1 "$proxy_port"; then
+        ep_log "Proxy port: 127.0.0.1:$proxy_port listening"
     else
-        ep_warn "Proxy port: 127.0.0.1:$port not detected"
+        ep_warn "Proxy port: 127.0.0.1:$proxy_port not detected"
+    fi
+    if ep_proxy_port_is_listening 127.0.0.1 "$api_port"; then
+        ep_log "API port: 127.0.0.1:$api_port listening"
+    else
+        ep_warn "API port: 127.0.0.1:$api_port not detected"
+    fi
+    if ep_mihomo_runtime_running; then
+        ep_log "Mihomo runtime: running from $runtime_bin"
+    else
+        ep_warn "Mihomo runtime: not running on this node ($runtime_bin)"
     fi
 }
-
 ep_yaml_set_scalar()
 {
     local config="$1"
@@ -441,21 +510,21 @@ ep_yaml_set_scalar()
 ep_patch_mihomo_config()
 {
     local config="$1"
-    local port="${2:-}"
-    if [ -n "$port" ]; then
-        port="$(ep_require_port "$port")"
-    else
-        port="$(ep_mihomo_proxy_port)"
-    fi
+    local proxy_port="${2:-$(ep_mihomo_proxy_port)}"
+    local api_port="${3:-$(ep_mihomo_api_port)}"
+    read -r proxy_port api_port <<EOF
+$(ep_require_mihomo_ports "$proxy_port" "$api_port")
+EOF
     ep_yaml_set_scalar "$config" "allow-lan" "false"
-    ep_yaml_set_scalar "$config" "mixed-port" "$port"
+    ep_yaml_set_scalar "$config" "mixed-port" "$proxy_port"
     ep_yaml_set_scalar "$config" "bind-address" "127.0.0.1"
+    ep_yaml_set_scalar "$config" "external-controller" "127.0.0.1:$api_port"
 }
-
 ep_install_mihomo()
 {
     ep_require_unix_runtime
-    local bin install_dir config_dir asset_regex offline_pattern archive source version port
+    local bin install_dir config_dir asset_regex offline_pattern archive source version
+    local proxy_port api_port subscription
     bin="$(ep_mihomo_bin)"
     install_dir="$(dirname "$bin")"
     config_dir="$HOME/.config/mihomo"
@@ -463,7 +532,11 @@ ep_install_mihomo()
     offline_pattern="$(ep_mihomo_offline_pattern)"
     archive="$(mktemp "${TMPDIR:-/tmp}/envpilot-mihomo.XXXXXX")"
     source=""
-    port="$(ep_mihomo_proxy_port)"
+    proxy_port="$(ep_mihomo_proxy_port)"
+    api_port="$(ep_mihomo_api_port)"
+    read -r proxy_port api_port <<EOF
+$(ep_require_mihomo_ports "$proxy_port" "$api_port")
+EOF
 
     ep_log "Component: mihomo"
     ep_log "Selected stable asset rule for $EP_OS/$EP_ARCH: $asset_regex"
@@ -475,26 +548,40 @@ ep_install_mihomo()
     else
         source="$(ep_find_cached_asset "$offline_pattern" 2>/dev/null || true)"
         if [ -n "$source" ]; then
-            ep_log "Using bundled downloads/ mihomo asset before network: $source"
+            ep_log "Using bundled downloads/ Mihomo asset for $EP_OS/$EP_ARCH before network: $source"
         else
             source="$(ep_github_asset_url MetaCubeX mihomo "$asset_regex")"
         fi
     fi
-    ep_log "Plan: install mihomo"
+    ep_log "Plan: install Mihomo"
     ep_log "Source: $source"
-    ep_log "Target: $bin"
-    ep_log "Will write: $install_dir/start_mihomo.sh"
+    ep_log "Persistent binary: $bin"
+    ep_log "Persistent config: $config_dir/config.yaml"
+    ep_log "Runtime directory: $(ep_mihomo_runtime_dir)"
+    ep_log "Will install start/stop/status/update-subscription scripts in $install_dir"
     ep_log "Will hydrate data: $config_dir/country.mmdb and $config_dir/geoip.metadb"
-    ep_log "Optional config: $config_dir/config.yaml"
-    ep_log "Proxy defaults: 127.0.0.1:$port, allow-lan=false, bind-address=127.0.0.1"
+    ep_log "Ports: proxy=127.0.0.1:$proxy_port API=127.0.0.1:$api_port"
+    ep_log "Security: allow-lan=false, bind-address=127.0.0.1"
+    if ep_proxy_port_is_listening 127.0.0.1 "$proxy_port"; then
+        ep_warn "Proxy port 127.0.0.1:$proxy_port is currently in use. Installation can continue, but Mihomo cannot start on this port."
+    else
+        ep_log "Proxy port availability: 127.0.0.1:$proxy_port is available"
+    fi
+    if ep_proxy_port_is_listening 127.0.0.1 "$api_port"; then
+        ep_warn "API port 127.0.0.1:$api_port is currently in use. Installation can continue, but Mihomo cannot start on this port."
+    else
+        ep_log "API port availability: 127.0.0.1:$api_port is available"
+    fi
 
-    ep_confirm "Install mihomo from the source above to $bin?" "yes" || {
+    ep_confirm "Install Mihomo from the source above to $bin?" "yes" || {
         ep_report_event mihomo skipped "user declined" "" "$source" "$bin"
         rm -f "$archive"
         return 0
     }
 
-    mkdir -p "$install_dir" "$config_dir" "$HOME/logs"
+    mkdir -p "$install_dir" "$config_dir"
+    chmod 700 "$config_dir"
+    ep_mihomo_set_shell_local_ports "$proxy_port" "$api_port"
     if [ -f "$source" ]; then
         cp "$source" "$archive"
     else
@@ -503,19 +590,17 @@ ep_install_mihomo()
 
     case "$source" in
         *.zip)
-            ep_command_exists unzip || ep_die "unzip is required for Windows mihomo archives"
-            unzip -p "$archive" '*mihomo*.exe' > "$bin" || ep_die "Could not extract mihomo from $source"
+            ep_command_exists unzip || ep_die "unzip is required for Windows Mihomo archives"
+            unzip -p "$archive" '*mihomo*.exe' > "$bin" || ep_die "Could not extract Mihomo from $source"
             ;;
         *)
-            gzip -dc "$archive" > "$bin" || ep_die "Could not extract gzip mihomo asset: $source"
+            gzip -dc "$archive" > "$bin" || ep_die "Could not extract gzip Mihomo asset: $source"
             ;;
     esac
     chmod 755 "$bin"
-    cp "$ENVPILOT_ROOT/templates/start_mihomo.sh" "$install_dir/start_mihomo.sh"
-    chmod 755 "$install_dir/start_mihomo.sh"
+    ep_mihomo_refresh_scripts
     ep_install_mihomo_data_assets "$config_dir"
 
-    version=""
     subscription="${ENVPILOT_MIHOMO_SUBSCRIPTION_URL:-}"
     if [ -z "$subscription" ] && [ "$EP_ASSUME_YES" != "1" ]; then
         ep_prompt_optional_url subscription "Paste Clash/Mihomo subscription URL"
@@ -525,16 +610,18 @@ ep_install_mihomo()
         ep_backup_file "$config_dir/config.yaml"
         ep_fetch_url "$subscription" "$config_dir/config.yaml.tmp"
         mv "$config_dir/config.yaml.tmp" "$config_dir/config.yaml"
-        ep_patch_mihomo_config "$config_dir/config.yaml" "$port"
-        ep_log "Wrote mihomo config: $config_dir/config.yaml"
-        ep_log "Forced mihomo security defaults: allow-lan=false, bind-address=127.0.0.1, mixed-port=$port"
+        ep_patch_mihomo_config "$config_dir/config.yaml" "$proxy_port" "$api_port"
+        chmod 600 "$config_dir/config.yaml"
+        ep_log "Wrote Mihomo config: $config_dir/config.yaml"
+        ep_log "Applied local-only ports: proxy=$proxy_port API=$api_port"
     else
-        ep_warn "No subscription URL provided; mihomo binary installed but config.yaml was not written."
-        ep_warn "Later run: ENVPILOT_MIHOMO_SUBSCRIPTION_URL='<Clash/Mihomo URL>' bash envpilot.sh install mihomo"
+        ep_warn "No subscription URL provided; Mihomo binary installed but config.yaml was not written."
+        ep_warn "Later run: mihomo update-subscription '<Clash/Mihomo URL>'"
     fi
 
     rm -f "$archive"
     ep_state_mark_done mihomo
     version="$("$bin" -v 2>/dev/null | head -n 1 || true)"
-    ep_report_event mihomo installed "installed mihomo; config may require subscription" "$version" "$source" "$bin"
+    ep_report_event mihomo installed "installed Mihomo with node-local runtime scripts; config may require subscription" "$version" "$source" "$bin"
+    ep_log "Mihomo is not auto-started. After apply-shell, run: mihomo start"
 }

@@ -14,7 +14,7 @@ fi
 
 echo "[TEST] bash syntax"
 bash -n "$ROOT/envpilot.sh"
-for file in "$ROOT"/lib/*.sh "$ROOT"/components/*.sh "$ROOT"/scripts/*.sh "$ROOT"/templates/bashrc "$ROOT"/templates/zshrc "$ROOT"/templates/start_mihomo.sh; do
+for file in "$ROOT"/lib/*.sh "$ROOT"/components/*.sh "$ROOT"/scripts/*.sh "$ROOT"/templates/*.sh "$ROOT"/templates/bashrc "$ROOT"/templates/zshrc "$ROOT/bootstrap.sh"; do
     bash -n "$file"
 done
 "$PYTHON_BIN" -c 'import pathlib, sys; path = pathlib.Path(sys.argv[1]); compile(path.read_text(encoding="utf-8"), str(path), "exec")' "$ROOT/scripts/update-manifests.py"
@@ -52,21 +52,26 @@ grep -q 'ep_find_cached_asset' "$ROOT/lib/download.sh"
 grep -q 'ep_capture_doctor_baseline' "$ROOT/lib/baseline.sh"
 grep -q 'ep_restore_doctor_baseline' "$ROOT/lib/baseline.sh"
 grep -q 'mihomo-bin' "$ROOT/lib/baseline.sh"
-grep -q 'Using bundled downloads/ mihomo asset before network' "$ROOT/components/mihomo.sh"
+grep -q 'Using bundled downloads/ Mihomo asset for' "$ROOT/components/mihomo.sh"
+grep -q 'ep_mihomo_set_shell_local_ports "$proxy_port" "$api_port"' "$ROOT/components/mihomo.sh"
 grep -q 'Using bundled downloads/ mihomo data asset before network' "$ROOT/components/mihomo.sh"
 grep -q 'meta-rules-dat' "$ROOT/components/mihomo.sh"
 grep -q 'Find-CachedAsset' "$ROOT/envpilot.ps1"
 grep -q 'Install-MihomoDataAssets' "$ROOT/envpilot.ps1"
 grep -q 'EP_LEGACY_MINICONDA_VERSION' "$ROOT/components/conda.sh"
 grep -q 'ep_mihomo_offline_pattern' "$ROOT/components/mihomo.sh"
-grep -q 'mihomo_wait_for_port' "$ROOT/templates/bashrc"
-grep -q 'mihomo_port()' "$ROOT/templates/bashrc"
-grep -q 'mihomo()' "$ROOT/templates/bashrc"
+grep -q 'MIHOMO_API_PORT' "$ROOT/templates/bashrc"
+grep -q 'mihomo_ports()' "$ROOT/templates/bashrc"
+grep -q 'mihomo_update_subscription()' "$ROOT/templates/bashrc"
 grep -q 'envpilot_restore()' "$ROOT/templates/bashrc"
-grep -q 'mihomo()' "$ROOT/templates/zshrc"
-grep -q 'mihomo_port()' "$ROOT/templates/zshrc"
+grep -q 'mihomo_ports()' "$ROOT/templates/zshrc"
+grep -q 'mihomo_update_subscription()' "$ROOT/templates/zshrc"
 grep -q 'envpilot_restore()' "$ROOT/templates/zshrc"
-grep -q 'did not open proxy port' "$ROOT/templates/start_mihomo.sh"
+grep -q 'MIHOMO_RUNTIME_DIR="/tmp/' "$ROOT/templates/mihomo_common.sh"
+grep -q 'API .* was not ready' "$ROOT/templates/start_mihomo.sh"
+grep -q 'update-subscription' "$ROOT/envpilot.sh"
+grep -q 'partial clone' "$ROOT/README.md"
+grep -q 'sparse-checkout' "$ROOT/bootstrap.sh"
 grep -q 'Source URL:' "$ROOT/lib/download.sh"
 ! grep -qi 'miniforge' "$ROOT/components/conda.sh" "$ROOT/manifests/conda.json" "$ROOT/templates/bashrc" "$ROOT/templates/zshrc" "$ROOT/scripts/collect-assets.sh" "$ROOT/scripts/collect-assets.ps1"
 
@@ -192,17 +197,18 @@ status_check="$(
     BASHRC_AUTO_ENABLE_PROXY=0 \
     BASHRC_AUTO_LOAD_MODULES=0 \
     BASHRC_AUTO_LOAD_SECRETS=0 \
-    bash --noprofile --norc -ic '. "'"$ROOT/templates/bashrc"'"; proxy_status' 2>/dev/null
+    bash --noprofile --norc -ic '. "'"$ROOT/templates/bashrc"'"; if proxy_port_is_listening; then printf yes; else printf no; fi' 2>/dev/null | tail -n 1
 )"
-printf '%s\n' "$status_check" | grep -q 'reachable via TCP connect'
+[ "$status_check" = "yes" ]
 
-echo "[TEST] mihomo port switch updates config and shell.local"
+echo "[TEST] mihomo dual-port switch updates config and shell.local"
 tmp_home="$(mktemp -d)"
 mkdir -p "$tmp_home/.config/mihomo" "$tmp_home/software/mihomo"
 cat > "$tmp_home/.config/mihomo/config.yaml" <<'EOF'
 allow-lan: true
 mixed-port: 7890
 bind-address: 0.0.0.0
+external-controller: 127.0.0.1:9090
 EOF
 printf '%s\n' '#!/usr/bin/env sh' > "$tmp_home/software/mihomo/mihomo"
 chmod +x "$tmp_home/software/mihomo/mihomo"
@@ -219,18 +225,101 @@ chmod +x "$tmp_home/software/mihomo/mihomo"
     . "$ROOT/components/mihomo.sh"
     ep_init
     ep_platform_detect >/dev/null
-    ep_stop_mihomo() { printf 'stop:%s\n' "$1" >> "$HOME/events"; }
-    ep_start_mihomo() { printf 'start:%s\n' "$1" >> "$HOME/events"; }
+    ep_stop_mihomo() { :; }
+    ep_start_mihomo() { :; }
     ep_proxy_port_is_listening() { return 1; }
-    ep_switch_mihomo_port 7891 >/tmp/envpilot-port-switch.out
+    ep_switch_mihomo_ports 7891 9091 >/tmp/envpilot-port-switch.out
 )
 grep -q 'mixed-port: 7891' "$tmp_home/.config/mihomo/config.yaml"
+grep -q 'external-controller: 127.0.0.1:9091' "$tmp_home/.config/mihomo/config.yaml"
 grep -q 'allow-lan: false' "$tmp_home/.config/mihomo/config.yaml"
 grep -q 'bind-address: 127.0.0.1' "$tmp_home/.config/mihomo/config.yaml"
-grep -q '^BASHRC_PROXY_PORT=7891$' "$tmp_home/.config/envpilot/shell.local"
-grep -q '^stop:7890$' "$tmp_home/events"
-grep -q '^start:7891$' "$tmp_home/events"
+grep -q '^MIHOMO_PROXY_PORT=7891$' "$tmp_home/.config/envpilot/shell.local"
+grep -q '^MIHOMO_API_PORT=9091$' "$tmp_home/.config/envpilot/shell.local"
 rm -rf "$tmp_home"
+echo "[TEST] node-local Mihomo runtime and subscription update"
+if command -v pgrep >/dev/null 2>&1 && command -v pkill >/dev/null 2>&1 && [ -n "${USER:-}" ]; then
+    tmp_home="$(mktemp -d)"
+    tmp_bin="$(mktemp -d)"
+    test_host="envpilot-test-$$"
+    marker="$tmp_home/mihomo-started"
+    runtime_dir="/tmp/${USER}_mihomo_${test_host}"
+    mkdir -p "$tmp_home/software/mihomo" "$tmp_home/.config/mihomo"
+    cat > "$tmp_home/software/mihomo/mihomo" <<'EOF'
+#!/usr/bin/env bash
+: > "$MIHOMO_TEST_MARKER"
+trap 'rm -f "$MIHOMO_TEST_MARKER"' EXIT INT TERM
+while :; do sleep 1; done
+EOF
+    chmod +x "$tmp_home/software/mihomo/mihomo"
+    cat > "$tmp_home/.config/mihomo/config.yaml" <<'EOF'
+mixed-port: 7890
+external-controller: 127.0.0.1:9090
+allow-lan: true
+bind-address: 0.0.0.0
+EOF
+    printf 'geo\n' > "$tmp_home/.config/mihomo/geoip.metadb"
+    cat > "$tmp_bin/ss" <<'EOF'
+#!/usr/bin/env bash
+if [ -f "$MIHOMO_TEST_MARKER" ]; then
+    printf 'LISTEN 0 128 127.0.0.1:42290 0.0.0.0:*\n'
+fi
+EOF
+    cat > "$tmp_bin/curl" <<'EOF'
+#!/usr/bin/env bash
+[ -f "$MIHOMO_TEST_MARKER" ]
+EOF
+    chmod +x "$tmp_bin/ss" "$tmp_bin/curl"
+    HOME="$tmp_home" HOSTNAME="$test_host" PATH="$tmp_bin:$PATH" MIHOMO_TEST_MARKER="$marker"         MIHOMO_PROXY_PORT=42290 MIHOMO_API_PORT=60290         bash "$ROOT/templates/start_mihomo.sh" >/tmp/envpilot-mihomo-start.out
+    test -x "$runtime_dir/mihomo"
+    test -f "$runtime_dir/geoip.metadb"
+    grep -q '^mixed-port: 42290$' "$runtime_dir/config.yaml"
+    grep -q '^external-controller: 127.0.0.1:60290$' "$runtime_dir/config.yaml"
+    HOME="$tmp_home" HOSTNAME="$test_host" PATH="$tmp_bin:$PATH" MIHOMO_TEST_MARKER="$marker"         MIHOMO_PROXY_PORT=42290 MIHOMO_API_PORT=60290         bash "$ROOT/templates/status_mihomo.sh" >/tmp/envpilot-mihomo-status.out
+    grep -q 'API: OK' /tmp/envpilot-mihomo-status.out
+    HOME="$tmp_home" HOSTNAME="$test_host" PATH="$tmp_bin:$PATH" MIHOMO_TEST_MARKER="$marker"         MIHOMO_PROXY_PORT=42290 MIHOMO_API_PORT=60290         bash "$ROOT/templates/stop_mihomo.sh" >/tmp/envpilot-mihomo-stop.out
+    ! pgrep -u "$USER" -f "$runtime_dir/mihomo" >/dev/null 2>&1
+
+    cat > "$tmp_bin/curl" <<'EOF'
+#!/usr/bin/env bash
+destination=""
+while [ "$#" -gt 0 ]; do
+    if [ "$1" = "-o" ]; then
+        destination="$2"
+        shift 2
+    else
+        shift
+    fi
+done
+[ -n "$destination" ] || exit 1
+printf 'proxies: []\nrules: []\n' > "$destination"
+EOF
+    chmod +x "$tmp_bin/curl"
+    HOME="$tmp_home" HOSTNAME="$test_host" PATH="$tmp_bin:$PATH"         MIHOMO_PROXY_PORT=42291 MIHOMO_API_PORT=60291         bash "$ROOT/templates/update_mihomo_subscription.sh" "https://example.invalid/clash-meta"         >/tmp/envpilot-mihomo-subscription.out
+    grep -q '^mixed-port: 42291$' "$tmp_home/.config/mihomo/config.yaml"
+    grep -q '^external-controller: 127.0.0.1:60291$' "$tmp_home/.config/mihomo/config.yaml"
+    rm -rf "$runtime_dir" "$tmp_home" "$tmp_bin"
+else
+    echo "[TEST] skip node-local runtime fixture: pgrep/pkill unavailable"
+fi
+
+echo "[TEST] architecture-aware sparse clone"
+clone_parent="$(mktemp -d)"
+GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$ROOT" GIT_CONFIG_KEY_1=safe.directory GIT_CONFIG_VALUE_1="$ROOT/.git" ENVPILOT_REPO_URL="$ROOT"     bash "$ROOT/bootstrap.sh" "$clone_parent/envpilot" >/tmp/envpilot-bootstrap.out 2>&1
+case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)
+        compgen -G "$clone_parent/envpilot/downloads/mihomo-windows-amd64-compatible-*.zip" >/dev/null
+        ! compgen -G "$clone_parent/envpilot/downloads/mihomo-linux-amd64-compatible-*.gz" >/dev/null
+        ;;
+    Linux)
+        compgen -G "$clone_parent/envpilot/downloads/mihomo-linux-amd64-compatible-*.gz" >/dev/null
+        ! compgen -G "$clone_parent/envpilot/downloads/mihomo-windows-amd64-compatible-*.zip" >/dev/null
+        ;;
+esac
+test -f "$clone_parent/envpilot/downloads/country.mmdb"
+test -f "$clone_parent/envpilot/downloads/geoip.metadb"
+rm -rf "$clone_parent"
+
 echo "[TEST] doctor baseline restore"
 tmp_home="$(mktemp -d)"
 mkdir -p "$tmp_home/.config/envpilot" "$tmp_home/.config/mihomo"
@@ -320,7 +409,7 @@ grep -q 'env_key = "OPENAI_API_KEY"' "$ROOT/components/codex.sh"
 ! grep -q 'requires_openai_auth = true' "$ROOT/components/codex.sh"
 
 echo "[TEST] version"
-grep -q '^0\.1\.8$' "$ROOT/VERSION"
+grep -q '^0\.1\.9$' "$ROOT/VERSION"
 
 echo "[TEST] secret patterns are ignored"
 grep -q '^api.env$' "$ROOT/.gitignore"

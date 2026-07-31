@@ -37,8 +37,8 @@ Usage:
                                       Back up and replace the active shell profile.
   bash envpilot.sh rollback           Restore the most recent envpilot-managed backup.
   bash envpilot.sh restore            Restore envpilot-managed changes to the latest doctor baseline.
-  bash envpilot.sh mihomo [start|stop|status|port PORT]
-                                      Manage the envpilot-installed mihomo process.
+  bash envpilot.sh mihomo [start|stop|status|port PORT|ports PROXY_PORT API_PORT|update-subscription [URL]]
+                                      Manage Mihomo, its two local ports, and subscription config.
   bash envpilot.sh resume             Continue an interrupted install using saved state.
   bash envpilot.sh reset              Clear saved state so install steps can run again.
   bash envpilot.sh update-manifests   Refresh manifest latest metadata from upstream.
@@ -79,10 +79,17 @@ parse_args()
             shift
         fi
     fi
-    if [ "$EP_COMMAND" = "mihomo" ] && [ "$EP_MIHOMO_ACTION" = "port" ] && [ "${1:-}" != "" ]; then
+    if [ "$EP_COMMAND" = "mihomo" ] && [ "${1:-}" != "" ]; then
         arg="${1%$'\r'}"
         if [ "${arg#-}" = "$arg" ]; then
             EP_MIHOMO_PORT="$arg"
+            shift
+        fi
+    fi
+    if [ "$EP_COMMAND" = "mihomo" ] && [ "${1:-}" != "" ]; then
+        arg="${1%$'\r'}"
+        if [ "${arg#-}" = "$arg" ]; then
+            EP_MIHOMO_VALUE2="$arg"
             shift
         fi
     fi
@@ -222,7 +229,7 @@ run_mihomo()
 {
     ep_init
     ep_platform_detect
-    ep_mihomo_cli "$EP_MIHOMO_ACTION" "$EP_MIHOMO_PORT"
+    ep_mihomo_cli "$EP_MIHOMO_ACTION" "$EP_MIHOMO_PORT" "$EP_MIHOMO_VALUE2"
 }
 
 run_reset()

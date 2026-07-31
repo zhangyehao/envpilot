@@ -10,6 +10,9 @@ param(
     [Parameter(Position=2)]
     [string]$Value,
 
+    [Parameter(Position=3)]
+    [string]$Value2,
+
     [ValidateSet("online","offline")]
     [string]$Mode = "online",
 
@@ -210,19 +213,43 @@ function Get-MihomoConfigPath {
 }
 
 function Get-MihomoProxyPort {
+    if (Test-EnvpilotPort $env:MIHOMO_PROXY_PORT) { return [int]$env:MIHOMO_PROXY_PORT }
     $local = Join-Path $Script:ConfigDir "profile.local.ps1"
     if (Test-Path -LiteralPath $local) {
-        $match = Select-String -LiteralPath $local -Pattern '^\s*\$EnvpilotProxyPort\s*=\s*(\d+)\s*$' | Select-Object -Last 1
+        $match = Select-String -LiteralPath $local -Pattern '^\s*\$env:MIHOMO_PROXY_PORT\s*=\s*[''"]?(\d+)' | Select-Object -Last 1
         if ($match -and (Test-EnvpilotPort $match.Matches[0].Groups[1].Value)) { return [int]$match.Matches[0].Groups[1].Value }
+        $legacy = Select-String -LiteralPath $local -Pattern '^\s*\$EnvpilotProxyPort\s*=\s*(\d+)' | Select-Object -Last 1
+        if ($legacy -and (Test-EnvpilotPort $legacy.Matches[0].Groups[1].Value)) { return [int]$legacy.Matches[0].Groups[1].Value }
     }
     $config = Get-MihomoConfigPath
     if (Test-Path -LiteralPath $config) {
         $match = Select-String -LiteralPath $config -Pattern '^\s*mixed-port:\s*(\d+)\s*$' | Select-Object -Last 1
         if ($match -and (Test-EnvpilotPort $match.Matches[0].Groups[1].Value)) { return [int]$match.Matches[0].Groups[1].Value }
     }
-    return 7890
+    return 42290
 }
 
+function Get-MihomoApiPort {
+    if (Test-EnvpilotPort $env:MIHOMO_API_PORT) { return [int]$env:MIHOMO_API_PORT }
+    $local = Join-Path $Script:ConfigDir "profile.local.ps1"
+    if (Test-Path -LiteralPath $local) {
+        $match = Select-String -LiteralPath $local -Pattern '^\s*\$env:MIHOMO_API_PORT\s*=\s*[''"]?(\d+)' | Select-Object -Last 1
+        if ($match -and (Test-EnvpilotPort $match.Matches[0].Groups[1].Value)) { return [int]$match.Matches[0].Groups[1].Value }
+    }
+    $config = Get-MihomoConfigPath
+    if (Test-Path -LiteralPath $config) {
+        $match = Select-String -LiteralPath $config -Pattern '^\s*external-controller:\s*(?:127\.0\.0\.1|localhost):(\d+)\s*$' | Select-Object -Last 1
+        if ($match -and (Test-EnvpilotPort $match.Matches[0].Groups[1].Value)) { return [int]$match.Matches[0].Groups[1].Value }
+    }
+    return 60290
+}
+
+function Assert-MihomoPorts {
+    param([string]$ProxyPort, [string]$ApiPort)
+    if (-not (Test-EnvpilotPort $ProxyPort)) { Stop-Envpilot "Invalid proxy port: $ProxyPort. Use an integer from 1 to 65535." }
+    if (-not (Test-EnvpilotPort $ApiPort)) { Stop-Envpilot "Invalid API port: $ApiPort. Use an integer from 1 to 65535." }
+    if ([int]$ProxyPort -eq [int]$ApiPort) { Stop-Envpilot "Proxy and API ports must be different." }
+}
 function Set-YamlScalar {
     param([string]$Path, [string]$Key, [string]$Value)
     $lines = [System.Collections.Generic.List[string]]::new()
@@ -241,37 +268,34 @@ function Set-YamlScalar {
     [System.IO.File]::WriteAllLines($Path, $lines, [System.Text.UTF8Encoding]::new($false))
 }
 
-function Set-MihomoConfigPort {
-    param([int]$Port)
+function Set-MihomoConfigPorts {
+    param([int]$ProxyPort, [int]$ApiPort)
+    Assert-MihomoPorts -ProxyPort $ProxyPort -ApiPort $ApiPort
     $config = Get-MihomoConfigPath
     Set-YamlScalar -Path $config -Key "allow-lan" -Value "false"
-    Set-YamlScalar -Path $config -Key "mixed-port" -Value ([string]$Port)
+    Set-YamlScalar -Path $config -Key "mixed-port" -Value ([string]$ProxyPort)
     Set-YamlScalar -Path $config -Key "bind-address" -Value "127.0.0.1"
+    Set-YamlScalar -Path $config -Key "external-controller" -Value "127.0.0.1:$ApiPort"
 }
 
-function Set-EnvpilotProfileLocalPort {
-    param([int]$Port)
+function Set-EnvpilotProfileLocalPorts {
+    param([int]$ProxyPort, [int]$ApiPort)
     $local = Join-Path $Script:ConfigDir "profile.local.ps1"
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $local) | Out-Null
     Backup-File $local
     $lines = [System.Collections.Generic.List[string]]::new()
     if (Test-Path -LiteralPath $local) {
-        foreach ($line in Get-Content -LiteralPath $local) { [void]$lines.Add($line) }
+        foreach ($line in Get-Content -LiteralPath $local) {
+            if ($line -notmatch '^\s*\$(?:env:MIHOMO_(?:PROXY|API)_PORT|EnvpilotProxyPort)\s*=') { [void]$lines.Add($line) }
+        }
     } else {
         [void]$lines.Add("# envpilot profile.local.ps1")
     }
-    $found = $false
-    for ($i = 0; $i -lt $lines.Count; $i++) {
-        if ($lines[$i] -match '^\s*\$EnvpilotProxyPort\s*=') {
-            $lines[$i] = "`$EnvpilotProxyPort = $Port"
-            $found = $true
-        }
-    }
-    if (-not $found) { [void]$lines.Add("`$EnvpilotProxyPort = $Port") }
+    [void]$lines.Add(('$env:MIHOMO_PROXY_PORT = ''{0}''' -f $ProxyPort))
+    [void]$lines.Add(('$env:MIHOMO_API_PORT = ''{0}''' -f $ApiPort))
     [System.IO.File]::WriteAllLines($local, $lines, [System.Text.UTF8Encoding]::new($false))
-    Write-Info "Wrote mihomo proxy port to $($local): $Port"
+    Write-Info "Wrote Mihomo ports to $($local): proxy=$ProxyPort API=$ApiPort"
 }
-
 function New-BaselineSlug {
     param([string]$Path)
     $slug = $Path -replace "^([A-Za-z]):", "drive_`$1"
@@ -385,7 +409,7 @@ function Remove-EnvpilotPath {
 }
 
 function Test-MihomoPort {
-    param([string]$HostName = "127.0.0.1", [int]$Port = 7890)
+    param([string]$HostName = "127.0.0.1", [int]$Port = (Get-MihomoProxyPort))
     $listen = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue | Where-Object {
         $_.LocalAddress -in @($HostName, "0.0.0.0", "::", "::1")
     } | Select-Object -First 1
@@ -395,101 +419,153 @@ function Test-MihomoPort {
 function Stop-MihomoProcesses {
     param([switch]$Quiet)
     $bin = Get-MihomoBin
-    $resolvedBin = $null
+    $resolvedBin = if (Test-Path -LiteralPath $bin) { (Resolve-Path -LiteralPath $bin).Path } else { $null }
     $stopped = 0
-    if (Test-Path -LiteralPath $bin) {
-        $resolvedBin = (Resolve-Path -LiteralPath $bin).Path
-    }
     Get-Process -Name "mihomo" -ErrorAction SilentlyContinue | ForEach-Object {
         try {
-            $processPath = $_.Path
-            if (($resolvedBin -and $processPath -eq $resolvedBin) -or ($processPath -like "*\software\mihomo\mihomo.exe")) {
+            if (($resolvedBin -and $_.Path -eq $resolvedBin) -or ($_.Path -like "*\software\mihomo\mihomo.exe")) {
                 Stop-Process -Id $_.Id -Force
                 $stopped += 1
-                Write-Info "Stopped mihomo process: $($_.Id)"
+                Write-Info "Stopped Mihomo process: $($_.Id)"
             }
         } catch {
         }
     }
-    if ($stopped -eq 0 -and -not $Quiet) {
-        Write-Info "No envpilot-managed mihomo process found."
+    if ($stopped -eq 0 -and -not $Quiet) { Write-Info "No envpilot-managed Mihomo process found." }
+}
+
+function Test-MihomoApi {
+    param([int]$Port = (Get-MihomoApiPort))
+    try {
+        $request = [System.Net.WebRequest]::Create("http://127.0.0.1:$Port/version")
+        $request.Proxy = $null
+        $request.Timeout = 2000
+        $response = $request.GetResponse()
+        $response.Close()
+        return $true
+    } catch {
+        return $false
     }
 }
 
 function Start-MihomoProcess {
-    param([int]$Port = (Get-MihomoProxyPort))
+    param([int]$ProxyPort = (Get-MihomoProxyPort), [int]$ApiPort = (Get-MihomoApiPort))
+    Assert-MihomoPorts -ProxyPort $ProxyPort -ApiPort $ApiPort
     $bin = Get-MihomoBin
     $configDir = Join-Path $HOME ".config/mihomo"
     $config = Join-Path $configDir "config.yaml"
-    if (Test-MihomoPort -Port $Port) {
-        Write-Info "Proxy port 127.0.0.1:$Port is already listening."
+    if (Test-MihomoApi -Port $ApiPort) {
+        Write-Info "Mihomo is already running and healthy: proxy=$ProxyPort API=$ApiPort"
         return
     }
-    if (-not (Test-Path -LiteralPath $bin)) { Stop-Envpilot "mihomo executable not found: $bin" }
-    if (-not (Test-Path -LiteralPath $config)) { Stop-Envpilot "mihomo config not found: $config" }
+    if (Test-MihomoPort -Port $ProxyPort) { Stop-Envpilot "Proxy port 127.0.0.1:$ProxyPort is already in use." }
+    if (Test-MihomoPort -Port $ApiPort) { Stop-Envpilot "API port 127.0.0.1:$ApiPort is already in use." }
+    if (-not (Test-Path -LiteralPath $bin)) { Stop-Envpilot "Mihomo executable not found: $bin" }
+    if (-not (Test-Path -LiteralPath $config)) { Stop-Envpilot "Mihomo config not found: $config" }
+    Set-MihomoConfigPorts -ProxyPort $ProxyPort -ApiPort $ApiPort
     Start-Process -WindowStyle Hidden -FilePath $bin -ArgumentList @("-d", $configDir) | Out-Null
-    for ($i = 0; $i -lt 20; $i++) {
-        if (Test-MihomoPort -Port $Port) {
-            Write-Info "mihomo proxy port is listening: 127.0.0.1:$Port"
+    for ($i = 0; $i -lt 30; $i++) {
+        if ((Test-MihomoPort -Port $ProxyPort) -and (Test-MihomoApi -Port $ApiPort)) {
+            Write-Info "Mihomo is ready: proxy=127.0.0.1:$ProxyPort API=127.0.0.1:$ApiPort"
             return
         }
         Start-Sleep -Seconds 1
     }
-    Stop-Envpilot "mihomo did not open proxy port 127.0.0.1:$Port within 20 seconds."
+    Stop-Envpilot "Mihomo did not become healthy within 30 seconds."
 }
 
 function Show-MihomoStatus {
     $bin = Get-MihomoBin
     $resolvedBin = if (Test-Path -LiteralPath $bin) { (Resolve-Path -LiteralPath $bin).Path } else { $null }
-    Write-Host "envpilot mihomo binary:"
+    $proxyPort = Get-MihomoProxyPort
+    $apiPort = Get-MihomoApiPort
+    Write-Host "envpilot Mihomo binary:"
     if ($resolvedBin) { Write-Host "  $resolvedBin" } else { Write-Host "  not found: $bin" }
     Write-Host ""
-    Write-Host "mihomo process:"
+    Write-Host "Mihomo process:"
     $processes = @(Get-Process -Name "mihomo" -ErrorAction SilentlyContinue | Where-Object {
-        try {
-            ($resolvedBin -and $_.Path -eq $resolvedBin) -or ($_.Path -like "*\software\mihomo\mihomo.exe")
-        } catch {
-            $false
-        }
+        try { ($resolvedBin -and $_.Path -eq $resolvedBin) -or ($_.Path -like "*\software\mihomo\mihomo.exe") } catch { $false }
     })
-    if ($processes.Count -eq 0) {
-        Write-Host "  not running"
-    } else {
-        foreach ($process in $processes) { Write-Host "  $($process.Id) $($process.Path)" }
-    }
+    if ($processes.Count -eq 0) { Write-Host "  not running" }
+    else { foreach ($process in $processes) { Write-Host "  $($process.Id) $($process.Path)" } }
+    $proxyState = if (Test-MihomoPort -Port $proxyPort) { "listening" } else { "not detected" }
+    $apiState = if (Test-MihomoPort -Port $apiPort) { "listening" } else { "not detected" }
+    $health = if (Test-MihomoApi -Port $apiPort) { "OK" } else { "FAILED" }
     Write-Host ""
-    Write-Host "proxy port:"
-    $port = Get-MihomoProxyPort
-    if (Test-MihomoPort -Port $port) { Write-Host "  127.0.0.1:$port listening" } else { Write-Host "  127.0.0.1:$port not detected" }
+    Write-Host "ports:"
+    Write-Host "  proxy 127.0.0.1:$proxyPort $proxyState"
+    Write-Host "  API   127.0.0.1:$apiPort $apiState"
+    Write-Host "  API health: $health"
+}
+
+function Set-MihomoPorts {
+    param([string]$ProxyPort, [string]$ApiPort)
+    Assert-MihomoPorts -ProxyPort $ProxyPort -ApiPort $ApiPort
+    $proxyNumber = [int]$ProxyPort
+    $apiNumber = [int]$ApiPort
+    $config = Get-MihomoConfigPath
+    $bin = Get-MihomoBin
+    if (-not (Test-Path -LiteralPath $bin)) { Stop-Envpilot "Mihomo executable not found: $bin" }
+    if (-not (Test-Path -LiteralPath $config)) { Stop-Envpilot "Mihomo config not found: $config. Run: .\envpilot.ps1 install mihomo" }
+    Write-Info "Plan: switch Mihomo ports to proxy=$proxyNumber API=$apiNumber"
+    Stop-MihomoProcesses -Quiet
+    if (Test-MihomoPort -Port $proxyNumber) { Stop-Envpilot "Target proxy port 127.0.0.1:$proxyNumber is already in use." }
+    if (Test-MihomoPort -Port $apiNumber) { Stop-Envpilot "Target API port 127.0.0.1:$apiNumber is already in use." }
+    Backup-File $config
+    Set-MihomoConfigPorts -ProxyPort $proxyNumber -ApiPort $apiNumber
+    Set-EnvpilotProfileLocalPorts -ProxyPort $proxyNumber -ApiPort $apiNumber
+    $env:MIHOMO_PROXY_PORT = [string]$proxyNumber
+    $env:MIHOMO_API_PORT = [string]$apiNumber
+    Start-MihomoProcess -ProxyPort $proxyNumber -ApiPort $apiNumber
+    Write-Info "Switched Mihomo ports: proxy=$proxyNumber API=$apiNumber"
 }
 
 function Set-MihomoPort {
     param([string]$Port)
-    if (-not (Test-EnvpilotPort $Port)) { Stop-Envpilot "Invalid port: ${Port}. Use an integer from 1 to 65535." }
-    $portNumber = [int]$Port
-    $oldPort = Get-MihomoProxyPort
+    Set-MihomoPorts -ProxyPort $Port -ApiPort (Get-MihomoApiPort)
+}
+
+function Update-MihomoSubscription {
+    param([string]$Url)
+    if ([string]::IsNullOrWhiteSpace($Url)) { $Url = $env:ENVPILOT_MIHOMO_SUBSCRIPTION_URL }
+    if ([string]::IsNullOrWhiteSpace($Url)) { $Url = Read-Host "Paste Clash/Mihomo subscription URL" }
+    if ($Url -notmatch '^https?://') { Stop-Envpilot "Provide a Clash/Mihomo subscription URL beginning with http:// or https://." }
     $config = Get-MihomoConfigPath
-    $bin = Get-MihomoBin
-    if (-not (Test-Path -LiteralPath $bin)) { Stop-Envpilot "mihomo executable not found: $bin" }
-    if (-not (Test-Path -LiteralPath $config)) { Stop-Envpilot "mihomo config not found: $config. Run: .\envpilot.ps1 install mihomo" }
-
-    Write-Info "Plan: switch mihomo proxy port"
-    Write-Info "Current port: 127.0.0.1:$oldPort"
-    Write-Info "New port: 127.0.0.1:$portNumber"
-    Write-Info "Will update: $config"
-    Write-Info "Will update: $(Join-Path $Script:ConfigDir 'profile.local.ps1')"
-    Write-Info "Will restart envpilot-managed mihomo."
-
-    Backup-File $config
-    Set-MihomoConfigPort -Port $portNumber
-    Set-EnvpilotProfileLocalPort -Port $portNumber
-    Stop-MihomoProcesses -Quiet
-    if ($oldPort -ne $portNumber -and (Test-MihomoPort -Port $portNumber)) {
-        Stop-Envpilot "Target proxy port 127.0.0.1:$portNumber is already listening after stopping envpilot mihomo. Choose another port."
+    $configDir = Split-Path -Parent $config
+    New-Item -ItemType Directory -Force -Path $configDir | Out-Null
+    $newConfig = Join-Path $configDir ("config.yaml.new." + [guid]::NewGuid().ToString("N"))
+    $backup = $null
+    $wasRunning = @(Get-Process -Name "mihomo" -ErrorAction SilentlyContinue | Where-Object { try { $_.Path -like "*\software\mihomo\mihomo.exe" } catch { $false } }).Count -gt 0
+    try {
+        Invoke-EnvpilotDownload $Url $newConfig
+        if ((Get-Item -LiteralPath $newConfig).Length -eq 0) { Stop-Envpilot "Downloaded subscription config is empty." }
+        if ((Get-Content -LiteralPath $newConfig -TotalCount 1) -match '^\s*<(?:html|!doctype)') { Stop-Envpilot "Downloaded content looks like HTML, not a Mihomo configuration." }
+        if (Test-Path -LiteralPath $config) {
+            $backup = "$config.bak.$Script:RunId"
+            Copy-Item -LiteralPath $config -Destination $backup -Force
+            ($config + [char]9 + $backup) | Add-Content -LiteralPath $Script:RollbackLog
+            Write-Info "Backed up $config -> $backup"
+        }
+        Set-YamlScalar -Path $newConfig -Key "allow-lan" -Value "false"
+        Set-YamlScalar -Path $newConfig -Key "mixed-port" -Value ([string](Get-MihomoProxyPort))
+        Set-YamlScalar -Path $newConfig -Key "bind-address" -Value "127.0.0.1"
+        Set-YamlScalar -Path $newConfig -Key "external-controller" -Value "127.0.0.1:$(Get-MihomoApiPort)"
+        Stop-MihomoProcesses -Quiet
+        Move-Item -LiteralPath $newConfig -Destination $config -Force
+        if ($wasRunning) {
+            try { Start-MihomoProcess }
+            catch {
+                if ($backup) {
+                    Copy-Item -LiteralPath $backup -Destination $config -Force
+                    Start-MihomoProcess
+                }
+                throw
+            }
+        }
+        Write-Info "Mihomo subscription updated."
+    } finally {
+        Remove-Item -LiteralPath $newConfig -Force -ErrorAction SilentlyContinue
     }
-    Start-MihomoProcess -Port $portNumber
-    Write-Info "Switched mihomo proxy port to 127.0.0.1:$portNumber"
-    Write-Info "For current PowerShell variables, reload profile or run: Disable-EnvpilotProxy; Enable-EnvpilotProxy -Port $portNumber"
 }
 
 function Invoke-MihomoCommand {
@@ -499,10 +575,11 @@ function Invoke-MihomoCommand {
         "stop" { Stop-MihomoProcesses }
         "status" { Show-MihomoStatus }
         "port" { Set-MihomoPort -Port $Value }
-        default { Stop-Envpilot "Unknown mihomo action: $Component. Use start, stop, status, or port PORT." }
+        "ports" { Set-MihomoPorts -ProxyPort $Value -ApiPort $Value2 }
+        { $_ -in @("update-subscription","subscription") } { Update-MihomoSubscription -Url $Value }
+        default { Stop-Envpilot "Unknown Mihomo action: $Component. Use start, stop, status, port PORT, ports PROXY_PORT API_PORT, or update-subscription [URL]." }
     }
 }
-
 function Restore-BaselineTool {
     param([string]$Name)
     switch ($Name) {
@@ -627,43 +704,74 @@ function Install-Mihomo {
     $installDir = Join-Path $HOME "software/mihomo"
     $bin = Join-Path $installDir "mihomo.exe"
     $configDir = Join-Path $HOME ".config/mihomo"
-    $countryPath = Join-Path $configDir "country.mmdb"
-    $geoipPath = Join-Path $configDir "geoip.metadb"
-    New-Item -ItemType Directory -Force -Path $installDir | Out-Null
-    Write-Info "Selected mihomo asset rule: $regex"
+    $proxyPort = Get-MihomoProxyPort
+    $apiPort = Get-MihomoApiPort
+    Assert-MihomoPorts -ProxyPort $proxyPort -ApiPort $apiPort
+
+    Write-Info "Selected Mihomo asset rule for Windows/$($Script:Platform.Arch): $regex"
     Write-Info "Offline asset pattern: $offlinePattern"
-    if (-not (Confirm-Step "Install mihomo to $bin?" $true)) { Add-ReportEvent "mihomo" "skipped" "user declined"; return }
-    $archive = Join-Path ([System.IO.Path]::GetTempPath()) "envpilot-mihomo.zip"
     if ($Mode -eq "offline") {
         $source = Find-OfflineAsset $offlinePattern
-        Copy-Item -LiteralPath $source -Destination $archive -Force
     } else {
         $source = Find-CachedAsset $offlinePattern
         if ($source) {
-            Write-Info "Using bundled downloads/ mihomo asset before network: $source"
-            Copy-Item -LiteralPath $source -Destination $archive -Force
+            Write-Info "Using bundled downloads/ Mihomo asset for Windows/$($Script:Platform.Arch) before network: $source"
         } else {
             $source = Resolve-GitHubAsset "MetaCubeX" "mihomo" $regex
-            Invoke-EnvpilotDownload $source $archive
         }
     }
-    Write-Info "Plan: install mihomo"
+
+    Write-Info "Plan: install Mihomo"
     Write-Info "Source: $source"
     Write-Info "Target: $bin"
-    Write-Info "Will write: $(Join-Path $installDir "start_mihomo.sh")"
-    Write-Info "Will hydrate data: $countryPath and $geoipPath"
-    $port = Get-MihomoProxyPort
-    Write-Info "Proxy defaults: 127.0.0.1:$port, allow-lan=false, bind-address=127.0.0.1"
+    Write-Info "Config: $(Join-Path $configDir 'config.yaml')"
+    Write-Info "Ports: proxy=127.0.0.1:$proxyPort API=127.0.0.1:$apiPort"
+    if (Test-MihomoPort -Port $proxyPort) {
+        Write-Warn "Proxy port 127.0.0.1:$proxyPort is currently in use. Installation can continue, but Mihomo cannot start on this port."
+    } else {
+        Write-Info "Proxy port availability: 127.0.0.1:$proxyPort is available"
+    }
+    if (Test-MihomoPort -Port $apiPort) {
+        Write-Warn "API port 127.0.0.1:$apiPort is currently in use. Installation can continue, but Mihomo cannot start on this port."
+    } else {
+        Write-Info "API port availability: 127.0.0.1:$apiPort is available"
+    }
+    if (-not (Confirm-Step "Install Mihomo from the source above to $bin?" $true)) {
+        Add-ReportEvent "mihomo" "skipped" "user declined" "" $source $bin
+        return
+    }
+
+    New-Item -ItemType Directory -Force -Path $installDir, $configDir | Out-Null
+    Set-EnvpilotProfileLocalPorts -ProxyPort $proxyPort -ApiPort $apiPort
+    $archive = Join-Path ([System.IO.Path]::GetTempPath()) "envpilot-mihomo.zip"
     $extract = Join-Path ([System.IO.Path]::GetTempPath()) "envpilot-mihomo"
-    Remove-Item -Recurse -Force -LiteralPath $extract -ErrorAction SilentlyContinue
-    Expand-Archive -LiteralPath $archive -DestinationPath $extract -Force
-    $exe = Get-ChildItem -LiteralPath $extract -Recurse -File -Filter "mihomo*.exe" | Select-Object -First 1
-    if (-not $exe) { Stop-Envpilot "Could not find mihomo executable in archive." }
-    Copy-Item -LiteralPath $exe.FullName -Destination $bin -Force
-    Copy-Item -LiteralPath (Join-Path $Script:Root "templates/start_mihomo.sh") -Destination (Join-Path $installDir "start_mihomo.sh") -Force
-    Install-MihomoDataAssets -ConfigDir $configDir
-    Add-ReportEvent "mihomo" "installed" "installed mihomo binary and GeoIP data; subscription config is user supplied" "" $source $bin
-    Mark-StateDone "mihomo"
+    try {
+        if (Test-Path -LiteralPath $source -PathType Leaf) {
+            Copy-Item -LiteralPath $source -Destination $archive -Force
+        } else {
+            Invoke-EnvpilotDownload $source $archive
+        }
+        Remove-Item -Recurse -Force -LiteralPath $extract -ErrorAction SilentlyContinue
+        Expand-Archive -LiteralPath $archive -DestinationPath $extract -Force
+        $exe = Get-ChildItem -LiteralPath $extract -Recurse -File -Filter "mihomo*.exe" | Select-Object -First 1
+        if (-not $exe) { Stop-Envpilot "Could not find Mihomo executable in archive." }
+        Copy-Item -LiteralPath $exe.FullName -Destination $bin -Force
+        Install-MihomoDataAssets -ConfigDir $configDir
+        $subscription = $env:ENVPILOT_MIHOMO_SUBSCRIPTION_URL
+        if ([string]::IsNullOrWhiteSpace($subscription) -and -not $Yes) {
+            $subscription = Read-Host "Paste Clash/Mihomo subscription URL (press Enter to skip)"
+        }
+        if (-not [string]::IsNullOrWhiteSpace($subscription)) {
+            Update-MihomoSubscription -Url $subscription
+        } else {
+            Write-Warn "No subscription URL provided. Later run: .\envpilot.ps1 mihomo update-subscription '<Clash/Mihomo URL>'"
+        }
+        Add-ReportEvent "mihomo" "installed" "installed Mihomo binary, GeoIP data, and dual-port support" "" $source $bin
+        Mark-StateDone "mihomo"
+    } finally {
+        Remove-Item -LiteralPath $archive -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $extract -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 function Install-Codex {
     Write-Info "Codex config will use env_key=OPENAI_API_KEY and will not write auth.json."
@@ -814,8 +922,8 @@ Usage:
       Restore the most recent envpilot-managed backup.
   .\envpilot.ps1 restore
       Restore envpilot-managed changes to the latest doctor baseline.
-  .\envpilot.ps1 mihomo [start|stop|status|port PORT]
-      Manage the envpilot-installed mihomo process.
+  .\envpilot.ps1 mihomo [start|stop|status|port PORT|ports PROXY_PORT API_PORT|update-subscription [URL]]
+      Manage Mihomo, its two local ports, and subscription config.
   .\envpilot.ps1 resume
       Continue an interrupted install using saved state.
   .\envpilot.ps1 reset

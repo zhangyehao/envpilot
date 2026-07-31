@@ -15,7 +15,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y shellcheck
-          shellcheck envpilot.sh lib/*.sh components/*.sh templates/start_mihomo.sh
+          shellcheck envpilot.sh bootstrap.sh lib/*.sh components/*.sh templates/*.sh
 
   macos:
     runs-on: macos-latest

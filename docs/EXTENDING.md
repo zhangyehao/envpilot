@@ -131,3 +131,12 @@ Mihomo can fail during startup on restricted servers if it must download GeoIP d
 - `downloads/geoip.metadb` -> `~/.config/mihomo/geoip.metadb`
 
 `install mihomo` copies these from `downloads/` first. In online mode it falls back to `https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/`. Offline mode fails clearly if the local sidecar file is missing.
+
+
+## Mihomo runtime and port contract
+
+The Unix implementation keeps persistent assets under the user's home directory and runs a node-local copy from `/tmp/${USER}_mihomo_${HOSTNAME}`.
+
+Changes to Mihomo must keep `MIHOMO_PROXY_PORT` and `MIHOMO_API_PORT` consistent across installation, YAML patching, start/stop/status scripts, proxy environment helpers, and subscription updates. New runtime files must be included in doctor baseline/restore coverage and Bash/ShellCheck tests. Subscription URLs, controller secrets, and generated `config.yaml` files must never enter fixtures or Git history.
+
+`bootstrap.sh` and `bootstrap.ps1` use partial clone plus sparse checkout to select the matching tracked cache. New cached platforms require coordinated bootstrap, manifest, updater workflow, and test changes.

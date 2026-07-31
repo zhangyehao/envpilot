@@ -1,107 +1,84 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-MIHOMO_BIN="${HOME}/software/mihomo/mihomo"
-CONFIG_DIR="${HOME}/.config/mihomo"
-LOG_FILE="${HOME}/logs/mihomo.log"
-MIHOMO_PROXY_HOST="${MIHOMO_PROXY_HOST:-127.0.0.1}"
-MIHOMO_PROXY_PORT="${MIHOMO_PROXY_PORT:-}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=templates/mihomo_common.sh
+. "$SCRIPT_DIR/mihomo_common.sh"
+mihomo_init_runtime
 
-command_exists()
-{
-    command -v "$1" >/dev/null 2>&1
-}
+mihomo_command_exists curl || mihomo_die "curl is required for Mihomo health checks"
+[ -x "$MIHOMO_SOURCE_BIN" ] || mihomo_die "mihomo executable not found: $MIHOMO_SOURCE_BIN"
+[ -s "$MIHOMO_SOURCE_CONFIG/config.yaml" ] ||
+    mihomo_die "mihomo config not found: $MIHOMO_SOURCE_CONFIG/config.yaml"
 
-proxy_port_socket_listening()
-{
-    local port="$1"
-    local line
-    if command_exists ss; then
-        line="$(ss -lntH "sport = :$port" 2>/dev/null | head -n 1 || true)"
-        [ -n "$line" ] && return 0
+if mihomo_runtime_running; then
+    if mihomo_api_healthy; then
+        printf '[OK] mihomo is already running and healthy.\n'
+        pgrep -u "${USER:-$(id -un)}" -af "$MIHOMO_RUNTIME_BIN" || true
+        printf '[OK] proxy: %s:%s\n' "$MIHOMO_PROXY_HOST" "$MIHOMO_PROXY_PORT"
+        printf '[OK] API:   %s:%s\n' "$MIHOMO_PROXY_HOST" "$MIHOMO_API_PORT"
+        exit 0
     fi
-    if command_exists lsof; then
-        line="$(lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | awk 'NR == 2 { print; exit }' || true)"
-        [ -n "$line" ] && return 0
-    fi
-    if command_exists netstat; then
-        line="$(netstat -an 2>/dev/null | grep -E "[.:]${port}[[:space:]].*LISTEN" | head -n 1 || true)"
-        [ -n "$line" ] && return 0
-    fi
-    return 1
-}
 
-proxy_port_is_listening()
-{
-    local host="$1"
-    local port="$2"
-    if proxy_port_socket_listening "$port"; then
-        return 0
+    printf '[WARN] mihomo process exists but its API health check failed.\n' >&2
+    pgrep -u "${USER:-$(id -un)}" -af "$MIHOMO_RUNTIME_BIN" >&2 || true
+    if [ "${MIHOMO_FORCE_RESTART:-0}" != "1" ]; then
+        mihomo_die "run mihomo_stop first, or set MIHOMO_FORCE_RESTART=1"
     fi
-    if command_exists nc && nc -z -w 1 "$host" "$port" >/dev/null 2>&1; then
-        return 0
-    fi
-    if command_exists timeout && timeout 1 bash -c ": </dev/tcp/$host/$port" >/dev/null 2>&1; then
-        return 0
-    fi
-    return 1
-}
-
-if [ -z "$MIHOMO_PROXY_PORT" ] && [ -r "$HOME/.config/envpilot/shell.local" ]; then
-    MIHOMO_PROXY_PORT="$(grep -E '^[[:space:]]*(export[[:space:]]+)?BASHRC_PROXY_PORT=' "$HOME/.config/envpilot/shell.local" 2>/dev/null | tail -n 1 | sed -E 's/^[[:space:]]*(export[[:space:]]+)?BASHRC_PROXY_PORT=//' | tr -d "\"'[:space:]" || true)"
+    "$SCRIPT_DIR/stop_mihomo.sh"
 fi
-if [ -z "$MIHOMO_PROXY_PORT" ] && [ -r "$CONFIG_DIR/config.yaml" ]; then
-    MIHOMO_PROXY_PORT="$(grep -E '^[[:space:]]*mixed-port:[[:space:]]*[0-9]+' "$CONFIG_DIR/config.yaml" 2>/dev/null | tail -n 1 | sed -E 's/^[^:]+:[[:space:]]*([0-9]+).*/\1/' || true)"
+
+if mihomo_port_reachable "$MIHOMO_PROXY_PORT"; then
+    mihomo_die "proxy port $MIHOMO_PROXY_HOST:$MIHOMO_PROXY_PORT is already in use"
 fi
-case "${MIHOMO_PROXY_PORT:-}" in
-    ''|*[!0-9]*) MIHOMO_PROXY_PORT=7890 ;;
+if mihomo_port_reachable "$MIHOMO_API_PORT"; then
+    mihomo_die "API port $MIHOMO_PROXY_HOST:$MIHOMO_API_PORT is already in use"
+fi
+
+case "$MIHOMO_RUNTIME_DIR" in
+    /tmp/*_mihomo_*) ;;
+    *) mihomo_die "unsafe runtime directory: $MIHOMO_RUNTIME_DIR" ;;
 esac
-if [ "$MIHOMO_PROXY_PORT" -lt 1 ] || [ "$MIHOMO_PROXY_PORT" -gt 65535 ]; then
-    echo "[ERROR] invalid mihomo proxy port: $MIHOMO_PROXY_PORT" >&2
-    exit 1
-fi
+rm -rf -- "$MIHOMO_RUNTIME_DIR"
+mkdir -p "$MIHOMO_RUNTIME_DIR"
+chmod 700 "$MIHOMO_RUNTIME_DIR"
 
-mkdir -p "$(dirname "$LOG_FILE")"
+cp "$MIHOMO_SOURCE_BIN" "$MIHOMO_RUNTIME_BIN"
+chmod 755 "$MIHOMO_RUNTIME_BIN"
+cp -a "$MIHOMO_SOURCE_CONFIG/." "$MIHOMO_RUNTIME_DIR/"
+rm -f \
+    "$MIHOMO_RUNTIME_DIR/cache.db" \
+    "$MIHOMO_RUNTIME_DIR/cache.db-shm" \
+    "$MIHOMO_RUNTIME_DIR/cache.db-wal"
+mihomo_apply_local_config "$MIHOMO_RUNTIME_DIR/config.yaml"
 
-if [ ! -x "$MIHOMO_BIN" ]; then
-    echo "[ERROR] mihomo executable not found: $MIHOMO_BIN" >&2
-    exit 1
-fi
-
-if [ ! -s "$CONFIG_DIR/config.yaml" ]; then
-    echo "[ERROR] mihomo config not found: $CONFIG_DIR/config.yaml" >&2
-    echo "[ERROR] Provide a Clash/Mihomo subscription URL during envpilot install mihomo, or put config.yaml there manually." >&2
-    exit 1
-fi
-
-if proxy_port_is_listening "$MIHOMO_PROXY_HOST" "$MIHOMO_PROXY_PORT"; then
-    echo "[INFO] mihomo already running."
-    exit 0
-fi
-if pgrep -u "$USER" -f "$MIHOMO_BIN" >/dev/null 2>&1; then
-    echo "[INFO] mihomo already running."
-    pgrep -u "$USER" -af "$MIHOMO_BIN"
-    exit 0
-fi
-
-nohup "$MIHOMO_BIN" -d "$CONFIG_DIR" >> "$LOG_FILE" 2>&1 &
+nohup "$MIHOMO_RUNTIME_BIN" \
+    -d "$MIHOMO_RUNTIME_DIR" \
+    >"$MIHOMO_RUNTIME_LOG" 2>&1 &
 mihomo_pid=$!
+printf '%s\n' "$mihomo_pid" > "$MIHOMO_PID_FILE"
 
-attempts=20
 count=0
-while [ "$count" -lt "$attempts" ]; do
-    if proxy_port_is_listening "$MIHOMO_PROXY_HOST" "$MIHOMO_PROXY_PORT"; then
-        echo "[INFO] mihomo started. PID=$mihomo_pid"
-        echo "[INFO] log file: $LOG_FILE"
-        echo "[INFO] proxy: http://${MIHOMO_PROXY_HOST}:${MIHOMO_PROXY_PORT}"
+while [ "$count" -lt "$MIHOMO_STARTUP_TIMEOUT" ]; do
+    if ! kill -0 "$mihomo_pid" 2>/dev/null; then
+        printf '[ERROR] mihomo exited during startup.\n' >&2
+        tail -n 50 "$MIHOMO_RUNTIME_LOG" >&2 2>/dev/null || true
+        exit 1
+    fi
+    if mihomo_api_healthy && mihomo_port_reachable "$MIHOMO_PROXY_PORT"; then
+        printf '[OK] mihomo is ready. PID=%s\n' "$mihomo_pid"
+        printf '[OK] runtime: %s\n' "$MIHOMO_RUNTIME_DIR"
+        printf '[OK] log:     %s\n' "$MIHOMO_RUNTIME_LOG"
+        printf '[OK] proxy:   %s:%s\n' "$MIHOMO_PROXY_HOST" "$MIHOMO_PROXY_PORT"
+        printf '[OK] API:     %s:%s\n' "$MIHOMO_PROXY_HOST" "$MIHOMO_API_PORT"
         exit 0
     fi
     sleep 1
     count=$((count + 1))
 done
 
-echo "[ERROR] mihomo did not open proxy port ${MIHOMO_PROXY_HOST}:${MIHOMO_PROXY_PORT} within ${attempts}s." >&2
-if [ -s "$LOG_FILE" ]; then
-    tail -n 20 "$LOG_FILE" >&2 || true
-fi
+printf '[ERROR] mihomo process exists, but API %s:%s was not ready within %ss.\n' \
+    "$MIHOMO_PROXY_HOST" "$MIHOMO_API_PORT" "$MIHOMO_STARTUP_TIMEOUT" >&2
+ps -ww -p "$mihomo_pid" -o pid,ppid,stat,etime,wchan:40,%cpu,%mem,args >&2 2>/dev/null || true
+tail -n 50 "$MIHOMO_RUNTIME_LOG" >&2 2>/dev/null || true
 exit 1

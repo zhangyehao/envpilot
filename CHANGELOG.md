@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.1.9 - 2026-07-31
+
+### Added
+
+- Added node-local Mihomo runtime management: persistent binary/config/geodata remain under the user home, while the active binary, config, cache, PID, and log run from `/tmp/${USER}_mihomo_${HOSTNAME}` on Unix-like hosts.
+- Added `mihomo ports PROXY_PORT API_PORT` and `mihomo update-subscription [URL]` across Bash, Zsh, PowerShell, and repository entrypoints.
+- Added `bootstrap.sh` and `bootstrap.ps1` for OS/architecture-aware partial clone and sparse checkout, avoiding unrelated tracked Mihomo caches when supported by Git 2.25 or newer.
+- Added dedicated Mihomo start, stop, status, common, and subscription-update scripts with API and proxy health checks.
+
+### Changed
+
+- Standardized Mihomo configuration on `MIHOMO_PROXY_PORT` and `MIHOMO_API_PORT`, defaulting to `42290` and `60290`, with validation, occupancy reporting, persistence, and local-only binding.
+- Mihomo installation now reports the selected source, persistent paths, node-local runtime path, both ports, and port availability before confirmation.
+- Shell templates no longer auto-start Mihomo or auto-enable proxy variables by default.
+- CI ShellCheck coverage now includes the architecture-aware bootstrap and every Mihomo management script.
+
+### Fixed
+
+- Restored the Bash `envpilot_restore` helper and extended baseline restore to stop Mihomo and remove the current node runtime directory.
+- Fixed PowerShell dual-port persistence, the compatibility `mihomo port` command, and one-command subscription updates; added regression coverage for generated `profile.local.ps1`.
+- Preserved unrelated shell/profile local settings while updating Mihomo ports and rejected unsafe runtime-directory identities.
 ## 0.1.8 - 2026-07-31
 
 ### Added

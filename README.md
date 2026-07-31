@@ -1,122 +1,201 @@
 # envpilot
 
-envpilot 是一个面向非管理员用户的跨平台环境引导仓库，用来在新服务器、工作站或远程主机上，按可控顺序安装常用工具、配置 shell、启用代理，并保留可恢复的用户态状态。
+envpilot 是面向非管理员用户的跨平台环境引导仓库，用于在新服务器、HPC 登录节点、工作站或远程主机上安装和管理常用工具，并保留可恢复的用户态状态。
+
+当前重点支持 Mihomo、Conda/Anaconda、Mamba、Codex、GitHub CLI 和 tmux。默认在线安装；Mihomo 和地理数据可优先使用仓库内的受控缓存。
 
 ## 快速开始
 
 ### Linux / macOS / WSL / Git Bash
 
-优先用 HTTPS 拉取，因为新服务器通常还没有 GitHub SSH key：
+推荐使用轻量克隆入口。它会先检测 OS 和 CPU 架构，再通过 Git partial clone + sparse checkout 只取匹配的 Mihomo 缓存：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/zhangyehao/envpilot/main/bootstrap.sh | bash
+cd envpilot
+bash envpilot.sh doctor
+```
+
+也可以普通克隆：
 
 ```bash
 git clone https://github.com/zhangyehao/envpilot.git
 cd envpilot
 bash envpilot.sh doctor
-bash envpilot.sh install mihomo
-bash envpilot.sh apply-shell
-source ~/.bashrc
-mihomo start
-# 可选：把代理端口完整切换到 7891
-mihomo port 7891
-proxy_on
-bash envpilot.sh install
 ```
 
-如果后面出了问题，先回到仓库目录执行：
-
-```bash
-bash envpilot.sh restore
-```
-
-如果已经执行过 `apply-shell` 并重新加载了 shell，也可以直接执行：
-
-```bash
-envpilot_restore
-```
-
-`envpilot_restore` 会额外关闭当前 shell 里的代理环境变量；普通的 `bash envpilot.sh restore` 是子进程，不能修改父 shell 已经导出的环境变量。
+普通 `git clone` 无法在下载前根据客户端架构自动过滤 Git 中已经跟踪的文件，因此会取得 Linux/Windows 的全部缓存。轻量入口要求较新的 Git；旧版 Git 会说明原因并自动回退普通 HTTPS clone。
 
 ### Windows PowerShell
+
+```powershell
+irm https://raw.githubusercontent.com/zhangyehao/envpilot/main/bootstrap.ps1 | iex
+cd envpilot
+.\envpilot.ps1 doctor
+```
+
+也可以使用普通 HTTPS clone：
 
 ```powershell
 git clone https://github.com/zhangyehao/envpilot.git
 cd envpilot
 .\envpilot.ps1 doctor
-.\envpilot.ps1 install mihomo
-.\envpilot.ps1 apply-shell
 ```
 
-PowerShell 下可用：
+## 推荐部署顺序
 
-```powershell
-.\envpilot.ps1 mihomo status
-.\envpilot.ps1 mihomo stop
-.\envpilot.ps1 mihomo port 7891
-.\envpilot.ps1 restore
-```
-
-## 命令总览
-
-| 命令 | 作用 |
-| --- | --- |
-| `doctor` | 只检查，不安装；同时记录本次 restore baseline。 |
-| `install [all|mihomo|conda|mamba|codex|github|tmux]` | 安装组件；默认在线解析，组件可优先使用 `downloads/` 缓存。 |
-| `apply-shell` | 备份并替换当前 shell profile。 |
-| `mihomo start` / `mihomo stop` / `mihomo status` / `mihomo port PORT` | 在加载 shell 模板后管理 envpilot 安装的 mihomo，并可一条命令切换代理端口。 |
-| `bash envpilot.sh mihomo start|stop|status|port PORT` | 不依赖 shell 模板，直接从仓库目录管理 mihomo。 |
-| `restore` | 恢复到最近一次 `doctor` 记录的 baseline。 |
-| `rollback` | 只恢复最近一次 envpilot 备份的单个文件。 |
-| `resume` | 继续上一次中断的安装流程。 |
-| `reset` | 清掉安装状态文件，允许重新跑安装步骤。 |
-| `update-manifests` | 刷新 manifest 的上游 stable 元数据。 |
-| `update-mihomo-cache` | 刷新 `downloads/` 里的 mihomo 缓存和 GeoIP 侧车数据。 |
-| `self-test` | 运行仓库快速测试。 |
-
-常用参数：
-
-```bash
-bash envpilot.sh install conda --conda-distribution anaconda
-bash envpilot.sh install mihomo --mode offline
-bash envpilot.sh install mihomo --asset-path downloads/mihomo-linux-amd64-compatible-v1.19.29.gz
-bash envpilot.sh mihomo port 7891
-bash envpilot.sh install --prefix "$HOME/software"
-```
-
-## 推荐安装顺序
-
-默认 `install all` 的顺序是：
-
-```text
-mihomo -> conda -> mamba -> codex -> github -> tmux
-```
-
-推荐先单独安装 mihomo，再应用 shell，再启动代理，最后继续安装其他组件：
+共享服务器上先安装并启动 Mihomo，再继续网络依赖较重的组件：
 
 ```bash
 bash envpilot.sh doctor
+
+export MIHOMO_PROXY_PORT=42290
+export MIHOMO_API_PORT=60290
+
 bash envpilot.sh install mihomo
 bash envpilot.sh apply-shell
 source ~/.bashrc
+
 mihomo start
-# 可选：把代理端口完整切换到 7891
-mihomo port 7891
+mihomo status
 proxy_on
+
 bash envpilot.sh install
 ```
 
-这样后续 Conda、Codex、GitHub CLI 等网络步骤更少被网络问题卡住。默认不会偷偷自动启动代理，也不会默认把代理变量写进 shell。
+默认不会自动启动 Mihomo，也不会自动设置代理环境变量。需要代理时执行 `proxy_on`，不用时执行 `proxy_off`。
 
-## Mihomo
+## Mihomo 运行模型
 
-安装前脚本会提示去 [proxy.yanhuoapi.com](https://proxy.yanhuoapi.com/) 注册账号，并复制 **Clash/Mihomo 订阅链接**。
+Linux/macOS/Unix-like 环境按以下方式运行：
 
-安装源优先级：
+```text
+持久文件：
+~/software/mihomo/mihomo
+~/.config/mihomo/config.yaml
+~/.config/mihomo/country.mmdb
+~/.config/mihomo/geoip.metadb
 
-1. `downloads/` 里的稳定兼容缓存包
-2. GitHub Releases 的 stable release
-3. 排除 alpha / beta / rc / prerelease
+当前节点运行目录：
+/tmp/${USER}_mihomo_${HOSTNAME}/
+```
 
-当前受控缓存包括：
+二进制和订阅配置保存在用户目录；实际运行时复制到节点本地 `/tmp`。这样可以减少 NFS、Lustre、GPFS、BeeGFS 等共享文件系统上的锁、元数据和缓存 I/O 问题。
+
+切换登录节点后，`/tmp` 和 `127.0.0.1` 都会变化，需要在新节点重新执行：
+
+```bash
+mihomo start
+```
+
+## Mihomo 双端口
+
+所有 Mihomo 操作统一读取：
+
+```bash
+MIHOMO_PROXY_PORT=42290
+MIHOMO_API_PORT=60290
+```
+
+- `MIHOMO_PROXY_PORT`：HTTP 和 SOCKS5 共用的本地 mixed port。
+- `MIHOMO_API_PORT`：Mihomo external controller API。
+- 两个端口必须不同。
+- 非 root 用户应选择大于 `1024` 的端口。
+- 写配置或启动前会检查端口是否合法、是否已经被占用。
+
+临时指定：
+
+```bash
+export MIHOMO_PROXY_PORT=42290
+export MIHOMO_API_PORT=60290
+mihomo start
+```
+
+持久修改并自动完成配置、停止、占用检查和重启：
+
+```bash
+mihomo ports 42290 60290
+```
+
+兼容旧命令，只修改代理端口并保留当前 API 端口：
+
+```bash
+mihomo port 42291
+```
+
+没有执行 `apply-shell` 时，可在仓库目录执行：
+
+```bash
+bash envpilot.sh mihomo ports 42290 60290
+```
+
+配置会统一修正为：
+
+```yaml
+mixed-port: 42290
+allow-lan: false
+bind-address: 127.0.0.1
+external-controller: 127.0.0.1:60290
+```
+
+只修改本地监听项，不会改动订阅节点中的远端 `server`、`port`、`uuid`、`public-key` 或 `short-id`。
+
+## Mihomo 订阅更新
+
+安装前先在 [proxy.yanhuoapi.com](https://proxy.yanhuoapi.com/) 注册，并复制 **Clash/Mihomo 订阅链接**。不要把真实订阅 URL 提交到 Git、README、Issue 或聊天记录。
+
+交互更新：
+
+```bash
+mihomo update-subscription
+```
+
+直接传入新链接：
+
+```bash
+mihomo update-subscription 'https://example.invalid/clash-meta'
+```
+
+也可从仓库入口执行：
+
+```bash
+bash envpilot.sh mihomo update-subscription 'https://example.invalid/clash-meta'
+```
+
+更新命令会：
+
+1. 下载到临时文件并拒绝空文件或 HTML 错误页。
+2. 备份原 `config.yaml`。
+3. 按当前 `MIHOMO_PROXY_PORT` 和 `MIHOMO_API_PORT` 修正本地监听。
+4. 如果 Mihomo 正在运行，则停止并重启。
+5. 新配置启动失败时恢复旧配置。
+
+## Mihomo 常用命令
+
+```bash
+mihomo start
+mihomo stop
+mihomo status
+mihomo ports 42290 60290
+mihomo update-subscription
+proxy_on
+proxy_off
+proxy_status
+```
+
+`mihomo status` 检查当前节点的：
+
+- envpilot 管理的 Mihomo 进程；
+- 代理端口和 API 端口；
+- API `/version` 健康状态；
+- 代理出口；
+- `/tmp/${USER}_mihomo_${HOSTNAME}/mihomo.log` 最近日志。
+
+`mihomo stop` 只停止当前用户、当前节点、envpilot 运行目录中的 Mihomo，不会停止其他用户或其他路径的进程。
+
+## Mihomo 缓存与更新
+
+仓库当前受控缓存：
 
 ```text
 downloads/mihomo-linux-amd64-compatible-*.gz
@@ -125,39 +204,42 @@ downloads/country.mmdb
 downloads/geoip.metadb
 ```
 
-安装后会写入：
+安装选择顺序：
 
-```text
-~/software/mihomo/mihomo
-~/software/mihomo/start_mihomo.sh
-~/.config/mihomo/config.yaml
-~/.config/mihomo/country.mmdb
-~/.config/mihomo/geoip.metadb
-```
+1. 当前 OS/架构匹配的 `downloads/` 缓存。
+2. MetaCubeX GitHub Releases 的最新 stable 资产。
+3. 排除 alpha、beta、rc、prerelease。
 
-常用命令：
+`update-mihomo-cache.yml` 每周或手动运行，刷新 Linux/Windows amd64 compatible 缓存及 geodata，并通过 PR 提交变化。
+
+## 命令总览
+
+| 命令 | 作用 |
+| --- | --- |
+| `doctor` | 只检查，不安装；同时记录本次 restore baseline。 |
+| `install [all|mihomo|conda|mamba|codex|github|tmux]` | 安装组件；在线模式优先使用匹配的受控缓存。 |
+| `apply-shell` | 备份并替换当前 shell/profile。 |
+| `mihomo start|stop|status` | 管理和检查 Mihomo。 |
+| `mihomo ports PROXY API` | 完整修改双端口并重启。 |
+| `mihomo update-subscription [URL]` | 备份、更新、修正并按需重启订阅配置。 |
+| `restore` | 恢复到最近一次 `doctor` 记录的 baseline。 |
+| `rollback` | 恢复最近一次 envpilot 单文件备份。 |
+| `resume` | 继续中断的安装流程。 |
+| `reset` | 清理安装状态，使步骤可重新执行。 |
+| `update-manifests` | 刷新上游 stable 版本元数据。 |
+| `update-mihomo-cache` | 刷新 `downloads/` 的 Mihomo 和 geodata 缓存。 |
+| `self-test` | 运行仓库测试。 |
+
+常用参数：
 
 ```bash
-mihomo start
-mihomo stop
-mihomo status
-mihomo port 7891
-proxy_on
-proxy_off
-proxy_status
+bash envpilot.sh install conda --conda-distribution anaconda
+bash envpilot.sh install mihomo --mode offline
+bash envpilot.sh install mihomo --asset-path downloads/mihomo-linux-amd64-compatible-v1.19.29.gz
+bash envpilot.sh install --prefix "$HOME/software"
 ```
 
-如果还没执行 `apply-shell`，也可以从仓库目录直接执行：
-
-```bash
-bash envpilot.sh mihomo status
-bash envpilot.sh mihomo stop
-bash envpilot.sh mihomo port 7891
-```
-
-`mihomo stop` 只停止 envpilot 管理路径下的 mihomo 进程，不会杀掉其他用户或其他路径的 mihomo。`mihomo port 7891` 会完整修改 `~/.config/mihomo/config.yaml` 的 `mixed-port`，把端口写入 envpilot 本地 shell/profile 配置，重启 envpilot 管理的 mihomo，并刷新当前 shell 的代理变量；未加载 shell 模板时可在仓库目录执行 `bash envpilot.sh mihomo port 7891`。
-
-## Baseline / Restore
+## Baseline、restore 与 rollback
 
 `doctor` 会记录：
 
@@ -166,22 +248,19 @@ bash envpilot.sh mihomo port 7891
 ~/.config/envpilot/baseline/files/
 ```
 
-`restore` 会按 baseline 恢复 envpilot 管理的文件和目录，停止 envpilot 管理的 mihomo，并清理安装状态文件。适合安装中途失败后回到执行 `doctor` 后的状态。
+`restore` 会停止 envpilot 管理的 Mihomo、清理对应节点的 `/tmp` 运行目录，并把受管文件恢复到最近一次 `doctor` 状态。适合安装中途失败后回到初始状态。
 
-注意：再次执行 `doctor` 会覆盖 baseline。因此，想保留初始状态时，不要在失败后的半安装状态再执行 `doctor`。
+再次执行 `doctor` 会覆盖 baseline。需要保留最初状态时，不要在半安装状态重新运行 `doctor`。
 
-`rollback` 和 `restore` 不一样：
-
-- `rollback`：恢复最近一次备份的单个文件，例如 `.bashrc.bak.TIMESTAMP`。
-- `restore`：按最近一次 `doctor` 的 baseline 恢复一组 envpilot 管理对象。
+`rollback` 只恢复最近一次备份的单个文件；`restore` 恢复整组 baseline 对象。
 
 ## Conda / Mamba
 
-- 默认安装 Miniconda；也支持显式选择 Anaconda。
+- 默认安装官方 Miniconda，也可显式选择 Anaconda。
 - 不使用 Miniforge。
-- Linux 会根据 glibc 版本选择可安装的官方 Miniconda / Anaconda 版本。
-- 不会默认执行 `conda init`。
-- `mamba` 安装到 Conda base，但 tmux 不通过 Conda/Mamba 安装。
+- Linux 根据 glibc 和架构选择最新可安装的官方版本。
+- 不默认执行 `conda init`。
+- Mamba 安装到 Conda base；tmux 不通过 Conda/Mamba 提供。
 
 ## Codex
 
@@ -191,52 +270,28 @@ Codex 配置使用：
 env_key = "OPENAI_API_KEY"
 ```
 
-推荐把密钥放到：
-
-```text
-~/.config/secrets/api.env
-```
-
-再通过：
+密钥推荐放到 `~/.config/secrets/api.env`，再通过：
 
 ```bash
 with_secrets codex
 ```
 
-## GitHub
+## GitHub 与 tmux
 
-普通用户 clone 推荐 HTTPS：
+新主机 clone 推荐 HTTPS；只有需要 push 时再配置 GitHub 登录和 SSH。
 
-```bash
-git clone https://github.com/zhangyehao/envpilot.git
-```
-
-如果需要 SSH 推送，再执行：
-
-```bash
-gh auth login -h github.com --git-protocol ssh
-ssh -T git@github.com
-```
-
-## tmux
-
-tmux 必须是系统里能直接调用的命令，不通过 Conda 环境提供。优先顺序：
-
-1. 系统已有 tmux
-2. module load tmux
-3. root / 包管理器
-4. 非 root 用户态构建
-5. Windows 原生不承诺，优先 WSL / MSYS2 / Git Bash
+tmux 优先使用系统命令或 module；非 root Linux 可构建到用户目录。Windows 原生不承诺 tmux，优先使用 WSL、MSYS2 或 Git Bash。
 
 ## Actions 与发布
 
-- `test.yml`：语法检查和快速回归测试。
+- `test.yml`：Linux、macOS、Windows 语法和回归测试。
 - `update-manifests.yml`：定时刷新上游 stable 元数据并开 PR。
-- `update-mihomo-cache.yml`：定时刷新 `downloads/` 里的 mihomo 缓存和 GeoIP 侧车数据并开 PR。
-- `release-assets.yml`：只打包 envpilot 自身源码归档和校验值，不上传第三方安装包。
+- `update-mihomo-cache.yml`：定时刷新受控 Mihomo/geodata 缓存并开 PR。
+- `release-assets.yml`：为 envpilot 自身生成源码归档和校验文件。
 
 ## 仓库约定
 
-- secrets、订阅链接、日志、生成配置不进入 Git 历史。
-- `downloads/` 只保留明确允许的受控缓存文件。
+- secrets、订阅链接、API key、运行日志和生成配置不进入 Git。
+- `downloads/` 只保留明确允许的受控缓存。
 - 新增组件时同步更新测试、文档、manifest 和 baseline/restore 规则。
+- 维护扩展规范见 [docs/EXTENDING.zh-CN.md](docs/EXTENDING.zh-CN.md)。

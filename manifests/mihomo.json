@@ -52,7 +52,9 @@
   "security_defaults": {
     "allow_lan": false,
     "listen_host": "127.0.0.1",
-    "mixed_port": 7890
+    "mixed_port": 42290,
+    "api_port": 60290,
+    "runtime_model": "persistent-home-node-local-tmp"
   },
   "latest": {
     "version": "v1.19.29",

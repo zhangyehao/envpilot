@@ -92,7 +92,11 @@ ep_capture_doctor_baseline()
     ep_baseline_record_file mihomo-country "$HOME/.config/mihomo/country.mmdb"
     ep_baseline_record_file mihomo-geoip "$HOME/.config/mihomo/geoip.metadb"
     ep_baseline_record_file mihomo-bin "$HOME/software/mihomo/mihomo"
+    ep_baseline_record_file mihomo-common "$HOME/software/mihomo/mihomo_common.sh"
     ep_baseline_record_file mihomo-start "$HOME/software/mihomo/start_mihomo.sh"
+    ep_baseline_record_file mihomo-stop "$HOME/software/mihomo/stop_mihomo.sh"
+    ep_baseline_record_file mihomo-status "$HOME/software/mihomo/status_mihomo.sh"
+    ep_baseline_record_file mihomo-subscription "$HOME/software/mihomo/update_mihomo_subscription.sh"
     ep_baseline_record_file mihomo-log "$HOME/logs/mihomo.log"
     ep_baseline_record_file mihomo-state-log "$HOME/.local/state/mihomo/start.log"
     ep_baseline_record_file codex-config "$HOME/.codex/config.toml"
@@ -186,6 +190,7 @@ ep_restore_doctor_baseline()
     [ -s "$EP_BASELINE_FILE" ] || ep_die "No doctor baseline found. Run: bash envpilot.sh doctor"
     ep_log "Restoring doctor baseline from $EP_BASELINE_FILE"
     ep_stop_mihomo
+    ep_cleanup_mihomo_runtime
 
     while IFS="$(printf '\t')" read -r kind name target present snapshot detail; do
         case "$kind" in

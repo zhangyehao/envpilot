@@ -12,7 +12,7 @@ function Assert-Match {
 
 try {
     Write-Host "[TEST] PowerShell parser"
-    $parseTargets = @((Join-Path $Root "envpilot.ps1"), (Join-Path $Root "templates/Microsoft.PowerShell_profile.ps1"))
+    $parseTargets = @((Join-Path $Root "envpilot.ps1"), (Join-Path $Root "bootstrap.ps1"), (Join-Path $Root "templates/Microsoft.PowerShell_profile.ps1"))
     $parseTargets += Get-ChildItem -LiteralPath (Join-Path $Root "scripts") -Filter "*.ps1" | Select-Object -ExpandProperty FullName
     foreach ($target in $parseTargets) {
         $parseErrors = $null
@@ -32,8 +32,9 @@ try {
     Write-Host "[TEST] mihomo status command"
     $mihomoStatus = (& (Join-Path $Root "envpilot.ps1") mihomo status 6>&1 | Out-String)
     Assert-Match $mihomoStatus "envpilot mihomo binary:" "mihomo status missing binary section"
-    Assert-Match $mihomoStatus "proxy port:" "mihomo status missing proxy section"
-    Assert-Match $mihomoStatus "127.0.0.1:" "mihomo status missing configured port"
+    Assert-Match $mihomoStatus "ports:" "mihomo status missing ports section"
+    Assert-Match $mihomoStatus "proxy 127.0.0.1:42290" "mihomo status missing configured proxy port"
+    Assert-Match $mihomoStatus "API   127.0.0.1:60290" "mihomo status missing configured API port"
 
     Write-Host "[TEST] profile template"
     $template = Join-Path $Root "templates/Microsoft.PowerShell_profile.ps1"
@@ -41,7 +42,32 @@ try {
     Assert-Match $templateText "Use-EnvpilotSecrets" "PowerShell profile template does not define Use-EnvpilotSecrets"
     Assert-Match $templateText "function mihomo" "PowerShell profile template does not define mihomo wrapper"
     Assert-Match $templateText "Stop-Mihomo" "PowerShell profile template does not define Stop-Mihomo"
-    Assert-Match $templateText "Set-MihomoPort" "PowerShell profile template does not define Set-MihomoPort"
+    Assert-Match $templateText "Set-MihomoPorts" "PowerShell profile template does not define Set-MihomoPorts"
+    Assert-Match $templateText "Update-MihomoSubscription" "PowerShell profile template does not define subscription update"
+    Assert-Match $templateText "MIHOMO_API_PORT" "PowerShell profile template does not define the API port"
+    $entryText = Get-Content -LiteralPath (Join-Path $Root "envpilot.ps1") -Raw
+    Assert-Match $entryText 'Set-EnvpilotProfileLocalPorts -ProxyPort \$proxyPort -ApiPort \$apiPort' "Windows install does not persist both Mihomo ports"
+
+    Write-Host "[TEST] profile port persistence"
+    $tokens = $null
+    $parseErrors = $null
+    $profileAst = [System.Management.Automation.Language.Parser]::ParseFile($template, [ref]$tokens, [ref]$parseErrors)
+    $saveFunction = $profileAst.Find({
+        param($node)
+        $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq "Save-MihomoPorts"
+    }, $true)
+    if (-not $saveFunction) { throw "Save-MihomoPorts function not found" }
+    Invoke-Expression $saveFunction.Extent.Text
+    $EnvpilotConfigDir = Join-Path $TempHome ".config/profile-fixture"
+    New-Item -ItemType Directory -Force -Path $EnvpilotConfigDir | Out-Null
+    $profileLocal = Join-Path $EnvpilotConfigDir "profile.local.ps1"
+    @("# envpilot profile.local.ps1", '$env:OTHER_SETTING = ''keep''') | Set-Content -LiteralPath $profileLocal -Encoding UTF8
+    Save-MihomoPorts -ProxyPort 43000 -ApiPort 61000
+    $profileLocalText = Get-Content -LiteralPath $profileLocal -Raw
+    Assert-Match $profileLocalText '(?m)^\$env:MIHOMO_PROXY_PORT = ''43000''\r?$' "profile local file did not persist the proxy port"
+    Assert-Match $profileLocalText '(?m)^\$env:MIHOMO_API_PORT = ''61000''\r?$' "profile local file did not persist the API port"
+    Assert-Match $profileLocalText 'OTHER_SETTING' "profile local update removed unrelated settings"
+    if ($profileLocalText.Contains('`$env:MIHOMO')) { throw "profile local file escaped the environment variable name" }
 
     Write-Host "[TEST] restore fixture"
     $restorePrefix = Join-Path $TempHome "software"

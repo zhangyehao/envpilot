@@ -120,3 +120,16 @@ Mihomo 在受限服务器上启动时，如果必须先从网络拉 GeoIP 数据
 - `downloads/geoip.metadb` -> `~/.config/mihomo/geoip.metadb`
 
 `install mihomo` 会先从 `downloads/` 取这些文件，只有缺失时才回退到上游。离线模式下如果本地侧车文件缺失，就直接明确失败。
+
+## Mihomo 运行与端口扩展约束
+
+Mihomo 的 Unix 实现采用“家目录持久化、节点本地运行”模型。修改 Mihomo 时必须同时检查：
+
+- `components/mihomo.sh` 负责解析平台、缓存、双端口和仓库入口。
+- `templates/mihomo_common.sh` 是 start/stop/status/update-subscription 的共享契约。
+- `templates/start_mihomo.sh` 只从 `~/software/mihomo` 和 `~/.config/mihomo` 复制到 `/tmp/${USER}_mihomo_${HOSTNAME}` 后运行。
+- `MIHOMO_PROXY_PORT` 和 `MIHOMO_API_PORT` 必须贯穿安装、配置、启动、状态、代理变量和订阅更新。
+- 新增运行文件时必须加入 doctor baseline、restore 和 Bash 语法/ShellCheck 测试。
+- 订阅 URL、API secret 和生成的 `config.yaml` 不得进入测试 fixture 或 Git 历史。
+
+`bootstrap.sh` / `bootstrap.ps1` 使用 partial clone + sparse checkout 按架构选择 `downloads/` 缓存。新增缓存平台时，需要同步更新 bootstrap 选择规则、manifest、更新 Action 和测试。
