@@ -76,6 +76,46 @@ grep -q 'sparse-checkout' "$ROOT/bootstrap.sh"
 grep -q 'Source URL:' "$ROOT/lib/download.sh"
 ! grep -qi 'miniforge' "$ROOT/components/conda.sh" "$ROOT/manifests/conda.json" "$ROOT/templates/bashrc" "$ROOT/templates/zshrc" "$ROOT/scripts/collect-assets.sh" "$ROOT/scripts/collect-assets.ps1"
 
+echo "[TEST] missing nvm installation reaches explained Node.js setup"
+tmp_home="$(mktemp -d)"
+codex_output="$tmp_home/codex-node.out"
+set +e
+(
+    set -euo pipefail
+    HOME="$tmp_home"
+    NVM_DIR="$tmp_home/.nvm"
+    ENVPILOT_ROOT="$ROOT"
+    # shellcheck source=/dev/null
+    . "$ROOT/lib/common.sh"
+    # shellcheck source=/dev/null
+    . "$ROOT/components/codex.sh"
+    ep_command_exists()
+    {
+        case "$1" in
+            node|nvm) return 1 ;;
+            curl) return 0 ;;
+            *) command -v "$1" >/dev/null 2>&1 ;;
+        esac
+    }
+    ep_confirm()
+    {
+        return 1
+    }
+    ep_ensure_node
+) >"$codex_output" 2>&1
+codex_status=$?
+set -e
+if [ "$codex_status" -ne 1 ]; then
+    echo "Expected declined Node.js setup to exit 1, got: $codex_status" >&2
+    cat "$codex_output" >&2
+    exit 1
+fi
+grep -q 'Node.js: not found' "$codex_output"
+grep -q 'Node.js source: nvm' "$codex_output"
+grep -q 'Node.js target:' "$codex_output"
+grep -q 'Node.js 22+ is required for Codex' "$codex_output"
+grep -q 'Installing Codex CLI from the npm registry' "$ROOT/components/codex.sh"
+
 grep -q '^!downloads/mihomo-linux-amd64-compatible-\*\.gz$' "$ROOT/.gitignore"
 grep -q '^!downloads/mihomo-windows-amd64-compatible-\*\.zip$' "$ROOT/.gitignore"
 grep -q '^!downloads/country\.mmdb$' "$ROOT/.gitignore"
@@ -504,7 +544,7 @@ test ! -e "$tmp_mamba/software/miniconda3/.condarc"
 rm -rf "$tmp_mamba"
 
 echo "[TEST] version"
-grep -q '^0\.1\.12$' "$ROOT/VERSION"
+grep -q '^0\.1\.13$' "$ROOT/VERSION"
 
 echo "[TEST] repository license and mirror helpers"
 grep -q '^MIT License$' "$ROOT/LICENSE"

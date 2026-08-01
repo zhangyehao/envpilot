@@ -3,6 +3,7 @@
 EP_CODEX_BASE_URL="${EP_CODEX_BASE_URL:-https://yanhuoapi.com/v1}"
 EP_CODEX_PACKAGE="${EP_CODEX_PACKAGE:-@openai/codex}"
 EP_MIN_NODE_MAJOR="${EP_MIN_NODE_MAJOR:-22}"
+EP_NVM_VERSION="${EP_NVM_VERSION:-v0.40.1}"
 
 ep_node_major()
 {
@@ -27,13 +28,16 @@ ep_doctor_codex()
 ep_load_nvm()
 {
     export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
-    # shellcheck disable=SC1091
-    [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+    if [ -s "$NVM_DIR/nvm.sh" ]; then
+        # shellcheck disable=SC1091
+        . "$NVM_DIR/nvm.sh" || ep_die "Failed to load nvm from $NVM_DIR/nvm.sh"
+    fi
+    return 0
 }
 
 ep_ensure_node()
 {
-    local major
+    local major nvm_installer_url
     ep_load_nvm
     if ep_command_exists node; then
         major="$(ep_node_major || true)"
@@ -42,19 +46,33 @@ ep_ensure_node()
             return 0
         fi
         ep_warn "Node.js $(node -v 2>/dev/null || true) is lower than required v$EP_MIN_NODE_MAJOR"
+    else
+        ep_warn "Node.js: not found"
     fi
 
     ep_command_exists curl || ep_die "curl is required to install nvm/Node.js automatically"
+    nvm_installer_url="https://raw.githubusercontent.com/nvm-sh/nvm/$EP_NVM_VERSION/install.sh"
+    ep_log "Node.js source: nvm $EP_NVM_VERSION, then the latest Node.js LTS"
+    ep_log "Node.js target: $HOME/.nvm (user space; no root required)"
     ep_confirm "Install Node.js LTS via nvm under $HOME/.nvm?" "yes" || ep_die "Node.js $EP_MIN_NODE_MAJOR+ is required for Codex"
     export NVM_DIR="$HOME/.nvm"
     if [ ! -s "$NVM_DIR/nvm.sh" ]; then
-        curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+        ep_log "Downloading nvm installer: $nvm_installer_url"
+        if ! curl -fsSL "$nvm_installer_url" | bash; then
+            ep_die "Failed to download or install nvm from $nvm_installer_url"
+        fi
     fi
     ep_load_nvm
     ep_command_exists nvm || ep_die "nvm did not load; reopen shell and retry"
-    nvm install 'lts/*'
-    nvm alias default 'lts/*'
-    nvm use default
+    ep_log "Installing the latest Node.js LTS through nvm. This may download an archive and take several minutes."
+    nvm install 'lts/*' || ep_die "nvm failed to install the latest Node.js LTS"
+    nvm alias default 'lts/*' || ep_die "nvm failed to set the default Node.js LTS alias"
+    nvm use default || ep_die "nvm failed to activate the default Node.js version"
+    major="$(ep_node_major || true)"
+    if [ -z "$major" ] || [ "$major" -lt "$EP_MIN_NODE_MAJOR" ]; then
+        ep_die "Node.js installation completed but v$EP_MIN_NODE_MAJOR+ is not active"
+    fi
+    ep_log "Node.js ready: $(node -v) at $(command -v node)"
 }
 
 ep_write_codex_config()
@@ -99,7 +117,17 @@ ep_install_codex()
     ep_ensure_node
     ep_command_exists npm || ep_die "npm is required after Node.js installation"
     if ! ep_command_exists codex; then
-        npm install -g "$EP_CODEX_PACKAGE"
+        ep_log "Installing Codex CLI from the npm registry: $EP_CODEX_PACKAGE"
+        ep_log "npm executable: $(command -v npm)"
+        ep_log "npm global prefix: $(npm config get prefix 2>/dev/null || printf unknown)"
+        if ! npm install -g "$EP_CODEX_PACKAGE"; then
+            ep_die "npm failed to install $EP_CODEX_PACKAGE"
+        fi
+        hash -r
+        ep_command_exists codex || ep_die "npm completed but the codex command is not available in PATH"
+        ep_log "Codex CLI installed: $(codex --version 2>/dev/null || printf 'version unavailable')"
+    else
+        ep_log "Codex CLI already exists at $(command -v codex); keeping the installed executable and updating config."
     fi
     ep_write_codex_config
     mkdir -p "$HOME/.config/secrets"

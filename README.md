@@ -300,6 +300,14 @@ conda config --show channels default_channels
 
 ## Codex
 
+单独安装 Codex：
+
+```bash
+bash envpilot.sh install codex
+```
+
+安装器会先检查 Node.js。若未安装或低于 Node.js 22，会明确显示 nvm 下载地址、用户态安装目录和当前阶段，再询问是否安装最新 LTS；随后显示 npm 来源、全局 prefix 和 Codex 版本。下载过程中可能需要几分钟，但不会无提示退出。
+
 Codex 配置使用：
 
 ```toml

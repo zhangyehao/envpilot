@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.13 - 2026-08-01
+
+### Changed
+
+- Codex installation now reports the nvm source, Node.js target, npm executable, npm global prefix, download stage, and installed Codex version.
+- README now documents the standalone Codex installation flow and its Node.js 22+ prerequisite handling.
+
+### Fixed
+
+- Fixed Codex setup exiting silently immediately after confirmation when `~/.nvm/nvm.sh` did not exist under the entrypoint's `set -e` mode.
+- Added explicit failures for nvm, Node.js LTS, npm, and missing post-install `codex` command states.
+
 ## 0.1.12 - 2026-08-01
 
 ### Fixed
