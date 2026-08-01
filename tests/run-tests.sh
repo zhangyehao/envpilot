@@ -472,6 +472,13 @@ chmod +x "$tmp_mamba/software/miniconda3/bin/conda"
     . "$ROOT/lib/platform.sh"
     . "$ROOT/components/conda.sh"
     . "$ROOT/components/mamba.sh"
+    ep_command_exists()
+    {
+        case "$1" in
+            conda|mamba) return 1 ;;
+            *) command -v "$1" >/dev/null 2>&1 ;;
+        esac
+    }
     EP_PREFIX="$tmp_mamba/software"
     EP_OS="linux"
     EP_ARCH="amd64"
@@ -497,7 +504,7 @@ test ! -e "$tmp_mamba/software/miniconda3/.condarc"
 rm -rf "$tmp_mamba"
 
 echo "[TEST] version"
-grep -q '^0\.1\.11$' "$ROOT/VERSION"
+grep -q '^0\.1\.12$' "$ROOT/VERSION"
 
 echo "[TEST] repository license and mirror helpers"
 grep -q '^MIT License$' "$ROOT/LICENSE"

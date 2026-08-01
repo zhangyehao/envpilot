@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.12 - 2026-08-01
+
+### Fixed
+
+- Isolated the Mamba regression fixture from GitHub-hosted runner `conda` shell functions, so Linux CI always exercises the intended fake post-transaction failure instead of invoking the runner's real Conda installation.
+
 ## 0.1.11 - 2026-08-01
 
 ### Added
