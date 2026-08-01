@@ -31,6 +31,7 @@ grep -q 'push:' "$ROOT/.github/workflows/release-assets.yml"
 grep -q 'tags:' "$ROOT/.github/workflows/release-assets.yml"
 grep -q 'generate_release_notes: true' "$ROOT/.github/workflows/release-assets.yml"
 grep -q 'refs/tags/v' "$ROOT/.github/workflows/release-assets.yml"
+grep -q 'scripts/\*.sh' "$ROOT/.github/workflows/test.yml"
 grep -q 'actions/checkout@v7' "$ROOT/.github/workflows/update-manifests.yml"
 grep -q 'scripts/update-manifests.py --check' "$ROOT/.github/workflows/update-manifests.yml"
 grep -q 'peter-evans/create-pull-request@v8' "$ROOT/.github/workflows/update-manifests.yml"
@@ -432,8 +433,76 @@ echo "[TEST] codex config template uses env_key"
 grep -q 'env_key = "OPENAI_API_KEY"' "$ROOT/components/codex.sh"
 ! grep -q 'requires_openai_auth = true' "$ROOT/components/codex.sh"
 
+echo "[TEST] mamba uses clean mirror-only Conda configuration"
+grep -q '^default_channels: \[\]$' "$ROOT/templates/condarc"
+! grep -q -- '-c conda-forge' "$ROOT/components/mamba.sh" "$ROOT/manifests/mamba.json" "$ROOT/envpilot.ps1"
+grep -q 'unset LD_LIBRARY_PATH PYTHONHOME PYTHONPATH' "$ROOT/components/conda.sh"
+
+tmp_mamba="$(mktemp -d)"
+mkdir -p "$tmp_mamba/software/miniconda3/bin"
+cat > "$tmp_mamba/software/miniconda3/.condarc" <<'EOF'
+channels:
+  - defaults
+EOF
+cat > "$tmp_mamba/software/miniconda3/bin/conda" <<'EOF'
+#!/usr/bin/env bash
+{
+    printf 'LD_LIBRARY_PATH=%s\n' "${LD_LIBRARY_PATH-unset}"
+    printf 'PYTHONHOME=%s\n' "${PYTHONHOME-unset}"
+    printf 'PYTHONPATH=%s\n' "${PYTHONPATH-unset}"
+    printf 'CONDARC=%s\n' "${CONDARC-unset}"
+    printf 'args=%s\n' "$*"
+} > "$HOME/conda-invocation.txt"
+cat > "$(dirname "$0")/mamba" <<'MAMBA'
+#!/usr/bin/env bash
+printf '2.8.1\n'
+MAMBA
+chmod +x "$(dirname "$0")/mamba"
+exit 39
+EOF
+chmod +x "$tmp_mamba/software/miniconda3/bin/conda"
+(
+    HOME="$tmp_mamba"
+    PATH="/usr/bin:/bin"
+    LD_LIBRARY_PATH="/cluster/lib"
+    PYTHONHOME="/cluster/python"
+    PYTHONPATH="/cluster/site-packages"
+    ENVPILOT_ROOT="$ROOT"
+    . "$ROOT/lib/common.sh"
+    . "$ROOT/lib/platform.sh"
+    . "$ROOT/components/conda.sh"
+    . "$ROOT/components/mamba.sh"
+    EP_PREFIX="$tmp_mamba/software"
+    EP_OS="linux"
+    EP_ARCH="amd64"
+    EP_LIBC="glibc"
+    EP_GLIBC_VERSION="2.17"
+    EP_SHELL_NAME="bash"
+    EP_IS_ROOT="false"
+    EP_ASSUME_YES=1
+    ep_init
+    ep_report_start install mamba
+    ep_install_mamba >"$tmp_mamba/mamba-install.out" 2>&1
+    ep_report_finish
+)
+grep -q '^LD_LIBRARY_PATH=unset$' "$tmp_mamba/conda-invocation.txt"
+grep -q '^PYTHONHOME=unset$' "$tmp_mamba/conda-invocation.txt"
+grep -q '^PYTHONPATH=unset$' "$tmp_mamba/conda-invocation.txt"
+grep -q "^CONDARC=$tmp_mamba/.condarc$" "$tmp_mamba/conda-invocation.txt"
+grep -q '^args=install -n base -y mamba$' "$tmp_mamba/conda-invocation.txt"
+grep -q 'installed mamba executable passed verification' "$tmp_mamba/mamba-install.out"
+grep -q '^mamba=done:' "$tmp_mamba/.config/envpilot/state"
+cmp -s "$ROOT/templates/condarc" "$tmp_mamba/.condarc"
+test ! -e "$tmp_mamba/software/miniconda3/.condarc"
+rm -rf "$tmp_mamba"
+
 echo "[TEST] version"
-grep -q '^0\.1\.10$' "$ROOT/VERSION"
+grep -q '^0\.1\.11$' "$ROOT/VERSION"
+
+echo "[TEST] repository license and mirror helpers"
+grep -q '^MIT License$' "$ROOT/LICENSE"
+grep -q 'git -C "$ROOT" push origin main --follow-tags' "$ROOT/scripts/push-mirrors.sh"
+grep -q 'git -C "$ROOT" push gitee main --follow-tags' "$ROOT/scripts/push-mirrors.sh"
 
 echo "[TEST] secret patterns are ignored"
 grep -q '^api.env$' "$ROOT/.gitignore"

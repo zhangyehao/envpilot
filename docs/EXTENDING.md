@@ -49,6 +49,17 @@ Resolvers may query upstream APIs at runtime, but if a safe choice cannot be mad
 - `update-mihomo-cache.yml`: refresh the curated stable mihomo cache files and Mihomo GeoIP sidecar data under `downloads/`, then open a PR.
 - `release-assets.yml`: package envpilot release artifacts only. Do not upload third-party installers there.
 
+## Repository mirrors
+
+GitHub is the primary repository and Gitee is the China mirror. Maintainer clones should keep:
+
+```bash
+git remote add gitee https://gitee.com/zhangyehao0422/envpilot.git
+git remote set-url --add --push gitee git@gitee.com:zhangyehao0422/envpilot.git
+```
+
+Before a release, verify a clean `main`, update `VERSION` and `CHANGELOG.md`, create the immutable tag, then run `scripts/push-mirrors.sh` or `scripts/push-mirrors.ps1`. Never force-push either mirror or move an existing release tag.
+
 ## Cache and downloads policy
 
 `downloads/` is a local cache for installers and other payloads that the maintainer wants to keep nearby. Most files remain ignored by default.

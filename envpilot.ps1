@@ -842,7 +842,7 @@ function Install-One {
     param([string]$Name)
     switch ($Name) {
         "conda" { Install-Conda }
-        "mamba" { Write-Warn "Install mamba from an initialized Conda shell: conda install -n base -y -c conda-forge mamba"; Add-ReportEvent "mamba" "skipped" "requires conda shell initialization" }
+        "mamba" { Write-Warn "Install mamba from an initialized Conda shell using the configured channels: conda install -n base -y mamba"; Add-ReportEvent "mamba" "skipped" "requires conda shell initialization" }
         "mihomo" { Install-Mihomo }
         "codex" { Install-Codex }
         "github" { Install-GitHubCli }

@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.1.11 - 2026-08-01
+
+### Added
+
+- Added the MIT License from the synchronized Gitee repository.
+- Added documented GitHub/Gitee mirror URLs and maintainer scripts that publish `main` and release tags to both remotes without force-pushing.
+
+### Changed
+
+- Conda configuration now keeps only the TUNA conda-forge and bioconda mirrors, disables inherited `defaults`, and removes the official installer's default-only prefix config when it is safe to do so.
+- Mamba installation now uses the managed mirror configuration without appending the upstream `-c conda-forge` channel.
+- Conda/Mamba commands isolate `LD_LIBRARY_PATH`, `PYTHONHOME`, and `PYTHONPATH` to avoid HPC module contamination.
+
+### Fixed
+
+- Mamba installation now verifies the resulting executable when Conda reports a post-transaction cleanup error, preventing a completed installation from being recorded as failed.
+- Doctor and install can find Mamba inside the managed Conda prefix even before shell initialization adds it to `PATH`.
+
 ## 0.1.10 - 2026-07-31
 
 ### Fixed

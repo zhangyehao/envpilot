@@ -50,6 +50,17 @@ resolver 可以在运行时查询上游 API，但如果无法安全判断具体�
 - `update-mihomo-cache.yml`：刷新 `downloads/` 里的 mihomo 缓存和 GeoIP 侧车数据，再自动开 PR。
 - `release-assets.yml`：只打包 envpilot 自己的 release 产物，不上传第三方安装包。
 
+## 仓库镜像
+
+GitHub 是主仓库，Gitee 是国内镜像。维护者本地应配置：
+
+```bash
+git remote add gitee https://gitee.com/zhangyehao0422/envpilot.git
+git remote set-url --add --push gitee git@gitee.com:zhangyehao0422/envpilot.git
+```
+
+发布前确认工作区干净且位于 `main`，同步更新 `VERSION` 和 `CHANGELOG.md`，创建不可移动的版本标签，再运行 `scripts/push-mirrors.sh` 或 `scripts/push-mirrors.ps1`。禁止对任一镜像强推，也不要移动已经发布的标签。
+
 ## 缓存与 downloads
 
 `downloads/` 是本地缓存目录，用来放安装包和其他想保留的 payload。大多数文件仍然默认忽略。

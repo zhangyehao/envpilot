@@ -1,9 +1,36 @@
 #!/usr/bin/env bash
 
-ep_doctor_mamba()
+ep_mamba_bin()
 {
     if ep_command_exists mamba; then
-        ep_log "Mamba: found at $(command -v mamba)"
+        command -v mamba
+        return 0
+    fi
+
+    local conda_path prefix candidate
+    conda_path="$(ep_conda_bin 2>/dev/null || true)"
+    [ -n "$conda_path" ] || return 1
+    prefix="$(ep_conda_prefix_from_bin "$conda_path" 2>/dev/null || true)"
+    [ -n "$prefix" ] || return 1
+    for candidate in \
+        "$prefix/bin/mamba" \
+        "$prefix/condabin/mamba" \
+        "$prefix/Scripts/mamba.exe"; do
+        [ -x "$candidate" ] && { printf '%s' "$candidate"; return 0; }
+    done
+    return 1
+}
+
+ep_mamba_version()
+{
+    ep_run_conda_clean "$1" --version 2>/dev/null || true
+}
+
+ep_doctor_mamba()
+{
+    local mamba_path
+    if mamba_path="$(ep_mamba_bin 2>/dev/null)"; then
+        ep_log "Mamba: found at $mamba_path"
     else
         ep_warn "Mamba: not found"
     fi
@@ -12,26 +39,43 @@ ep_doctor_mamba()
 ep_install_mamba()
 {
     ep_require_unix_runtime
-    if ep_command_exists mamba; then
-        ep_log "Mamba already available: $(command -v mamba)"
+    local conda_path mamba_path install_status version
+    if mamba_path="$(ep_mamba_bin 2>/dev/null)"; then
+        ep_log "Mamba already available: $mamba_path"
         ep_state_mark_done mamba
-        ep_report_event mamba skipped "already installed" "$(mamba --version 2>/dev/null || true)" "" "$(command -v mamba)"
+        ep_report_event mamba skipped "already installed" "$(ep_mamba_version "$mamba_path")" "" "$mamba_path"
         return 0
     fi
 
-    local conda_path
     conda_path="$(ep_conda_bin 2>/dev/null || true)"
     [ -n "$conda_path" ] || ep_die "Conda is required before installing mamba. Run: bash envpilot.sh install conda"
 
     ep_log "Component: mamba"
     ep_log "Mamba will be installed into Conda base, not used for tmux."
-    ep_confirm "Install mamba with conda-forge?" "yes" || {
+    ep_log "Channels: TUNA conda-forge and bioconda mirrors only; inherited defaults are disabled."
+    ep_log "Conda command environment: LD_LIBRARY_PATH, PYTHONHOME, and PYTHONPATH will be isolated."
+    ep_confirm "Install mamba using the configured mirror channels?" "yes" || {
         ep_report_event mamba skipped "user declined" "" "" ""
         return 0
     }
 
-    "$conda_path" install -n base -y -c conda-forge mamba
-    ep_state_mark_done mamba
-    ep_report_event mamba installed "installed into Conda base" "$(mamba --version 2>/dev/null || true)" "conda-forge" "$(command -v mamba 2>/dev/null || true)"
-}
+    ep_write_condarc "$conda_path"
+    if ep_run_conda_clean "$conda_path" install -n base -y mamba; then
+        install_status=0
+    else
+        install_status=$?
+    fi
 
+    mamba_path="$(ep_mamba_bin 2>/dev/null || true)"
+    if [ -z "$mamba_path" ] || ! ep_run_conda_clean "$mamba_path" --version >/dev/null 2>&1; then
+        ep_report_event mamba failed "conda install failed with exit $install_status" "" "$HOME/.condarc" ""
+        ep_die "Mamba installation failed (conda exit $install_status). Review the Conda error above, then run: bash envpilot.sh install mamba"
+    fi
+    if [ "$install_status" -ne 0 ]; then
+        ep_warn "Conda returned exit $install_status after the transaction, but the installed mamba executable passed verification; continuing."
+    fi
+
+    version="$(ep_mamba_version "$mamba_path")"
+    ep_state_mark_done mamba
+    ep_report_event mamba installed "installed into Conda base using configured mirror channels" "$version" "$HOME/.condarc" "$mamba_path"
+}

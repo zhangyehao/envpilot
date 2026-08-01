@@ -15,7 +15,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y shellcheck
-          shellcheck envpilot.sh bootstrap.sh lib/*.sh components/*.sh templates/*.sh
+          shellcheck envpilot.sh bootstrap.sh lib/*.sh components/*.sh templates/*.sh scripts/*.sh
 
   macos:
     runs-on: macos-latest

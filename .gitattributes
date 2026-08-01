@@ -8,3 +8,4 @@ templates/* text eol=lf
 *.py text eol=lf
 VERSION text eol=lf
 .gitattributes text eol=lf
+LICENSE text eol=lf

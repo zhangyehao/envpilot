@@ -19,6 +19,53 @@ ep_conda_bin()
     return 1
 }
 
+ep_conda_prefix_from_bin()
+{
+    local conda_path="$1"
+    local bin_dir
+    bin_dir="$(cd "$(dirname "$conda_path")" && pwd)"
+    case "$(basename "$bin_dir")" in
+        bin|condabin|Scripts) dirname "$bin_dir" ;;
+        *) return 1 ;;
+    esac
+}
+
+ep_run_conda_clean()
+{
+    (
+        unset LD_LIBRARY_PATH PYTHONHOME PYTHONPATH
+        CONDARC="$HOME/.condarc"
+        export CONDARC
+        "$@"
+    )
+}
+
+ep_prune_conda_default_seed_config()
+{
+    local conda_path="$1"
+    local prefix prefix_condarc
+    prefix="$(ep_conda_prefix_from_bin "$conda_path" 2>/dev/null || true)"
+    [ -n "$prefix" ] || return 0
+    prefix_condarc="$prefix/.condarc"
+    [ -f "$prefix_condarc" ] || return 0
+
+    if awk '
+        /^[[:space:]]*(#.*)?$/ { next }
+        /^[[:space:]]*channels:[[:space:]]*$/ { channels = 1; next }
+        /^[[:space:]]*-[[:space:]]*defaults[[:space:]]*$/ { defaults = 1; next }
+        { other = 1 }
+        END { exit !(channels && defaults && !other) }
+    ' "$prefix_condarc"; then
+        if [ -w "$prefix_condarc" ] && [ -w "$prefix" ]; then
+            ep_backup_file "$prefix_condarc"
+            rm -f "$prefix_condarc"
+            ep_log "Removed installer-seeded defaults config: $prefix_condarc"
+        else
+            ep_warn "Cannot remove installer-seeded defaults config: $prefix_condarc"
+        fi
+    fi
+}
+
 ep_conda_distribution()
 {
     case "${EP_CONDA_DISTRIBUTION:-miniconda}" in
@@ -128,10 +175,16 @@ ep_doctor_conda()
 ep_write_condarc()
 {
     local condarc="$HOME/.condarc"
-    ep_backup_file "$condarc"
-    cp "$ENVPILOT_ROOT/templates/condarc" "$condarc.tmp"
-    mv "$condarc.tmp" "$condarc"
-    ep_log "Wrote Conda channels: $condarc"
+    local conda_path="${1:-}"
+    if [ -f "$condarc" ] && cmp -s "$ENVPILOT_ROOT/templates/condarc" "$condarc"; then
+        ep_log "Conda channels already match envpilot: $condarc"
+    else
+        ep_backup_file "$condarc"
+        cp "$ENVPILOT_ROOT/templates/condarc" "$condarc.tmp"
+        mv "$condarc.tmp" "$condarc"
+        ep_log "Wrote Conda channels: $condarc"
+    fi
+    [ -n "$conda_path" ] && ep_prune_conda_default_seed_config "$conda_path"
 }
 
 ep_install_conda()
@@ -144,9 +197,9 @@ ep_install_conda()
 
     if [ -x "$target_conda" ]; then
         ep_log "Conda already available at requested target: $target_conda"
-        ep_write_condarc
+        ep_write_condarc "$target_conda"
         ep_state_mark_done conda
-        ep_report_event conda skipped "already installed" "$($target_conda --version 2>/dev/null || true)" "" "$target_conda"
+        ep_report_event conda skipped "already installed" "$(ep_run_conda_clean "$target_conda" --version 2>/dev/null || true)" "" "$target_conda"
         return 0
     fi
 
@@ -156,9 +209,9 @@ ep_install_conda()
 
     if [ "$(ep_conda_distribution)" = "miniconda" ] && existing_conda="$(ep_conda_bin 2>/dev/null)"; then
         ep_log "Conda already available: $existing_conda"
-        ep_write_condarc
+        ep_write_condarc "$existing_conda"
         ep_state_mark_done conda
-        ep_report_event conda skipped "already installed" "$($existing_conda --version 2>/dev/null || true)" "" "$existing_conda"
+        ep_report_event conda skipped "already installed" "$(ep_run_conda_clean "$existing_conda" --version 2>/dev/null || true)" "" "$existing_conda"
         return 0
     fi
 
@@ -203,8 +256,8 @@ ep_install_conda()
     fi
     bash "$installer" -b -p "$target"
     rm -f "$installer"
-    ep_write_condarc
+    ep_write_condarc "$target_conda"
     ep_state_mark_done conda
-    conda_version="$("$target"/bin/conda --version 2>/dev/null || true)"
+    conda_version="$(ep_run_conda_clean "$target_conda" --version 2>/dev/null || true)"
     ep_report_event conda installed "installed $label" "$conda_version" "$source" "$target"
 }

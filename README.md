@@ -4,6 +4,13 @@ envpilot 是面向非管理员用户的跨平台环境引导仓库，用于在�
 
 当前重点支持 Mihomo、Conda/Anaconda、Mamba、Codex、GitHub CLI 和 tmux。默认在线安装；Mihomo 和地理数据可优先使用仓库内的受控缓存。
 
+代码同时发布到：
+
+- GitHub 主仓库：`https://github.com/zhangyehao/envpilot.git`
+- Gitee 国内镜像：`https://gitee.com/zhangyehao0422/envpilot.git`
+
+两个仓库使用相同的 `main` 和版本标签。普通用户一律优先使用 HTTPS clone，不需要提前登录 GitHub/Gitee。
+
 ## 快速开始
 
 ### Linux / macOS / WSL / Git Bash
@@ -16,12 +23,21 @@ cd envpilot
 bash envpilot.sh doctor
 ```
 
-也可以普通克隆：
+也可以普通克隆，按网络情况任选一个镜像：
 
 ```bash
 git clone https://github.com/zhangyehao/envpilot.git
+# 国内网络也可以：
+# git clone https://gitee.com/zhangyehao0422/envpilot.git
 cd envpilot
 bash envpilot.sh doctor
+```
+
+从 Gitee 使用轻量入口：
+
+```bash
+export ENVPILOT_REPO_URL=https://gitee.com/zhangyehao0422/envpilot.git
+curl -fsSL https://gitee.com/zhangyehao0422/envpilot/raw/main/bootstrap.sh | bash
 ```
 
 普通 `git clone` 无法在下载前根据客户端架构自动过滤 Git 中已经跟踪的文件，因此会取得 Linux/Windows 的全部缓存。轻量入口要求较新的 Git；旧版 Git 会说明原因并自动回退普通 HTTPS clone。
@@ -34,12 +50,21 @@ cd envpilot
 .\envpilot.ps1 doctor
 ```
 
-也可以使用普通 HTTPS clone：
+也可以使用普通 HTTPS clone，按网络情况任选一个镜像：
 
 ```powershell
 git clone https://github.com/zhangyehao/envpilot.git
+# 国内网络也可以：
+# git clone https://gitee.com/zhangyehao0422/envpilot.git
 cd envpilot
 .\envpilot.ps1 doctor
+```
+
+从 Gitee 使用轻量入口：
+
+```powershell
+$env:ENVPILOT_REPO_URL = "https://gitee.com/zhangyehao0422/envpilot.git"
+irm https://gitee.com/zhangyehao0422/envpilot/raw/main/bootstrap.ps1 | iex
 ```
 
 ## 推荐部署顺序
@@ -260,7 +285,18 @@ bash envpilot.sh install --prefix "$HOME/software"
 - 不使用 Miniforge。
 - Linux 根据 glibc 和架构选择最新可安装的官方版本。
 - 不默认执行 `conda init`。
+- `~/.condarc` 只保留清华 `conda-forge` 和 `bioconda` 两个镜像，并通过 `default_channels: []` 禁用继承的 `defaults`。
+- Mamba 安装命令不再追加官方 `-c conda-forge`，而是直接使用上述受控频道。
+- 在共享服务器执行 Conda/Mamba 时会临时清除 `LD_LIBRARY_PATH`、`PYTHONHOME` 和 `PYTHONPATH`，避免 module 或集群环境污染 Conda。
+- 如果 Conda 在事务完成后的清理阶段返回非零，envpilot 会验证实际 `mamba` 可执行文件；只有验证失败才判定安装失败。
 - Mamba 安装到 Conda base；tmux 不通过 Conda/Mamba 提供。
+
+可用以下命令确认实际配置来源和频道：
+
+```bash
+conda config --show-sources
+conda config --show channels default_channels
+```
 
 ## Codex
 
@@ -276,9 +312,17 @@ env_key = "OPENAI_API_KEY"
 with_secrets codex
 ```
 
-## GitHub 与 tmux
+## GitHub/Gitee 镜像与 tmux
 
-新主机 clone 推荐 HTTPS；只有需要 push 时再配置 GitHub 登录和 SSH。
+新主机 clone 推荐 HTTPS；只有需要 push 时再配置对应平台的 SSH 公钥。本仓库维护端使用：
+
+```bash
+git remote add gitee https://gitee.com/zhangyehao0422/envpilot.git
+git remote set-url --add --push gitee git@gitee.com:zhangyehao0422/envpilot.git
+bash scripts/push-mirrors.sh
+```
+
+Windows PowerShell 可运行 `.\scripts\push-mirrors.ps1`。脚本要求位于干净的 `main`，并依次把 `main` 和标签推送到 GitHub `origin` 与 Gitee `gitee`；不会强推。
 
 tmux 优先使用系统命令或 module；非 root Linux 可构建到用户目录。Windows 原生不承诺 tmux，优先使用 WSL、MSYS2 或 Git Bash。
 
@@ -294,4 +338,5 @@ tmux 优先使用系统命令或 module；非 root Linux 可构建到用户目�
 - secrets、订阅链接、API key、运行日志和生成配置不进入 Git。
 - `downloads/` 只保留明确允许的受控缓存。
 - 新增组件时同步更新测试、文档、manifest 和 baseline/restore 规则。
+- 本项目采用 MIT License，详见 `LICENSE`。
 - 维护扩展规范见 [docs/EXTENDING.zh-CN.md](docs/EXTENDING.zh-CN.md)。
