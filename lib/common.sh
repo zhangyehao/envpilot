@@ -18,6 +18,7 @@ EP_LOG_FILE=""
 EP_ROLLBACK_LOG=""
 EP_BASELINE_DIR=""
 EP_BASELINE_FILE=""
+EP_MIHOMO_TAKEOVER_REPORT_FILE=""
 
 ep_timestamp()
 {
@@ -42,6 +43,7 @@ ep_init()
     # Used by lib/baseline.sh after common.sh is sourced by envpilot.sh.
     # shellcheck disable=SC2034
     EP_BASELINE_FILE="$EP_BASELINE_DIR/baseline.tsv"
+    EP_MIHOMO_TAKEOVER_REPORT_FILE="$EP_CONFIG_DIR/mihomo-takeover-report.json"
     mkdir -p "$EP_CONFIG_DIR/logs" "$EP_CONFIG_DIR/backups"
     trap ep_on_interrupt INT TERM
 }

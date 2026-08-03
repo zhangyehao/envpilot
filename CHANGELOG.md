@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.14 - 2026-08-03
+
+### Changed
+
+- Mihomo installation now takes over existing user-owned Mihomo processes after confirmation, waits for graceful shutdown, checks both target ports, and clears inherited proxy variables before downloads.
+- Added current-version comparison so an already-current envpilot Mihomo binary is reused while scripts, geodata, and configuration management are refreshed.
+- Shell migration now preserves safe exported environment variables such as PATH, GOPATH, and Singularity settings while excluding proxy, Mihomo, secret, and API-key variables.
+
+### Added
+
+- Added ~/.config/envpilot/mihomo-takeover-report.json with process, version, port, proxy-environment, binary-action, and configuration-disable details.
+- Added regression coverage for Mihomo takeover reports and safe shell.local migration.
 ## 0.1.13 - 2026-08-01
 
 ### Changed

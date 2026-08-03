@@ -114,7 +114,6 @@ mihomo start
 ```
 
 ## Mihomo 双端口
-
 所有 Mihomo 操作统一读取：
 
 ```bash
@@ -164,6 +163,16 @@ external-controller: 127.0.0.1:60290
 ```
 
 只修改本地监听项，不会改动订阅节点中的远端 `server`、`port`、`uuid`、`public-key` 或 `short-id`。
+
+## Mihomo 接管已有进程
+
+执行 install mihomo 时，envpilot 会先记录当前用户的 Mihomo 进程、版本和目标端口，然后在确认后向已有 Mihomo 发送 SIGTERM，等待几秒；仍未退出时发送 SIGKILL。停止后会重新检查 MIHOMO_PROXY_PORT 和 MIHOMO_API_PORT，端口仍被占用就中止安装，不会生成一个无法启动的配置。
+
+安装流程会优先使用当前架构匹配的 downloads 缓存；如果已有 envpilot 二进制版本与选中的 stable 版本一致，则保留二进制，只更新脚本和数据，否则安装或更新二进制。旧 Mihomo 的代理环境变量不会继续用于下载，安装过程会清除当前脚本进程继承的代理变量。
+
+接管记录保存到 ~/.config/envpilot/mihomo-takeover-report.json。安装完成后不会自动启动 Mihomo；确认订阅配置后执行 mihomo start。没有提供新订阅链接时，如果检测到旧 Mihomo，旧 config.yaml 会先备份并改名为 config.yaml.disabled.TIMESTAMP，防止重新使用旧代理渠道。
+
+如果当前主机只能通过旧代理访问外网，请提前准备 downloads/ 离线资产，或确认主机具备直连网络；因为接管后旧代理不会被用于下载。
 
 ## Mihomo 订阅更新
 

@@ -154,11 +154,16 @@ grep -q '^!downloads/geoip\.metadb$' "$ROOT/.gitignore"
     esac
 )
 
-echo "[TEST] shell.local migration skips multiline conda init"
+echo "[TEST] shell.local migration keeps safe environment and excludes old proxy"
 tmp_home="$(mktemp -d)"
 mkdir -p "$tmp_home/.config/envpilot"
 cat > "$tmp_home/.bashrc" <<'EOF'
 export PATH="$HOME/bin:$PATH"
+export GOPATH="$HOME/software/go"
+export SINGULARITY_CACHEDIR="$HOME/singularity_cache"
+export http_proxy="http://127.0.0.1:7890"
+export OPENAI_API_KEY="should-not-migrate"
+export MIHOMO_PROXY_PORT=7890
 for conda_sh in \
     "$HOME/software/miniconda3/etc/profile.d/conda.sh" \
     "$HOME/software/anaconda3/etc/profile.d/conda.sh" \
@@ -176,12 +181,62 @@ EOF
     EP_CONFIG_DIR="$tmp_home/.config/envpilot"
     ep_migrate_shell_local "$tmp_home/.bashrc" >/dev/null
 )
-if grep -q 'conda\.sh' "$tmp_home/.config/envpilot/shell.local"; then
+shell_local="$tmp_home/.config/envpilot/shell.local"
+if grep -q 'conda\.sh' "$shell_local"; then
     echo "shell.local migration must not copy conda.sh fragments" >&2
-    cat "$tmp_home/.config/envpilot/shell.local" >&2
+    cat "$shell_local" >&2
     exit 1
 fi
-bash --noprofile --norc -c '. "'"$tmp_home/.config/envpilot/shell.local"'"'
+grep -q 'export PATH=' "$shell_local"
+grep -q 'export GOPATH=' "$shell_local"
+grep -q 'export SINGULARITY_CACHEDIR=' "$shell_local"
+! grep -qE '(^|[[:space:]])(http_proxy|OPENAI_API_KEY|MIHOMO_PROXY_PORT)=' "$shell_local"
+bash --noprofile --norc -c '. "'"$shell_local"'"'
+
+echo "[TEST] Mihomo takeover report"
+tmp_home="$(mktemp -d)"
+(
+    HOME="$tmp_home"
+    USER="envpilot-test"
+    HOSTNAME="envpilot-host"
+    ENVPILOT_ROOT="$ROOT"
+    . "$ROOT/lib/common.sh"
+    . "$ROOT/lib/platform.sh"
+    . "$ROOT/components/mihomo.sh"
+    EP_OS="linux"
+    EP_ARCH="amd64"
+    EP_IS_ROOT="false"
+    ep_init
+    EP_MIHOMO_TAKEOVER_EXISTING_PROCESSES='123 /work/old/Mihomo/bin/mihomo -d /work/old/config'
+    EP_MIHOMO_TAKEOVER_EXISTING_PROCESS_VERSIONS='pid=123 version=v1.18.0'
+    EP_MIHOMO_TAKEOVER_EXISTING_DETECTED=true
+    EP_MIHOMO_TAKEOVER_EXISTING_STOPPED=true
+    EP_MIHOMO_TAKEOVER_STOP_SIGNALS=TERM,KILL
+    EP_MIHOMO_TAKEOVER_PROXY_ENV_WAS_SET=true
+    EP_MIHOMO_TAKEOVER_PROXY_ENV_CLEARED=true
+    EP_MIHOMO_TAKEOVER_BEFORE_PROXY_LISTENING=true
+    EP_MIHOMO_TAKEOVER_BEFORE_API_LISTENING=true
+    EP_MIHOMO_TAKEOVER_AFTER_PROXY_LISTENING=false
+    EP_MIHOMO_TAKEOVER_AFTER_API_LISTENING=false
+    EP_MIHOMO_TAKEOVER_PROXY_PORT=42290
+    EP_MIHOMO_TAKEOVER_API_PORT=60290
+    EP_MIHOMO_TAKEOVER_BINARY_BEFORE_VERSION=v1.18.0
+    EP_MIHOMO_TAKEOVER_SELECTED_SOURCE="downloads/mihomo-linux-amd64-compatible-v1.19.29.gz"
+    EP_MIHOMO_TAKEOVER_SELECTED_VERSION=v1.19.29
+    EP_MIHOMO_TAKEOVER_BINARY_ACTION=installed-or-updated
+    ep_mihomo_write_takeover_report completed
+)
+"$PYTHON_BIN" - "$tmp_home/.config/envpilot/mihomo-takeover-report.json" <<'PY'
+import json
+import sys
+report = json.load(open(sys.argv[1], encoding="utf-8"))
+assert report["existing_processes_detected"] is True
+assert report["existing_processes_stopped"] is True
+assert report["before_ports"]["proxy_listening"] is True
+assert report["after_stop_ports"]["proxy_listening"] is False
+assert report["selected_version"] == "v1.19.29"
+assert report["binary_action"] == "installed-or-updated"
+PY
 echo "[TEST] non-interactive bashrc is quiet"
 tmp_home="$(mktemp -d)"
 mkdir -p "$tmp_home/.config/envpilot"
@@ -544,7 +599,7 @@ test ! -e "$tmp_mamba/software/miniconda3/.condarc"
 rm -rf "$tmp_mamba"
 
 echo "[TEST] version"
-grep -q '^0\.1\.13$' "$ROOT/VERSION"
+grep -q '^0\.1\.14$' "$ROOT/VERSION"
 
 echo "[TEST] repository license and mirror helpers"
 grep -q '^MIT License$' "$ROOT/LICENSE"

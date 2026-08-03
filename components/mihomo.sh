@@ -303,6 +303,189 @@ ep_proxy_port_is_listening()
     return 1
 }
 
+ep_mihomo_asset_version()
+{
+    local name
+    name="$(basename "$1")"
+    printf '%s' "$name" | sed -nE 's/.*-(v[0-9]+\.[0-9]+\.[0-9]+)\.(gz|zip)$/\1/p'
+}
+
+ep_mihomo_binary_version()
+{
+    local binary="$1"
+    [ -x "$binary" ] || return 1
+    "$binary" -v 2>/dev/null |
+        head -n 1 |
+        sed -nE 's/.*(v[0-9]+\.[0-9]+\.[0-9]+).*/\1/p'
+}
+
+ep_mihomo_process_pattern()
+{
+    printf '%s' '(^|/)[Mm]ihomo([[:space:]]|$)'
+}
+
+ep_mihomo_existing_processes()
+{
+    local user_name pattern
+    user_name="${USER:-$(id -un 2>/dev/null || true)}"
+    pattern="$(ep_mihomo_process_pattern)"
+    [ -n "$user_name" ] || return 0
+    if ! ep_command_exists pgrep; then
+        return 0
+    fi
+    pgrep -u "$user_name" -af "$pattern" 2>/dev/null || true
+}
+
+ep_mihomo_existing_process_versions()
+{
+    local processes="$1"
+    local line pid exe version
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        pid="$(printf '%s\n' "$line" | awk '{print $1}')"
+        exe=""
+        if [ -n "$pid" ] && [ -e "/proc/$pid/exe" ] && ep_command_exists readlink; then
+            exe="$(readlink -f "/proc/$pid/exe" 2>/dev/null || true)"
+        fi
+        if [ -n "$exe" ] && [ -x "$exe" ]; then
+            version="$(ep_mihomo_binary_version "$exe" 2>/dev/null || true)"
+        else
+            version="unknown"
+        fi
+        printf 'pid=%s version=%s\n' "$pid" "${version:-unknown}"
+    done <<EOF
+$processes
+EOF
+}
+
+ep_mihomo_port_state()
+{
+    if ep_proxy_port_is_listening 127.0.0.1 "$1"; then
+        printf 'true'
+    else
+        printf 'false'
+    fi
+}
+
+ep_mihomo_clear_proxy_environment()
+{
+    local was_set=false
+    [ -n "${http_proxy:-}" ] && was_set=true
+    [ -n "${https_proxy:-}" ] && was_set=true
+    [ -n "${HTTP_PROXY:-}" ] && was_set=true
+    [ -n "${HTTPS_PROXY:-}" ] && was_set=true
+    [ -n "${all_proxy:-}" ] && was_set=true
+    [ -n "${ALL_PROXY:-}" ] && was_set=true
+    [ -n "${no_proxy:-}" ] && was_set=true
+    [ -n "${NO_PROXY:-}" ] && was_set=true
+    EP_MIHOMO_TAKEOVER_PROXY_ENV_WAS_SET="$was_set"
+    unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY no_proxy NO_PROXY
+    EP_MIHOMO_TAKEOVER_PROXY_ENV_CLEARED=true
+    if [ "$was_set" = true ]; then
+        ep_log "Cleared inherited proxy environment for the takeover; old proxy variables will not be used."
+    fi
+}
+
+ep_mihomo_write_takeover_report()
+{
+    local result="${1:-${EP_MIHOMO_TAKEOVER_RESULT:-in_progress}}"
+    local report="${EP_MIHOMO_TAKEOVER_REPORT_FILE:-$HOME/.config/envpilot/mihomo-takeover-report.json}"
+    local existing_processes="${EP_MIHOMO_TAKEOVER_EXISTING_PROCESSES:-}"
+    local existing_versions="${EP_MIHOMO_TAKEOVER_EXISTING_PROCESS_VERSIONS:-}"
+    local selected_source="${EP_MIHOMO_TAKEOVER_SELECTED_SOURCE:-}"
+    local selected_version="${EP_MIHOMO_TAKEOVER_SELECTED_VERSION:-}"
+    local binary_before="${EP_MIHOMO_TAKEOVER_BINARY_BEFORE_VERSION:-}"
+    local binary_action="${EP_MIHOMO_TAKEOVER_BINARY_ACTION:-not_selected}"
+    local proxy_port="${EP_MIHOMO_TAKEOVER_PROXY_PORT:-$(ep_mihomo_proxy_port)}"
+    local api_port="${EP_MIHOMO_TAKEOVER_API_PORT:-$(ep_mihomo_api_port)}"
+    mkdir -p "$(dirname "$report")"
+    cat > "$report.tmp" <<EOF
+{
+  "run_id": "$(printf '%s' "${EP_RUN_ID:-unknown}" | ep_json_escape)",
+  "generated_at": "$(ep_iso_now)",
+  "action": "mihomo_takeover",
+  "result": "$(printf '%s' "$result" | ep_json_escape)",
+  "target_binary": "$(printf '%s' "$(ep_mihomo_bin)" | ep_json_escape)",
+  "target_config": "$(printf '%s' "$(ep_mihomo_config_file)" | ep_json_escape)",
+  "target_ports": {
+    "proxy": $proxy_port,
+    "api": $api_port
+  },
+  "before_ports": {
+    "proxy_listening": ${EP_MIHOMO_TAKEOVER_BEFORE_PROXY_LISTENING:-false},
+    "api_listening": ${EP_MIHOMO_TAKEOVER_BEFORE_API_LISTENING:-false}
+  },
+  "after_stop_ports": {
+    "proxy_listening": ${EP_MIHOMO_TAKEOVER_AFTER_PROXY_LISTENING:-false},
+    "api_listening": ${EP_MIHOMO_TAKEOVER_AFTER_API_LISTENING:-false}
+  },
+  "existing_processes": "$(printf '%s' "$existing_processes" | ep_json_escape)",
+  "existing_process_versions": "$(printf '%s' "$existing_versions" | ep_json_escape)",
+  "existing_processes_detected": ${EP_MIHOMO_TAKEOVER_EXISTING_DETECTED:-false},
+  "existing_processes_stopped": ${EP_MIHOMO_TAKEOVER_EXISTING_STOPPED:-false},
+  "stop_signals": "$(printf '%s' "${EP_MIHOMO_TAKEOVER_STOP_SIGNALS:-none}" | ep_json_escape)",
+  "proxy_environment_was_set": ${EP_MIHOMO_TAKEOVER_PROXY_ENV_WAS_SET:-false},
+  "proxy_environment_cleared_for_install": ${EP_MIHOMO_TAKEOVER_PROXY_ENV_CLEARED:-false},
+  "binary_before_version": "$(printf '%s' "$binary_before" | ep_json_escape)",
+  "selected_source": "$(printf '%s' "$selected_source" | ep_json_escape)",
+  "selected_version": "$(printf '%s' "$selected_version" | ep_json_escape)",
+  "selected_source_version": "$(printf '%s' "$selected_version" | ep_json_escape)",
+  "binary_action": "$(printf '%s' "$binary_action" | ep_json_escape)",
+  "previous_config_disabled": ${EP_MIHOMO_TAKEOVER_PREVIOUS_CONFIG_DISABLED:-false}
+}
+EOF
+    mv "$report.tmp" "$report"
+    EP_MIHOMO_TAKEOVER_REPORT_FILE="$report"
+    ep_log "Mihomo takeover report: $report"
+}
+
+ep_mihomo_stop_existing_processes()
+{
+    local processes remaining user_name pattern count
+    user_name="${USER:-$(id -un 2>/dev/null || true)}"
+    pattern="$(ep_mihomo_process_pattern)"
+    processes="${EP_MIHOMO_TAKEOVER_EXISTING_PROCESSES:-$(ep_mihomo_existing_processes)}"
+    if [ -z "$processes" ]; then
+        EP_MIHOMO_TAKEOVER_EXISTING_STOPPED=true
+        EP_MIHOMO_TAKEOVER_STOP_SIGNALS=none
+        ep_log "No existing user-owned Mihomo process found."
+        return 0
+    fi
+    EP_MIHOMO_TAKEOVER_EXISTING_DETECTED=true
+    ep_warn "Existing user-owned Mihomo process(es) detected; they will be stopped before envpilot takeover:"
+    printf '%s\n' "$processes" | sed 's/^/[WARN]   /' >&2
+    if ! ep_command_exists pkill; then
+        EP_MIHOMO_TAKEOVER_EXISTING_STOPPED=false
+        EP_MIHOMO_TAKEOVER_STOP_SIGNALS=unavailable
+        ep_mihomo_write_takeover_report stop_failed
+        ep_die "pkill is required to stop existing Mihomo processes safely."
+    fi
+    ep_log "Sending SIGTERM to existing Mihomo process(es) and waiting ${EP_MIHOMO_TAKEOVER_WAIT_SECONDS:-5}s."
+    pkill -TERM -u "$user_name" -f "$pattern" 2>/dev/null || true
+    EP_MIHOMO_TAKEOVER_STOP_SIGNALS=TERM
+    count=0
+    while [ "$count" -lt "${EP_MIHOMO_TAKEOVER_WAIT_SECONDS:-5}" ]; do
+        remaining="$(ep_mihomo_existing_processes)"
+        [ -z "$remaining" ] && break
+        sleep 1
+        count=$((count + 1))
+    done
+    remaining="$(ep_mihomo_existing_processes)"
+    if [ -n "$remaining" ]; then
+        ep_warn "Some Mihomo process(es) did not stop after SIGTERM; sending SIGKILL."
+        pkill -KILL -u "$user_name" -f "$pattern" 2>/dev/null || true
+        EP_MIHOMO_TAKEOVER_STOP_SIGNALS=TERM,KILL
+        sleep 1
+        remaining="$(ep_mihomo_existing_processes)"
+    fi
+    if [ -n "$remaining" ]; then
+        EP_MIHOMO_TAKEOVER_EXISTING_STOPPED=false
+        ep_mihomo_write_takeover_report stop_failed
+        ep_die "Could not stop all existing user-owned Mihomo processes."
+    fi
+    EP_MIHOMO_TAKEOVER_EXISTING_STOPPED=true
+    ep_log "Existing Mihomo process(es) stopped."
+}
 ep_mihomo_runtime_running()
 {
     local runtime_bin user_name
@@ -524,7 +707,7 @@ ep_install_mihomo()
 {
     ep_require_unix_runtime
     local bin install_dir config_dir asset_regex offline_pattern archive source version
-    local proxy_port api_port subscription
+    local proxy_port api_port subscription source_version binary_before_version binary_action disabled_config
     bin="$(ep_mihomo_bin)"
     install_dir="$(dirname "$bin")"
     config_dir="$HOME/.config/mihomo"
@@ -532,16 +715,52 @@ ep_install_mihomo()
     offline_pattern="$(ep_mihomo_offline_pattern)"
     archive="$(mktemp "${TMPDIR:-/tmp}/envpilot-mihomo.XXXXXX")"
     source=""
+    subscription=""
+    binary_action="not_selected"
+    EP_MIHOMO_TAKEOVER_RESULT=in_progress
+    EP_MIHOMO_TAKEOVER_EXISTING_PROCESSES=""
+    EP_MIHOMO_TAKEOVER_EXISTING_PROCESS_VERSIONS=""
+    EP_MIHOMO_TAKEOVER_EXISTING_DETECTED=false
+    EP_MIHOMO_TAKEOVER_EXISTING_STOPPED=false
+    EP_MIHOMO_TAKEOVER_STOP_SIGNALS=none
+    EP_MIHOMO_TAKEOVER_PROXY_ENV_WAS_SET=false
+    EP_MIHOMO_TAKEOVER_PROXY_ENV_CLEARED=false
+    EP_MIHOMO_TAKEOVER_PREVIOUS_CONFIG_DISABLED=false
     proxy_port="$(ep_mihomo_proxy_port)"
     api_port="$(ep_mihomo_api_port)"
     read -r proxy_port api_port <<EOF
 $(ep_require_mihomo_ports "$proxy_port" "$api_port")
 EOF
+    EP_MIHOMO_TAKEOVER_PROXY_PORT="$proxy_port"
+    EP_MIHOMO_TAKEOVER_API_PORT="$api_port"
 
     ep_log "Component: mihomo"
     ep_log "Selected stable asset rule for $EP_OS/$EP_ARCH: $asset_regex"
     ep_log "Offline asset pattern: $offline_pattern"
-    ep_log "Before config download, register at https://proxy.yanhuoapi.com/ and copy the Clash/Mihomo subscription URL."
+    ep_log "Before takeover, register at https://proxy.yanhuoapi.com/ and prepare a Clash/Mihomo subscription URL."
+    EP_MIHOMO_TAKEOVER_EXISTING_PROCESSES="$(ep_mihomo_existing_processes)"
+    EP_MIHOMO_TAKEOVER_EXISTING_PROCESS_VERSIONS="$(ep_mihomo_existing_process_versions "$EP_MIHOMO_TAKEOVER_EXISTING_PROCESSES")"
+    EP_MIHOMO_TAKEOVER_BEFORE_PROXY_LISTENING="$(ep_mihomo_port_state "$proxy_port")"
+    EP_MIHOMO_TAKEOVER_BEFORE_API_LISTENING="$(ep_mihomo_port_state "$api_port")"
+    binary_before_version="$(ep_mihomo_binary_version "$bin" 2>/dev/null || true)"
+    EP_MIHOMO_TAKEOVER_BINARY_BEFORE_VERSION="$binary_before_version"
+
+    if [ -n "$EP_MIHOMO_TAKEOVER_EXISTING_PROCESSES" ]; then
+        EP_MIHOMO_TAKEOVER_EXISTING_DETECTED=true
+        ep_warn "Existing Mihomo process(es) found:"
+        printf '%s\n' "$EP_MIHOMO_TAKEOVER_EXISTING_PROCESSES" | sed 's/^/[WARN]   /' >&2
+        if [ -n "$EP_MIHOMO_TAKEOVER_EXISTING_PROCESS_VERSIONS" ]; then
+            ep_log "Existing Mihomo executable versions:"
+            printf '%s\n' "$EP_MIHOMO_TAKEOVER_EXISTING_PROCESS_VERSIONS" | sed 's/^/[INFO]   /'
+        fi
+    else
+        ep_log "No existing user-owned Mihomo process detected."
+    fi
+    if [ -n "$binary_before_version" ]; then
+        ep_log "Existing envpilot target binary: $bin ($binary_before_version)"
+    else
+        ep_log "No usable envpilot target binary found at $bin; a compatible stable binary will be installed."
+    fi
 
     if [ "$EP_MODE" = "offline" ]; then
         source="$(ep_find_offline_asset "$offline_pattern")"
@@ -550,54 +769,95 @@ EOF
         if [ -n "$source" ]; then
             ep_log "Using bundled downloads/ Mihomo asset for $EP_OS/$EP_ARCH before network: $source"
         else
-            source="$(ep_github_asset_url MetaCubeX mihomo "$asset_regex")"
+            ep_log "No bundled Mihomo binary was found; the stable GitHub asset will be resolved after the old proxy is stopped."
         fi
     fi
-    ep_log "Plan: install Mihomo"
+    if [ -n "$source" ]; then
+        ep_log "Candidate source: $source"
+    fi
+    ep_log "Target ports after takeover: proxy=127.0.0.1:$proxy_port API=127.0.0.1:$api_port"
+    ep_log "The existing user-owned Mihomo process will be stopped, the target ports will be checked, and the takeover will be recorded."
+
+    if ! ep_confirm "Take over Mihomo and install/update the envpilot-managed binary?" "yes"; then
+        EP_MIHOMO_TAKEOVER_RESULT=user_declined
+        ep_mihomo_write_takeover_report user_declined
+        ep_report_event mihomo skipped "user declined Mihomo takeover" "" "$source" "$bin"
+        rm -f "$archive"
+        return 0
+    fi
+
+    ep_mihomo_stop_existing_processes
+    ep_mihomo_clear_proxy_environment
+    EP_MIHOMO_TAKEOVER_AFTER_PROXY_LISTENING="$(ep_mihomo_port_state "$proxy_port")"
+    EP_MIHOMO_TAKEOVER_AFTER_API_LISTENING="$(ep_mihomo_port_state "$api_port")"
+    if [ "$EP_MIHOMO_TAKEOVER_AFTER_PROXY_LISTENING" = true ]; then
+        EP_MIHOMO_TAKEOVER_RESULT=proxy_port_blocked
+        ep_mihomo_write_takeover_report proxy_port_blocked
+        rm -f "$archive"
+        ep_die "Target proxy port 127.0.0.1:$proxy_port remains occupied after stopping Mihomo. Choose another MIHOMO_PROXY_PORT."
+    fi
+    if [ "$EP_MIHOMO_TAKEOVER_AFTER_API_LISTENING" = true ]; then
+        EP_MIHOMO_TAKEOVER_RESULT=api_port_blocked
+        ep_mihomo_write_takeover_report api_port_blocked
+        rm -f "$archive"
+        ep_die "Target API port 127.0.0.1:$api_port remains occupied after stopping Mihomo. Choose another MIHOMO_API_PORT."
+    fi
+
+    if [ -z "$source" ]; then
+        source="$(ep_github_asset_url MetaCubeX mihomo "$asset_regex")"
+    fi
+    source_version="$(ep_mihomo_asset_version "$source" 2>/dev/null || true)"
+    EP_MIHOMO_TAKEOVER_SELECTED_SOURCE="$source"
+    EP_MIHOMO_TAKEOVER_SELECTED_VERSION="$source_version"
+    if [ -n "$binary_before_version" ] && [ -n "$source_version" ] && [ "$binary_before_version" = "$source_version" ]; then
+        binary_action=kept-current
+        ep_log "Existing target Mihomo binary is already current: $binary_before_version; binary replacement will be skipped."
+    else
+        binary_action=installed-or-updated
+        if [ -n "$binary_before_version" ]; then
+            ep_log "Existing target Mihomo binary is $binary_before_version; selected stable source is ${source_version:-unknown}, so it will be updated."
+        else
+            ep_log "No current target binary is available; selected stable source version is ${source_version:-unknown}."
+        fi
+    fi
+    EP_MIHOMO_TAKEOVER_BINARY_ACTION="$binary_action"
+    EP_MIHOMO_TAKEOVER_RESULT=ports_ready
+    ep_mihomo_write_takeover_report ports_ready
+
+    ep_log "Plan: install/update envpilot-managed Mihomo"
     ep_log "Source: $source"
     ep_log "Persistent binary: $bin"
     ep_log "Persistent config: $config_dir/config.yaml"
     ep_log "Runtime directory: $(ep_mihomo_runtime_dir)"
-    ep_log "Will install start/stop/status/update-subscription scripts in $install_dir"
-    ep_log "Will hydrate data: $config_dir/country.mmdb and $config_dir/geoip.metadb"
+    ep_log "Scripts: $install_dir/start_mihomo.sh, stop_mihomo.sh, status_mihomo.sh, update_mihomo_subscription.sh"
+    ep_log "Geodata: $config_dir/country.mmdb and $config_dir/geoip.metadb"
     ep_log "Ports: proxy=127.0.0.1:$proxy_port API=127.0.0.1:$api_port"
     ep_log "Security: allow-lan=false, bind-address=127.0.0.1"
-    if ep_proxy_port_is_listening 127.0.0.1 "$proxy_port"; then
-        ep_warn "Proxy port 127.0.0.1:$proxy_port is currently in use. Installation can continue, but Mihomo cannot start on this port."
-    else
-        ep_log "Proxy port availability: 127.0.0.1:$proxy_port is available"
-    fi
-    if ep_proxy_port_is_listening 127.0.0.1 "$api_port"; then
-        ep_warn "API port 127.0.0.1:$api_port is currently in use. Installation can continue, but Mihomo cannot start on this port."
-    else
-        ep_log "API port availability: 127.0.0.1:$api_port is available"
-    fi
-
-    ep_confirm "Install Mihomo from the source above to $bin?" "yes" || {
-        ep_report_event mihomo skipped "user declined" "" "$source" "$bin"
-        rm -f "$archive"
-        return 0
-    }
 
     mkdir -p "$install_dir" "$config_dir"
     chmod 700 "$config_dir"
     ep_mihomo_set_shell_local_ports "$proxy_port" "$api_port"
-    if [ -f "$source" ]; then
-        cp "$source" "$archive"
-    else
-        ep_fetch_url "$source" "$archive"
+
+    if [ "$binary_action" != kept-current ]; then
+        if [ -f "$source" ]; then
+            ep_download_note "Using local Mihomo source: $source"
+            cp "$source" "$archive"
+        else
+            ep_fetch_url "$source" "$archive"
+        fi
+        case "$source" in
+            *.zip)
+                ep_command_exists unzip || ep_die "unzip is required for Windows Mihomo archives"
+                unzip -p "$archive" '*mihomo*.exe' > "$bin" || ep_die "Could not extract Mihomo from $source"
+                ;;
+            *)
+                gzip -dc "$archive" > "$bin" || ep_die "Could not extract gzip Mihomo asset: $source"
+                ;;
+        esac
+        chmod 755 "$bin"
+        ep_log "Installed Mihomo binary: $bin"
     fi
 
-    case "$source" in
-        *.zip)
-            ep_command_exists unzip || ep_die "unzip is required for Windows Mihomo archives"
-            unzip -p "$archive" '*mihomo*.exe' > "$bin" || ep_die "Could not extract Mihomo from $source"
-            ;;
-        *)
-            gzip -dc "$archive" > "$bin" || ep_die "Could not extract gzip Mihomo asset: $source"
-            ;;
-    esac
-    chmod 755 "$bin"
     ep_mihomo_refresh_scripts
     ep_install_mihomo_data_assets "$config_dir"
 
@@ -614,14 +874,23 @@ EOF
         chmod 600 "$config_dir/config.yaml"
         ep_log "Wrote Mihomo config: $config_dir/config.yaml"
         ep_log "Applied local-only ports: proxy=$proxy_port API=$api_port"
+    elif [ "$EP_MIHOMO_TAKEOVER_EXISTING_DETECTED" = true ] && [ -f "$config_dir/config.yaml" ]; then
+        ep_backup_file "$config_dir/config.yaml"
+        disabled_config="$config_dir/config.yaml.disabled.$(ep_timestamp)"
+        mv "$config_dir/config.yaml" "$disabled_config"
+        EP_MIHOMO_TAKEOVER_PREVIOUS_CONFIG_DISABLED=true
+        ep_warn "Disabled the previous Mihomo config to prevent reuse of the old proxy channel: $disabled_config"
+        ep_warn "Run: mihomo update-subscription '<Clash/Mihomo URL>'"
     else
         ep_warn "No subscription URL provided; Mihomo binary installed but config.yaml was not written."
         ep_warn "Later run: mihomo update-subscription '<Clash/Mihomo URL>'"
     fi
 
     rm -f "$archive"
+    version="$(ep_mihomo_binary_version "$bin" 2>/dev/null || true)"
+    EP_MIHOMO_TAKEOVER_RESULT=completed
+    ep_mihomo_write_takeover_report completed
     ep_state_mark_done mihomo
-    version="$("$bin" -v 2>/dev/null | head -n 1 || true)"
-    ep_report_event mihomo installed "installed Mihomo with node-local runtime scripts; config may require subscription" "$version" "$source" "$bin"
-    ep_log "Mihomo is not auto-started. After apply-shell, run: mihomo start"
+    ep_report_event mihomo installed "took over existing Mihomo if present; installed or reused envpilot-managed binary" "$version" "$source" "$bin"
+    ep_log "Mihomo takeover complete. It is not auto-started; after a valid subscription config exists, run: mihomo start"
 }

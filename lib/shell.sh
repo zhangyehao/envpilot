@@ -29,17 +29,22 @@ ep_migrate_shell_local()
     local local_file="$EP_CONFIG_DIR/shell.local"
     mkdir -p "$EP_CONFIG_DIR"
     {
-        printf '# envpilot shell.local\n'
-        printf '# Review these migrated lines before enabling them permanently.\n'
+        printf '%s\n' '# envpilot shell.local'
+        printf '%s\n' '# Safe exported variables migrated from the previous profile.'
+        printf '%s\n' '# Proxy, Mihomo, secret, and API-key variables are intentionally excluded.'
         printf 'BASHRC_ENVPILOT_ROOT=%q\n' "$ENVPILOT_ROOT"
         if [ -f "$old_profile" ]; then
-            grep -E '^[[:space:]]*(export[[:space:]]+PATH=|PATH=|module[[:space:]]+load)' "$old_profile" 2>/dev/null |
-                grep -Evi 'KEY|TOKEN|SECRET|PASSWORD|PASSWD|OPENAI_API_KEY|ALPHA_GENOME_API_KEY|GITHUB_TOKEN' || true
+            grep -E '^[[:space:]]*export[[:space:]]+[A-Za-z_][A-Za-z0-9_]*=' "$old_profile" 2>/dev/null |
+                grep -Evi 'KEY|TOKEN|SECRET|PASSWORD|PASSWD|AUTH|MIHOMO|PROXY' |
+                grep -Ev '\$\(' || true
+            grep -E '^[[:space:]]*module[[:space:]]+load[[:space:]]+' "$old_profile" 2>/dev/null |
+                grep -Evi 'KEY|TOKEN|SECRET|PASSWORD|PASSWD|AUTH|MIHOMO|PROXY' || true
         fi
     } > "$local_file.tmp"
     mv "$local_file.tmp" "$local_file"
     chmod 600 "$local_file" 2>/dev/null || true
     ep_log "Wrote migrated shell hints: $local_file"
+    ep_log "Migrated safe exported variables; excluded old proxy/Mihomo functions and secret-like variables."
 }
 
 ep_apply_shell_profile()
