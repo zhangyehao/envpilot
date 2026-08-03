@@ -79,6 +79,7 @@ export MIHOMO_API_PORT=60290
 
 bash envpilot.sh install mihomo
 bash envpilot.sh apply-shell
+# 建立立刻vim ~/.bashrc 将开头的几个BASHRC_AUTO默认值改为1
 source ~/.bashrc
 
 mihomo start
