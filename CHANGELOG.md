@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.15 - 2026-08-03
+
+### Fixed
+
+- Marked the Mihomo takeover report path as an intentional cross-file variable so ShellCheck and GitHub Actions validate the release successfully.
+
 ## 0.1.14 - 2026-08-03
 
 ### Changed

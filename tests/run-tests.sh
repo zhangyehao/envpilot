@@ -599,7 +599,7 @@ test ! -e "$tmp_mamba/software/miniconda3/.condarc"
 rm -rf "$tmp_mamba"
 
 echo "[TEST] version"
-grep -q '^0\.1\.14$' "$ROOT/VERSION"
+grep -q '^0\.1\.15$' "$ROOT/VERSION"
 
 echo "[TEST] repository license and mirror helpers"
 grep -q '^MIT License$' "$ROOT/LICENSE"
