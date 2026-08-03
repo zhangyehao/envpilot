@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position=0)]
-    [ValidateSet("doctor","install","apply-shell","rollback","restore","mihomo","resume","reset","update-manifests","update-mihomo-cache","self-test","help")]
+    [ValidateSet("doctor","install","update","upgrade","apply-shell","rollback","restore","mihomo","resume","reset","update-manifests","update-mihomo-cache","self-test","help")]
     [string]$Command = "help",
 
     [Parameter(Position=1)]
@@ -18,7 +18,8 @@ param(
 
     [string]$Prefix = (Join-Path $HOME "software"),
     [string]$AssetPath,
-    [switch]$Yes
+    [switch]$Yes,
+    [switch]$Upgrade
 )
 
 $Script:Root = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -27,8 +28,10 @@ $Script:StateFile = Join-Path $Script:ConfigDir "state.ps1.txt"
 $Script:RollbackLog = Join-Path $Script:ConfigDir "rollback.ps1.tsv"
 $Script:BaselineDir = Join-Path $Script:ConfigDir "baseline"
 $Script:BaselineFile = Join-Path $Script:BaselineDir "baseline.tsv"
+$Script:RepoRootFile = Join-Path $Script:ConfigDir "repo-root"
 $Script:ReportFile = Join-Path $Script:ConfigDir "install-report.json"
 $Script:RunId = Get-Date -Format "yyyyMMddHHmmss"
+$Script:Upgrade = $Upgrade.IsPresent
 $Script:Events = @()
 $Script:Platform = $null
 
@@ -39,6 +42,7 @@ function Stop-Envpilot { param([string]$Message) throw "[ERROR] $Message" }
 function Initialize-Envpilot {
     New-Item -ItemType Directory -Force -Path $Script:ConfigDir | Out-Null
     New-Item -ItemType Directory -Force -Path (Join-Path $Script:ConfigDir "logs") | Out-Null
+    [System.IO.File]::WriteAllText($Script:RepoRootFile, $Script:Root + [Environment]::NewLine, [System.Text.UTF8Encoding]::new($false))
 }
 
 function Test-Command {
@@ -349,6 +353,7 @@ function Save-Baseline {
 
     Add-BaselineFile -Name "powershell-profile" -Target $PROFILE.CurrentUserCurrentHost
     Add-BaselineFile -Name "powershell-local" -Target (Join-Path $Script:ConfigDir "profile.local.ps1")
+    Add-BaselineFile -Name "repo-root" -Target $Script:RepoRootFile
     Add-BaselineFile -Name "condarc" -Target (Join-Path $HOME ".condarc")
     Add-BaselineFile -Name "mihomo-config" -Target (Join-Path $HOME ".config/mihomo/config.yaml")
     Add-BaselineFile -Name "mihomo-country" -Target (Join-Path $HOME ".config/mihomo/country.mmdb")
@@ -676,15 +681,43 @@ function Show-Doctor {
 }
 function Install-Conda {
     if (Test-Command conda) {
-        Add-ReportEvent "conda" "skipped" "already installed" (& conda --version 2>$null) "" ((Get-Command conda).Source)
+        $condaPath = (Get-Command conda).Source
+        $beforeVersion = (& conda --version 2>$null | Out-String).Trim()
+        if (-not $Script:Upgrade) {
+            Add-ReportEvent "conda" "skipped" "already installed; use update conda to refresh" $beforeVersion "" $condaPath
+            Mark-StateDone "conda"
+            return
+        }
+        Write-Info "Current Conda: $beforeVersion at $condaPath"
+        Write-Info "Update strategy: let Conda resolve the newest compatible base package for this Windows installation."
+        if ($Mode -eq "offline") {
+            Write-Warn "Offline mode cannot resolve a newer Conda package; keeping $beforeVersion."
+            Add-ReportEvent "conda" "skipped" "offline update requires a prepared package cache" $beforeVersion "" $condaPath
+            Mark-StateDone "conda"
+            return
+        }
+        if (-not (Confirm-Step "Update the Conda base command to the newest compatible package?" $true)) {
+            Add-ReportEvent "conda" "skipped" "user declined update" $beforeVersion "" $condaPath
+            return
+        }
+        $condarc = Join-Path $HOME ".condarc"
+        Backup-File $condarc
+        Copy-Item -LiteralPath (Join-Path $Script:Root "templates/condarc") -Destination $condarc -Force
+        $global:LASTEXITCODE = 0
+        & conda update -n base -y conda
+        if ($LASTEXITCODE -ne 0) { Stop-Envpilot "Conda self-update failed with exit $LASTEXITCODE. The existing installation remains available." }
+        $afterVersion = (& conda --version 2>$null | Out-String).Trim()
+        Add-ReportEvent "conda" "updated" "resolved newest compatible base conda package" $afterVersion $condarc $condaPath
         Mark-StateDone "conda"
+        Write-Info "Conda update complete: $beforeVersion -> $afterVersion"
         return
     }
     if ($Script:Platform.Arch -ne "amd64") { Stop-Envpilot "Windows Conda installer rule currently supports amd64 only." }
     $url = "https://repo.anaconda.com/miniconda/Miniconda3-latest-Windows-x86_64.exe"
     $installer = Join-Path ([System.IO.Path]::GetTempPath()) "envpilot-miniconda.exe"
     $target = Join-Path $Prefix "miniconda3"
-    Write-Info "Selected Miniconda installer for Windows amd64"
+    Write-Info "Selected latest Miniconda installer for Windows amd64"
+    Write-Info "Source: $url"
     Write-Info "Install target: $target"
     if (-not (Confirm-Step "Install Conda to $target?" $true)) { Add-ReportEvent "conda" "skipped" "user declined"; return }
     if ($Mode -eq "offline") {
@@ -692,9 +725,14 @@ function Install-Conda {
     } else {
         Invoke-EnvpilotDownload $url $installer
     }
-    Start-Process -FilePath $installer -ArgumentList @("/InstallationType=JustMe","/RegisterPython=0","/S","/D=$target") -Wait
-    Copy-Item -LiteralPath (Join-Path $Script:Root "templates/condarc") -Destination (Join-Path $HOME ".condarc") -Force
-    Add-ReportEvent "conda" "installed" "installed Miniconda" "" $url $target
+    $process = Start-Process -FilePath $installer -ArgumentList @("/InstallationType=JustMe","/RegisterPython=0","/S","/D=$target") -Wait -PassThru
+    if ($process.ExitCode -ne 0) { Stop-Envpilot "Miniconda installer failed with exit $($process.ExitCode)." }
+    $condarc = Join-Path $HOME ".condarc"
+    Backup-File $condarc
+    Copy-Item -LiteralPath (Join-Path $Script:Root "templates/condarc") -Destination $condarc -Force
+    $targetConda = Join-Path $target "Scripts/conda.exe"
+    $version = if (Test-Path -LiteralPath $targetConda) { (& $targetConda --version 2>$null | Out-String).Trim() } else { "" }
+    Add-ReportEvent "conda" "installed" "installed latest compatible Miniconda" $version $url $target
     Mark-StateDone "conda"
 }
 
@@ -704,6 +742,13 @@ function Install-Mihomo {
     $installDir = Join-Path $HOME "software/mihomo"
     $bin = Join-Path $installDir "mihomo.exe"
     $configDir = Join-Path $HOME ".config/mihomo"
+    $config = Join-Path $configDir "config.yaml"
+    $configBefore = Test-Path -LiteralPath $config
+    $managedProcesses = @(Get-Process -Name "mihomo" -ErrorAction SilentlyContinue | Where-Object {
+        try { $_.Path -eq $bin -or $_.Path -like "*\software\mihomo\mihomo.exe" } catch { $false }
+    })
+    $wasRunning = $managedProcesses.Count -gt 0
+    $reportStatus = if ($Script:Upgrade) { "updated" } else { "installed" }
     $proxyPort = Get-MihomoProxyPort
     $apiPort = Get-MihomoApiPort
     Assert-MihomoPorts -ProxyPort $proxyPort -ApiPort $apiPort
@@ -721,22 +766,24 @@ function Install-Mihomo {
         }
     }
 
-    Write-Info "Plan: install Mihomo"
+    Write-Info "Plan: install/update Mihomo"
     Write-Info "Source: $source"
     Write-Info "Target: $bin"
-    Write-Info "Config: $(Join-Path $configDir 'config.yaml')"
+    Write-Info "Config: $config"
     Write-Info "Ports: proxy=127.0.0.1:$proxyPort API=127.0.0.1:$apiPort"
-    if (Test-MihomoPort -Port $proxyPort) {
-        Write-Warn "Proxy port 127.0.0.1:$proxyPort is currently in use. Installation can continue, but Mihomo cannot start on this port."
+    if ($wasRunning) {
+        Write-Info "Existing envpilot-managed Mihomo is running; it will be stopped only for replacement and restarted afterward."
+    } elseif (Test-MihomoPort -Port $proxyPort) {
+        Write-Warn "Proxy port 127.0.0.1:$proxyPort is currently in use by another process."
     } else {
         Write-Info "Proxy port availability: 127.0.0.1:$proxyPort is available"
     }
-    if (Test-MihomoPort -Port $apiPort) {
-        Write-Warn "API port 127.0.0.1:$apiPort is currently in use. Installation can continue, but Mihomo cannot start on this port."
-    } else {
+    if (-not $wasRunning -and (Test-MihomoPort -Port $apiPort)) {
+        Write-Warn "API port 127.0.0.1:$apiPort is currently in use by another process."
+    } elseif (-not $wasRunning) {
         Write-Info "API port availability: 127.0.0.1:$apiPort is available"
     }
-    if (-not (Confirm-Step "Install Mihomo from the source above to $bin?" $true)) {
+    if (-not (Confirm-Step "Install/update Mihomo from the source above to $bin?" $true)) {
         Add-ReportEvent "mihomo" "skipped" "user declined" "" $source $bin
         return
     }
@@ -745,6 +792,7 @@ function Install-Mihomo {
     Set-EnvpilotProfileLocalPorts -ProxyPort $proxyPort -ApiPort $apiPort
     $archive = Join-Path ([System.IO.Path]::GetTempPath()) "envpilot-mihomo.zip"
     $extract = Join-Path ([System.IO.Path]::GetTempPath()) "envpilot-mihomo"
+    $binaryBackup = Join-Path ([System.IO.Path]::GetTempPath()) "envpilot-mihomo-backup.exe"
     try {
         if (Test-Path -LiteralPath $source -PathType Leaf) {
             Copy-Item -LiteralPath $source -Destination $archive -Force
@@ -755,35 +803,70 @@ function Install-Mihomo {
         Expand-Archive -LiteralPath $archive -DestinationPath $extract -Force
         $exe = Get-ChildItem -LiteralPath $extract -Recurse -File -Filter "mihomo*.exe" | Select-Object -First 1
         if (-not $exe) { Stop-Envpilot "Could not find Mihomo executable in archive." }
+        if (Test-Path -LiteralPath $bin) { Copy-Item -LiteralPath $bin -Destination $binaryBackup -Force }
+        if ($wasRunning) {
+            Stop-MihomoProcesses -Quiet
+            Start-Sleep -Seconds 1
+        }
+        if (Test-MihomoPort -Port $proxyPort) { Stop-Envpilot "Target proxy port 127.0.0.1:$proxyPort is still occupied after stopping managed Mihomo." }
+        if (Test-MihomoPort -Port $apiPort) { Stop-Envpilot "Target API port 127.0.0.1:$apiPort is still occupied after stopping managed Mihomo." }
         Copy-Item -LiteralPath $exe.FullName -Destination $bin -Force
         Install-MihomoDataAssets -ConfigDir $configDir
         $subscription = $env:ENVPILOT_MIHOMO_SUBSCRIPTION_URL
-        if ([string]::IsNullOrWhiteSpace($subscription) -and -not $Yes) {
+        if ([string]::IsNullOrWhiteSpace($subscription) -and $Script:Upgrade -and $configBefore) {
+            Write-Info "Existing envpilot Mihomo config detected; update will preserve it without requesting the subscription again."
+        } elseif ([string]::IsNullOrWhiteSpace($subscription) -and -not $Yes) {
             $subscription = Read-Host "Paste Clash/Mihomo subscription URL (press Enter to skip)"
         }
         if (-not [string]::IsNullOrWhiteSpace($subscription)) {
             Update-MihomoSubscription -Url $subscription
+        } elseif (Test-Path -LiteralPath $config) {
+            Write-Info "Preserved existing Mihomo config: $config"
         } else {
             Write-Warn "No subscription URL provided. Later run: .\envpilot.ps1 mihomo update-subscription '<Clash/Mihomo URL>'"
         }
-        Add-ReportEvent "mihomo" "installed" "installed Mihomo binary, GeoIP data, and dual-port support" "" $source $bin
+        if ($wasRunning -and (Test-Path -LiteralPath $config)) {
+            Start-MihomoProcess -ProxyPort $proxyPort -ApiPort $apiPort
+        }
+        $version = (& $bin -v 2>$null | Select-Object -First 1 | Out-String).Trim()
+        Add-ReportEvent "mihomo" $reportStatus "installed or updated Mihomo; preserved managed config and running state" $version $source $bin
         Mark-StateDone "mihomo"
+    } catch {
+        if (Test-Path -LiteralPath $binaryBackup) {
+            Copy-Item -LiteralPath $binaryBackup -Destination $bin -Force
+        }
+        if ($wasRunning -and (Test-Path -LiteralPath $config)) {
+            try { Start-MihomoProcess -ProxyPort $proxyPort -ApiPort $apiPort } catch { Write-Warn "Could not restore the previous Mihomo runtime after update failure." }
+        }
+        throw
     } finally {
         Remove-Item -LiteralPath $archive -Force -ErrorAction SilentlyContinue
         Remove-Item -LiteralPath $extract -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $binaryBackup -Force -ErrorAction SilentlyContinue
     }
 }
 function Install-Codex {
+    $action = "configured"
     Write-Info "Codex config will use env_key=OPENAI_API_KEY and will not write auth.json."
     if (-not (Test-Command npm)) {
         if (Test-Command winget) {
             if (Confirm-Step "Install Node.js LTS with winget?" $true) {
-                winget install --id OpenJS.NodeJS.LTS --silent --accept-package-agreements --accept-source-agreements
+                $process = Start-Process -FilePath "winget" -ArgumentList @("install","--id","OpenJS.NodeJS.LTS","--silent","--accept-package-agreements","--accept-source-agreements") -Wait -PassThru
+                if ($process.ExitCode -ne 0) { Stop-Envpilot "Node.js installation failed with exit $($process.ExitCode)." }
             }
         }
     }
     if (-not (Test-Command npm)) { Stop-Envpilot "npm is required for Codex. Install Node.js and rerun." }
-    if (-not (Test-Command codex)) { npm install -g "@openai/codex" }
+    if (-not (Test-Command codex)) {
+        $action = "installed"
+        npm install -g "@openai/codex"
+        if ($LASTEXITCODE -ne 0) { Stop-Envpilot "npm failed to install @openai/codex." }
+    } elseif ($Script:Upgrade) {
+        $action = "updated"
+        Write-Info "Updating Codex CLI from $(& codex --version 2>$null) using npm."
+        npm install -g "@openai/codex"
+        if ($LASTEXITCODE -ne 0) { Stop-Envpilot "npm failed to update @openai/codex." }
+    }
     $codexDir = Join-Path $HOME ".codex"
     New-Item -ItemType Directory -Force -Path $codexDir | Out-Null
     $config = Join-Path $codexDir "config.toml"
@@ -802,23 +885,39 @@ base_url = "https://yanhuoapi.com/v1"
 wire_api = "responses"
 env_key = "OPENAI_API_KEY"
 '@ | Set-Content -LiteralPath $config -Encoding UTF8
-    Add-ReportEvent "codex" "installed" "configured Codex with env_key" "" "npm:@openai/codex" (Get-Command codex -ErrorAction SilentlyContinue).Source
+    $codexCommand = Get-Command codex -ErrorAction SilentlyContinue
+    $version = if ($codexCommand) { (& codex --version 2>$null | Out-String).Trim() } else { "" }
+    Add-ReportEvent "codex" $action "installed or updated Codex and configured env_key" $version "npm:@openai/codex" $(if ($codexCommand) { $codexCommand.Source } else { "" })
     Mark-StateDone "codex"
 }
 
 function Install-GitHubCli {
+    $action = "checked"
     if (-not (Test-Command gh)) {
         if (-not (Test-Command winget)) { Stop-Envpilot "GitHub CLI not found and winget is unavailable." }
-        winget install --id GitHub.cli --silent --accept-package-agreements --accept-source-agreements
+        $action = "installed"
+        $process = Start-Process -FilePath "winget" -ArgumentList @("install","--id","GitHub.cli","--exact","--silent","--accept-package-agreements","--accept-source-agreements") -Wait -PassThru
+        if ($process.ExitCode -ne 0) { Stop-Envpilot "GitHub CLI installation failed with exit $($process.ExitCode)." }
+    } elseif ($Script:Upgrade) {
+        if (Test-Command winget) {
+            $action = "updated"
+            Write-Info "Checking GitHub CLI updates with winget."
+            $process = Start-Process -FilePath "winget" -ArgumentList @("upgrade","--id","GitHub.cli","--exact","--silent","--accept-package-agreements","--accept-source-agreements") -Wait -PassThru
+            if ($process.ExitCode -ne 0) { Write-Warn "winget did not apply a GitHub CLI update; the existing gh command is unchanged." }
+        } else {
+            Write-Warn "GitHub CLI exists, but winget is unavailable; envpilot will not overwrite a system-managed installation."
+        }
     }
-    if (Test-Command gh) {
+    $ghCommand = Get-Command gh -ErrorAction SilentlyContinue
+    if ($ghCommand) {
         try {
             gh auth status | Out-String | ForEach-Object { Write-Info $_.TrimEnd() }
         } catch {
             Write-Warn "Run: gh auth login -h github.com --git-protocol ssh"
         }
     }
-    Add-ReportEvent "github" "installed" "GitHub CLI checked/installed; auth may require user action" "" "winget/GitHub.cli" (Get-Command gh -ErrorAction SilentlyContinue).Source
+    $version = if ($ghCommand) { (& gh --version 2>$null | Select-Object -First 1 | Out-String).Trim() } else { "" }
+    Add-ReportEvent "github" $action "GitHub CLI checked or updated; auth may require user action" $version "winget/GitHub.cli" $(if ($ghCommand) { $ghCommand.Source } else { "" })
     Mark-StateDone "github"
 }
 
@@ -855,14 +954,16 @@ function Invoke-Install {
     $Script:Platform = Get-EnvpilotPlatform
     $names = if ($Component -eq "all") { @("mihomo","conda","mamba","codex","github","tmux") } else { @($Component) }
     foreach ($name in $names) {
-        if (Test-StateDone $name) {
-            Write-Info "Skip ${name}: already marked done. Use reset to clear state."
+        if ((Test-StateDone $name) -and -not $Script:Upgrade) {
+            Write-Info "Skip ${name}: already marked done. Use update or -Upgrade to re-check versions."
             Add-ReportEvent $name "skipped" "already marked done"
             continue
         }
+        if (Test-StateDone $name) { Write-Info "Re-checking installed $name for compatible updates." }
         Install-One $name
     }
-    Save-Report "install" $Component
+    $action = if ($Script:Upgrade) { "update" } else { "install" }
+    Save-Report $action $Component
     Write-Info "Install report: $Script:ReportFile"
 }
 
@@ -914,8 +1015,10 @@ envpilot - cross-platform user-space environment bootstrapper
 Usage:
   .\envpilot.ps1 doctor
       Show system, shell, proxy, and installed tool status.
-  .\envpilot.ps1 install [all|mihomo|conda|mamba|codex|github|tmux] [-Mode online|offline] [-Prefix PATH] [-AssetPath PATH] [-Yes]
+  .\envpilot.ps1 install [all|mihomo|conda|mamba|codex|github|tmux] [-Mode online|offline] [-Prefix PATH] [-AssetPath PATH] [-Upgrade] [-Yes]
       Install selected component(s). Online is the default.
+  .\envpilot.ps1 update [all|mihomo|conda|mamba|codex|github|tmux]
+      Re-check compatible latest versions and update existing envpilot components.
   .\envpilot.ps1 apply-shell
       Back up and replace the active PowerShell profile.
   .\envpilot.ps1 rollback
@@ -941,6 +1044,7 @@ try {
     switch ($Command) {
         "doctor" { Show-Doctor }
         "install" { Invoke-Install }
+        { $_ -in @("update","upgrade") } { $Script:Upgrade = $true; Invoke-Install }
         "apply-shell" { Apply-ShellProfile }
         "rollback" { Rollback-Latest }
         "restore" { Restore-Baseline }

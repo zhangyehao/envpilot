@@ -106,10 +106,12 @@ EOF
 ep_install_codex()
 {
     ep_require_unix_runtime
+    local action
+    action=configured
     ep_log "Component: codex"
     ep_log "Package: $EP_CODEX_PACKAGE"
     ep_log "Config uses env_key=OPENAI_API_KEY; auth.json is not generated."
-    ep_confirm "Install/configure Codex CLI?" "yes" || {
+    ep_confirm "Install/update and configure Codex CLI?" "yes" || {
         ep_report_event codex skipped "user declined" "" "" ""
         return 0
     }
@@ -117,7 +119,8 @@ ep_install_codex()
     ep_ensure_node
     ep_command_exists npm || ep_die "npm is required after Node.js installation"
     if ! ep_command_exists codex; then
-        ep_log "Installing Codex CLI from the npm registry: $EP_CODEX_PACKAGE"
+        action=installed
+        ep_log "Installing the latest compatible Codex CLI from the npm registry: $EP_CODEX_PACKAGE"
         ep_log "npm executable: $(command -v npm)"
         ep_log "npm global prefix: $(npm config get prefix 2>/dev/null || printf unknown)"
         if ! npm install -g "$EP_CODEX_PACKAGE"; then
@@ -126,6 +129,15 @@ ep_install_codex()
         hash -r
         ep_command_exists codex || ep_die "npm completed but the codex command is not available in PATH"
         ep_log "Codex CLI installed: $(codex --version 2>/dev/null || printf 'version unavailable')"
+    elif [ "$EP_UPGRADE" = "1" ]; then
+        action=updated
+        ep_log "Updating Codex CLI from $(codex --version 2>/dev/null || printf unknown) using npm package $EP_CODEX_PACKAGE."
+        if ! npm install -g "$EP_CODEX_PACKAGE"; then
+            ep_die "npm failed to update $EP_CODEX_PACKAGE"
+        fi
+        hash -r
+        ep_command_exists codex || ep_die "npm completed but the codex command is not available in PATH"
+        ep_log "Codex CLI update complete: $(codex --version 2>/dev/null || printf 'version unavailable')"
     else
         ep_log "Codex CLI already exists at $(command -v codex); keeping the installed executable and updating config."
     fi
@@ -137,6 +149,6 @@ ep_install_codex()
         ep_warn "Add OPENAI_API_KEY to $HOME/.config/secrets/api.env before running: with_secrets codex"
     fi
     ep_state_mark_done codex
-    ep_report_event codex installed "configured Codex with env_key" "$(codex --version 2>/dev/null || true)" "npm:$EP_CODEX_PACKAGE" "$(command -v codex 2>/dev/null || true)"
+    ep_report_event codex "$action" "installed or updated Codex and configured env_key" "$(codex --version 2>/dev/null || true)" "npm:$EP_CODEX_PACKAGE" "$(command -v codex 2>/dev/null || true)"
 }
 

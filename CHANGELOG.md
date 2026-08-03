@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.1.16 - 2026-08-03
+
+### Added
+
+- Added `update` / `upgrade` commands and an install upgrade flag across Unix and PowerShell entrypoints, bypassing completed state while re-evaluating compatible stable versions.
+- Added persistent repository location discovery through `~/.config/envpilot/repo-root`, with shell fallback when the clone is not under `$HOME/envpilot`.
+
+### Changed
+
+- Proxy helpers now verify the configured Mihomo port before exporting variables, default to HTTP/HTTPS only, make SOCKS opt-in, append to existing `no_proxy`, and preserve `no_proxy` on shutdown.
+- Envpilot-managed Mihomo updates now preserve the existing subscription config, avoid requesting it again, and restore the runtime only when it was running before the update.
+- Conda, Mamba, Codex, GitHub CLI, and tmux now have explicit update behavior; tmux compares against the stable manifest target and builds a user-space command when the system version is older.
+- Windows update behavior now mirrors the Unix entrypoint for Conda, Mihomo, Codex, and GitHub CLI.
+
+### Fixed
+
+- Replaced GNU-only `sort -V` version comparison with a portable awk comparator so macOS can validate component update targets.
+- Added regression coverage for proxy safety, optional SOCKS, preserved `no_proxy`, managed Mihomo updates, repository location discovery, and update command contracts.
+
 ## 0.1.15 - 2026-08-03
 
 ### Fixed

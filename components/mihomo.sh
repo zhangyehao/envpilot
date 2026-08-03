@@ -336,6 +336,38 @@ ep_mihomo_existing_processes()
     pgrep -u "$user_name" -af "$pattern" 2>/dev/null || true
 }
 
+ep_mihomo_processes_are_managed()
+{
+    local processes="$1"
+    local managed_bin runtime_bin line pid exe
+
+    [ -n "$processes" ] || return 1
+    managed_bin="$(ep_mihomo_bin)"
+    runtime_bin="$(ep_mihomo_runtime_bin)"
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        pid="$(printf '%s\n' "$line" | awk '{print $1}')"
+        exe=""
+        if [ -n "$pid" ] && [ -e "/proc/$pid/exe" ] && ep_command_exists readlink; then
+            exe="$(readlink -f "/proc/$pid/exe" 2>/dev/null || true)"
+        fi
+        if [ -n "$exe" ]; then
+            case "$exe" in
+                "$managed_bin"|"$runtime_bin") ;;
+                *) return 1 ;;
+            esac
+        else
+            case "$line" in
+                *"$managed_bin"*|*"$runtime_bin"*) ;;
+                *) return 1 ;;
+            esac
+        fi
+    done <<EOF
+$processes
+EOF
+    return 0
+}
+
 ep_mihomo_existing_process_versions()
 {
     local processes="$1"
@@ -422,6 +454,8 @@ ep_mihomo_write_takeover_report()
   "existing_processes": "$(printf '%s' "$existing_processes" | ep_json_escape)",
   "existing_process_versions": "$(printf '%s' "$existing_versions" | ep_json_escape)",
   "existing_processes_detected": ${EP_MIHOMO_TAKEOVER_EXISTING_DETECTED:-false},
+  "existing_processes_envpilot_managed": ${EP_MIHOMO_TAKEOVER_EXISTING_MANAGED:-false},
+  "managed_runtime_was_running": ${EP_MIHOMO_TAKEOVER_MANAGED_RUNTIME_WAS_RUNNING:-false},
   "existing_processes_stopped": ${EP_MIHOMO_TAKEOVER_EXISTING_STOPPED:-false},
   "stop_signals": "$(printf '%s' "${EP_MIHOMO_TAKEOVER_STOP_SIGNALS:-none}" | ep_json_escape)",
   "proxy_environment_was_set": ${EP_MIHOMO_TAKEOVER_PROXY_ENV_WAS_SET:-false},
@@ -431,7 +465,9 @@ ep_mihomo_write_takeover_report()
   "selected_version": "$(printf '%s' "$selected_version" | ep_json_escape)",
   "selected_source_version": "$(printf '%s' "$selected_version" | ep_json_escape)",
   "binary_action": "$(printf '%s' "$binary_action" | ep_json_escape)",
-  "previous_config_disabled": ${EP_MIHOMO_TAKEOVER_PREVIOUS_CONFIG_DISABLED:-false}
+  "previous_config_disabled": ${EP_MIHOMO_TAKEOVER_PREVIOUS_CONFIG_DISABLED:-false},
+  "existing_config_preserved": ${EP_MIHOMO_TAKEOVER_EXISTING_CONFIG_PRESERVED:-false},
+  "managed_runtime_restarted": ${EP_MIHOMO_TAKEOVER_MANAGED_RUNTIME_RESTARTED:-false}
 }
 EOF
     mv "$report.tmp" "$report"
@@ -452,8 +488,13 @@ ep_mihomo_stop_existing_processes()
         return 0
     fi
     EP_MIHOMO_TAKEOVER_EXISTING_DETECTED=true
-    ep_warn "Existing user-owned Mihomo process(es) detected; they will be stopped before envpilot takeover:"
-    printf '%s\n' "$processes" | sed 's/^/[WARN]   /' >&2
+    if [ "${EP_MIHOMO_TAKEOVER_EXISTING_MANAGED:-false}" = true ]; then
+        ep_log "Stopping the existing envpilot-managed Mihomo runtime before update:"
+        printf '%s\n' "$processes" | sed 's/^/[INFO]   /'
+    else
+        ep_warn "Existing user-owned Mihomo process(es) detected; they will be stopped before envpilot takeover:"
+        printf '%s\n' "$processes" | sed 's/^/[WARN]   /' >&2
+    fi
     if ! ep_command_exists pkill; then
         EP_MIHOMO_TAKEOVER_EXISTING_STOPPED=false
         EP_MIHOMO_TAKEOVER_STOP_SIGNALS=unavailable
@@ -708,15 +749,20 @@ ep_install_mihomo()
     ep_require_unix_runtime
     local bin install_dir config_dir asset_regex offline_pattern archive source version
     local proxy_port api_port subscription source_version binary_before_version binary_action disabled_config
+    local config_before_present report_action
     bin="$(ep_mihomo_bin)"
     install_dir="$(dirname "$bin")"
     config_dir="$HOME/.config/mihomo"
+    config_before_present=false
+    [ -f "$config_dir/config.yaml" ] && config_before_present=true
     asset_regex="$(ep_mihomo_asset_regex)"
     offline_pattern="$(ep_mihomo_offline_pattern)"
     archive="$(mktemp "${TMPDIR:-/tmp}/envpilot-mihomo.XXXXXX")"
     source=""
     subscription=""
     binary_action="not_selected"
+    report_action=installed
+    [ "$EP_UPGRADE" = "1" ] && report_action=updated
     EP_MIHOMO_TAKEOVER_RESULT=in_progress
     EP_MIHOMO_TAKEOVER_EXISTING_PROCESSES=""
     EP_MIHOMO_TAKEOVER_EXISTING_PROCESS_VERSIONS=""
@@ -726,6 +772,10 @@ ep_install_mihomo()
     EP_MIHOMO_TAKEOVER_PROXY_ENV_WAS_SET=false
     EP_MIHOMO_TAKEOVER_PROXY_ENV_CLEARED=false
     EP_MIHOMO_TAKEOVER_PREVIOUS_CONFIG_DISABLED=false
+    EP_MIHOMO_TAKEOVER_EXISTING_MANAGED=false
+    EP_MIHOMO_TAKEOVER_MANAGED_RUNTIME_WAS_RUNNING=false
+    EP_MIHOMO_TAKEOVER_MANAGED_RUNTIME_RESTARTED=false
+    EP_MIHOMO_TAKEOVER_EXISTING_CONFIG_PRESERVED=false
     proxy_port="$(ep_mihomo_proxy_port)"
     api_port="$(ep_mihomo_api_port)"
     read -r proxy_port api_port <<EOF
@@ -740,6 +790,10 @@ EOF
     ep_log "Before takeover, register at https://proxy.yanhuoapi.com/ and prepare a Clash/Mihomo subscription URL."
     EP_MIHOMO_TAKEOVER_EXISTING_PROCESSES="$(ep_mihomo_existing_processes)"
     EP_MIHOMO_TAKEOVER_EXISTING_PROCESS_VERSIONS="$(ep_mihomo_existing_process_versions "$EP_MIHOMO_TAKEOVER_EXISTING_PROCESSES")"
+    if ep_mihomo_processes_are_managed "$EP_MIHOMO_TAKEOVER_EXISTING_PROCESSES"; then
+        EP_MIHOMO_TAKEOVER_EXISTING_MANAGED=true
+        EP_MIHOMO_TAKEOVER_MANAGED_RUNTIME_WAS_RUNNING=true
+    fi
     EP_MIHOMO_TAKEOVER_BEFORE_PROXY_LISTENING="$(ep_mihomo_port_state "$proxy_port")"
     EP_MIHOMO_TAKEOVER_BEFORE_API_LISTENING="$(ep_mihomo_port_state "$api_port")"
     binary_before_version="$(ep_mihomo_binary_version "$bin" 2>/dev/null || true)"
@@ -747,8 +801,13 @@ EOF
 
     if [ -n "$EP_MIHOMO_TAKEOVER_EXISTING_PROCESSES" ]; then
         EP_MIHOMO_TAKEOVER_EXISTING_DETECTED=true
-        ep_warn "Existing Mihomo process(es) found:"
-        printf '%s\n' "$EP_MIHOMO_TAKEOVER_EXISTING_PROCESSES" | sed 's/^/[WARN]   /' >&2
+        if [ "$EP_MIHOMO_TAKEOVER_EXISTING_MANAGED" = true ]; then
+            ep_log "Existing envpilot-managed Mihomo process(es) found; configuration and running state will be preserved."
+            printf '%s\n' "$EP_MIHOMO_TAKEOVER_EXISTING_PROCESSES" | sed 's/^/[INFO]   /'
+        else
+            ep_warn "External Mihomo process(es) found; envpilot will take them over after confirmation:"
+            printf '%s\n' "$EP_MIHOMO_TAKEOVER_EXISTING_PROCESSES" | sed 's/^/[WARN]   /' >&2
+        fi
         if [ -n "$EP_MIHOMO_TAKEOVER_EXISTING_PROCESS_VERSIONS" ]; then
             ep_log "Existing Mihomo executable versions:"
             printf '%s\n' "$EP_MIHOMO_TAKEOVER_EXISTING_PROCESS_VERSIONS" | sed 's/^/[INFO]   /'
@@ -862,8 +921,12 @@ EOF
     ep_install_mihomo_data_assets "$config_dir"
 
     subscription="${ENVPILOT_MIHOMO_SUBSCRIPTION_URL:-}"
-    if [ -z "$subscription" ] && [ "$EP_ASSUME_YES" != "1" ]; then
+    if [ -z "$subscription" ] &&
+       [ "$EP_ASSUME_YES" != "1" ] &&
+       { [ "$EP_UPGRADE" != "1" ] || [ "$config_before_present" != true ]; }; then
         ep_prompt_optional_url subscription "Paste Clash/Mihomo subscription URL"
+    elif [ -z "$subscription" ] && [ "$config_before_present" = true ]; then
+        ep_log "Existing envpilot Mihomo config detected; update will preserve it without requesting the subscription again."
     fi
 
     if [ -n "$subscription" ]; then
@@ -874,6 +937,9 @@ EOF
         chmod 600 "$config_dir/config.yaml"
         ep_log "Wrote Mihomo config: $config_dir/config.yaml"
         ep_log "Applied local-only ports: proxy=$proxy_port API=$api_port"
+    elif [ "$config_before_present" = true ] && [ -f "$config_dir/config.yaml" ]; then
+        EP_MIHOMO_TAKEOVER_EXISTING_CONFIG_PRESERVED=true
+        ep_log "Preserved the existing envpilot-managed Mihomo subscription config: $config_dir/config.yaml"
     elif [ "$EP_MIHOMO_TAKEOVER_EXISTING_DETECTED" = true ] && [ -f "$config_dir/config.yaml" ]; then
         ep_backup_file "$config_dir/config.yaml"
         disabled_config="$config_dir/config.yaml.disabled.$(ep_timestamp)"
@@ -888,9 +954,29 @@ EOF
 
     rm -f "$archive"
     version="$(ep_mihomo_binary_version "$bin" 2>/dev/null || true)"
+    if [ "$EP_MIHOMO_TAKEOVER_MANAGED_RUNTIME_WAS_RUNNING" = true ]; then
+        if [ -s "$config_dir/config.yaml" ]; then
+            ep_log "Restoring the envpilot-managed Mihomo runtime that was running before the update."
+            if MIHOMO_PROXY_PORT="$proxy_port" MIHOMO_API_PORT="$api_port" ep_start_mihomo; then
+                EP_MIHOMO_TAKEOVER_MANAGED_RUNTIME_RESTARTED=true
+                ep_log "Restored envpilot-managed Mihomo on proxy port $proxy_port and API port $api_port."
+            else
+                EP_MIHOMO_TAKEOVER_RESULT=restart_failed
+                ep_mihomo_write_takeover_report restart_failed
+                ep_die "Mihomo update completed, but the previous envpilot-managed runtime could not be restarted."
+            fi
+        else
+            ep_warn "Mihomo was previously running, but config.yaml is unavailable; runtime was not restarted."
+        fi
+    fi
+
     EP_MIHOMO_TAKEOVER_RESULT=completed
     ep_mihomo_write_takeover_report completed
     ep_state_mark_done mihomo
-    ep_report_event mihomo installed "took over existing Mihomo if present; installed or reused envpilot-managed binary" "$version" "$source" "$bin"
-    ep_log "Mihomo takeover complete. It is not auto-started; after a valid subscription config exists, run: mihomo start"
+    ep_report_event mihomo "$report_action" "updated managed Mihomo or took over external Mihomo; preserved managed config and running state" "$version" "$source" "$bin"
+    if [ "$EP_MIHOMO_TAKEOVER_MANAGED_RUNTIME_RESTARTED" = true ]; then
+        ep_log "Mihomo update complete; the previously running envpilot-managed runtime is active again."
+    else
+        ep_log "Mihomo takeover complete. It is not auto-started; after a valid subscription config exists, run: mihomo start"
+    fi
 }

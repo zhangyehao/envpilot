@@ -31,8 +31,10 @@ envpilot - cross-platform user-space environment bootstrapper
 
 Usage:
   bash envpilot.sh doctor             Show status and capture a restore baseline.
-  bash envpilot.sh install [all|mihomo|conda|mamba|codex|github|tmux] [--mode online|offline] [--prefix PATH] [--asset-path PATH] [--yes]
+  bash envpilot.sh install [all|mihomo|conda|mamba|codex|github|tmux] [--mode online|offline] [--prefix PATH] [--asset-path PATH] [--upgrade] [--yes]
                                       Install the selected component(s). Online is the default.
+  bash envpilot.sh update [all|mihomo|conda|mamba|codex|github|tmux]
+                                       Re-check compatible latest versions and update existing envpilot components.
   bash envpilot.sh apply-shell [--yes]
                                       Back up and replace the active shell profile.
   bash envpilot.sh rollback           Restore the most recent envpilot-managed backup.
@@ -52,6 +54,7 @@ Options:
   --asset-path PATH       Explicit offline asset path for the selected component.
   --conda-distribution miniconda|anaconda
                          Conda distribution to install. Default: miniconda.
+  --upgrade               Re-evaluate installed components instead of honoring completed state.
   --yes                   Accept low-risk confirmations. Profile/config writes still summarize first.
   -h, --help              Show this help.
 EOF
@@ -65,7 +68,7 @@ parse_args()
     shift || true
 
     EP_COMPONENT="all"
-    if [ "$EP_COMMAND" = "install" ] && [ "${1:-}" != "" ]; then
+    if { [ "$EP_COMMAND" = "install" ] || [ "$EP_COMMAND" = "update" ] || [ "$EP_COMMAND" = "upgrade" ]; } && [ "${1:-}" != "" ]; then
         arg="${1%$'\r'}"
         if [ "${arg#-}" = "$arg" ]; then
             EP_COMPONENT="$arg"
@@ -124,6 +127,10 @@ parse_args()
                 esac
                 shift 2
                 ;;
+            --upgrade|-u)
+                EP_UPGRADE="1"
+                shift
+                ;;
             --yes|-y)
                 EP_ASSUME_YES="1"
                 shift
@@ -170,17 +177,22 @@ install_one()
 
 run_install()
 {
+    local action="install"
+    [ "$EP_UPGRADE" = "1" ] && action="update"
     ep_init
     ep_platform_detect
-    ep_report_start "install" "$EP_COMPONENT"
+    ep_report_start "$action" "$EP_COMPONENT"
 
     case "$EP_COMPONENT" in
         all)
             for component in mihomo conda mamba codex github tmux; do
-                if ep_state_is_done "$component"; then
-                    ep_log "Skip $component: already marked done. Use reset to clear state."
+                if ep_state_is_done "$component" && [ "$EP_UPGRADE" != "1" ]; then
+                    ep_log "Skip $component: already marked done. Use update or --upgrade to re-check versions."
                     ep_report_event "$component" "skipped" "already marked done" "" "" ""
                     continue
+                fi
+                if ep_state_is_done "$component"; then
+                    ep_log "Re-checking installed $component for compatible updates."
                 fi
                 install_one "$component"
             done
@@ -195,6 +207,12 @@ run_install()
 
     ep_report_finish
     ep_log "Install report: $EP_REPORT_FILE"
+}
+
+run_update()
+{
+    EP_UPGRADE="1"
+    run_install
 }
 
 run_apply_shell()
@@ -267,6 +285,7 @@ main()
     case "$EP_COMMAND" in
         doctor) run_doctor ;;
         install) run_install ;;
+        update|upgrade) run_update ;;
         apply-shell) run_apply_shell ;;
         rollback) ep_init; ep_rollback_latest ;;
         restore) run_restore ;;

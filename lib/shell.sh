@@ -35,10 +35,10 @@ ep_migrate_shell_local()
         printf 'BASHRC_ENVPILOT_ROOT=%q\n' "$ENVPILOT_ROOT"
         if [ -f "$old_profile" ]; then
             grep -E '^[[:space:]]*export[[:space:]]+[A-Za-z_][A-Za-z0-9_]*=' "$old_profile" 2>/dev/null |
-                grep -Evi 'KEY|TOKEN|SECRET|PASSWORD|PASSWD|AUTH|MIHOMO|PROXY' |
+                grep -Evi 'KEY|TOKEN|SECRET|PASSWORD|PASSWD|AUTH|MIHOMO|PROXY|ENVPILOT_ROOT' |
                 grep -Ev '\$\(' || true
             grep -E '^[[:space:]]*module[[:space:]]+load[[:space:]]+' "$old_profile" 2>/dev/null |
-                grep -Evi 'KEY|TOKEN|SECRET|PASSWORD|PASSWD|AUTH|MIHOMO|PROXY' || true
+                grep -Evi 'KEY|TOKEN|SECRET|PASSWORD|PASSWD|AUTH|MIHOMO|PROXY|ENVPILOT_ROOT' || true
         fi
     } > "$local_file.tmp"
     mv "$local_file.tmp" "$local_file"

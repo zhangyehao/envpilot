@@ -4,6 +4,7 @@ $EnvpilotSecrets = Join-Path $HOME ".config/secrets/api.env.ps1"
 $Global:EnvpilotProxyHost = if ($Global:EnvpilotProxyHost) { $Global:EnvpilotProxyHost } else { "127.0.0.1" }
 $Global:EnvpilotProxyPort = if ($env:MIHOMO_PROXY_PORT) { [int]$env:MIHOMO_PROXY_PORT } elseif ($Global:EnvpilotProxyPort) { [int]$Global:EnvpilotProxyPort } else { 42290 }
 $Global:EnvpilotApiPort = if ($env:MIHOMO_API_PORT) { [int]$env:MIHOMO_API_PORT } elseif ($Global:EnvpilotApiPort) { [int]$Global:EnvpilotApiPort } else { 60290 }
+$Global:EnvpilotProxyEnableSocks = if ($env:ENVPILOT_PROXY_ENABLE_SOCKS -eq "1" -or $env:BASHRC_PROXY_ENABLE_SOCKS -eq "1") { $true } elseif ($null -ne $Global:EnvpilotProxyEnableSocks) { [bool]$Global:EnvpilotProxyEnableSocks } else { $false }
 
 function Write-Info { param([string]$Message) Write-Host "[INFO] $Message" }
 
@@ -41,25 +42,46 @@ function Get-EnvpilotApiPort {
     return [int]$Global:EnvpilotApiPort
 }
 
+function Add-EnvpilotNoProxy {
+    param([Parameter(Mandatory=$true)][string]$Value)
+    $existing = if ($env:no_proxy) { $env:no_proxy } else { $env:NO_PROXY }
+    $values = [System.Collections.Generic.List[string]]::new()
+    if ($existing) {
+        foreach ($item in ($existing -split ",")) {
+            $item = $item.Trim()
+            if ($item -and $values -notcontains $item) { [void]$values.Add($item) }
+        }
+    }
+    if ($values -notcontains $Value) { [void]$values.Add($Value) }
+    $env:no_proxy = $values -join ","
+    $env:NO_PROXY = $env:no_proxy
+}
+
 function Enable-EnvpilotProxy {
     param([string]$HostName = $Global:EnvpilotProxyHost, [int]$Port = (Get-EnvpilotProxyPort))
+    if (-not (Test-MihomoPort -HostName $HostName -Port $Port)) {
+        throw "Proxy is not listening at ${HostName}:${Port}. Start it first with: mihomo start"
+    }
     $proxy = "http://${HostName}:${Port}"
     $env:http_proxy = $proxy
     $env:https_proxy = $proxy
     $env:HTTP_PROXY = $proxy
     $env:HTTPS_PROXY = $proxy
-    $env:all_proxy = "socks5h://${HostName}:${Port}"
-    $env:ALL_PROXY = $env:all_proxy
-    $env:no_proxy = "localhost,127.0.0.1,::1"
-    $env:NO_PROXY = $env:no_proxy
+    if ($Global:EnvpilotProxyEnableSocks) {
+        $env:all_proxy = "socks5h://${HostName}:${Port}"
+        $env:ALL_PROXY = $env:all_proxy
+    } else {
+        Remove-Item "Env:all_proxy","Env:ALL_PROXY" -ErrorAction SilentlyContinue
+    }
+    Add-EnvpilotNoProxy "localhost"
+    Add-EnvpilotNoProxy "127.0.0.1"
+    Add-EnvpilotNoProxy "::1"
 }
 
 function Disable-EnvpilotProxy {
     foreach ($name in "http_proxy","https_proxy","HTTP_PROXY","HTTPS_PROXY","all_proxy","ALL_PROXY") {
         Remove-Item "Env:$name" -ErrorAction SilentlyContinue
     }
-    $env:no_proxy = "localhost,127.0.0.1,::1"
-    $env:NO_PROXY = $env:no_proxy
 }
 
 function Get-MihomoBin {

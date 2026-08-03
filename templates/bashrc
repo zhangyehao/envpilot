@@ -21,7 +21,17 @@ MIHOMO_API_PORT="${MIHOMO_API_PORT:-60290}"
 BASHRC_PROXY_HOST="$MIHOMO_PROXY_HOST"
 BASHRC_PROXY_PORT="$MIHOMO_PROXY_PORT"
 BASHRC_LOCAL_FILE="${BASHRC_LOCAL_FILE:-$HOME/.config/envpilot/shell.local}"
-BASHRC_ENVPILOT_ROOT="${BASHRC_ENVPILOT_ROOT:-}"
+BASHRC_ENVPILOT_ROOT="${BASHRC_ENVPILOT_ROOT:-$HOME/envpilot}"
+BASHRC_REPO_ROOT_FILE="${BASHRC_REPO_ROOT_FILE:-$HOME/.config/envpilot/repo-root}"
+BASHRC_PROXY_ENABLE_SOCKS="${BASHRC_PROXY_ENABLE_SOCKS:-0}"
+
+if [ ! -f "$BASHRC_ENVPILOT_ROOT/envpilot.sh" ] && [ -r "$BASHRC_REPO_ROOT_FILE" ]; then
+    BASHRC_REPO_ROOT_CANDIDATE="$(sed -n '1p' "$BASHRC_REPO_ROOT_FILE" 2>/dev/null || true)"
+    if [ -f "$BASHRC_REPO_ROOT_CANDIDATE/envpilot.sh" ]; then
+        BASHRC_ENVPILOT_ROOT="$BASHRC_REPO_ROOT_CANDIDATE"
+    fi
+    unset BASHRC_REPO_ROOT_CANDIDATE
+fi
 
 command_exists()
 {
@@ -401,21 +411,44 @@ mihomo()
 
 proxy_on()
 {
+    if ! proxy_port_is_listening "$MIHOMO_PROXY_HOST" "$MIHOMO_PROXY_PORT"; then
+        printf 'Proxy is not listening at %s:%s\n' \
+            "$MIHOMO_PROXY_HOST" "$MIHOMO_PROXY_PORT" >&2
+        printf 'Start it first with: mihomo start\n' >&2
+        return 1
+    fi
+
     export http_proxy="http://${MIHOMO_PROXY_HOST}:${MIHOMO_PROXY_PORT}"
     export https_proxy="$http_proxy"
     export HTTP_PROXY="$http_proxy"
     export HTTPS_PROXY="$https_proxy"
-    export all_proxy="socks5h://${MIHOMO_PROXY_HOST}:${MIHOMO_PROXY_PORT}"
-    export ALL_PROXY="$all_proxy"
-    export no_proxy="localhost,127.0.0.1,::1"
-    export NO_PROXY="$no_proxy"
+    if [ "$BASHRC_PROXY_ENABLE_SOCKS" = "1" ]; then
+        export all_proxy="socks5h://${MIHOMO_PROXY_HOST}:${MIHOMO_PROXY_PORT}"
+        export ALL_PROXY="$all_proxy"
+    else
+        unset all_proxy ALL_PROXY
+    fi
+    proxy_no_proxy_add localhost
+    proxy_no_proxy_add 127.0.0.1
+    proxy_no_proxy_add ::1
 }
 
 proxy_off()
 {
     unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY
     unset all_proxy ALL_PROXY
-    export no_proxy="localhost,127.0.0.1,::1"
+}
+
+proxy_no_proxy_add()
+{
+    local value="${1:-}"
+    [ -n "$value" ] || return 0
+    no_proxy="${no_proxy:-${NO_PROXY:-}}"
+    case ",${no_proxy:-}," in
+        *",$value,"*) ;;
+        *) no_proxy="${no_proxy:+$no_proxy,}$value" ;;
+    esac
+    export no_proxy
     export NO_PROXY="$no_proxy"
 }
 

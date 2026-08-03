@@ -42,6 +42,18 @@ grep -q 'peter-evans/create-pull-request@v8' "$ROOT/.github/workflows/update-mih
 
 echo "[TEST] install order and resolver policy"
 grep -q 'for component in mihomo conda mamba codex github tmux' "$ROOT/envpilot.sh"
+grep -q 'update|upgrade) run_update' "$ROOT/envpilot.sh"
+grep -q 'EP_UPGRADE="1"' "$ROOT/envpilot.sh"
+grep -q 'BASHRC_PROXY_ENABLE_SOCKS="${BASHRC_PROXY_ENABLE_SOCKS:-0}"' "$ROOT/templates/bashrc"
+grep -q 'proxy_no_proxy_add()' "$ROOT/templates/bashrc"
+grep -q 'Proxy is not listening at %s:%s' "$ROOT/templates/bashrc"
+grep -q 'ep_tmux_target_version' "$ROOT/components/tmux.sh"
+grep -q 'ep_update_conda' "$ROOT/components/conda.sh"
+grep -q 'action=updated' "$ROOT/components/mamba.sh" "$ROOT/components/codex.sh"
+grep -q '"update","upgrade"' "$ROOT/envpilot.ps1"
+grep -q '$Script:Upgrade' "$ROOT/envpilot.ps1"
+grep -q 'Add-EnvpilotNoProxy' "$ROOT/templates/Microsoft.PowerShell_profile.ps1"
+grep -q 'Proxy is not listening at' "$ROOT/templates/Microsoft.PowerShell_profile.ps1"
 grep -q 'update-mihomo-cache' "$ROOT/envpilot.sh"
 grep -q 'restore) run_restore' "$ROOT/envpilot.sh"
 grep -q 'mihomo) run_mihomo' "$ROOT/envpilot.sh"
@@ -114,7 +126,7 @@ grep -q 'Node.js: not found' "$codex_output"
 grep -q 'Node.js source: nvm' "$codex_output"
 grep -q 'Node.js target:' "$codex_output"
 grep -q 'Node.js 22+ is required for Codex' "$codex_output"
-grep -q 'Installing Codex CLI from the npm registry' "$ROOT/components/codex.sh"
+grep -q 'Installing the latest compatible Codex CLI from the npm registry' "$ROOT/components/codex.sh"
 
 grep -q '^!downloads/mihomo-linux-amd64-compatible-\*\.gz$' "$ROOT/.gitignore"
 grep -q '^!downloads/mihomo-windows-amd64-compatible-\*\.zip$' "$ROOT/.gitignore"
@@ -210,6 +222,10 @@ tmp_home="$(mktemp -d)"
     EP_MIHOMO_TAKEOVER_EXISTING_PROCESSES='123 /work/old/Mihomo/bin/mihomo -d /work/old/config'
     EP_MIHOMO_TAKEOVER_EXISTING_PROCESS_VERSIONS='pid=123 version=v1.18.0'
     EP_MIHOMO_TAKEOVER_EXISTING_DETECTED=true
+    EP_MIHOMO_TAKEOVER_EXISTING_MANAGED=true
+    EP_MIHOMO_TAKEOVER_MANAGED_RUNTIME_WAS_RUNNING=true
+    EP_MIHOMO_TAKEOVER_MANAGED_RUNTIME_RESTARTED=true
+    EP_MIHOMO_TAKEOVER_EXISTING_CONFIG_PRESERVED=true
     EP_MIHOMO_TAKEOVER_EXISTING_STOPPED=true
     EP_MIHOMO_TAKEOVER_STOP_SIGNALS=TERM,KILL
     EP_MIHOMO_TAKEOVER_PROXY_ENV_WAS_SET=true
@@ -231,6 +247,10 @@ import json
 import sys
 report = json.load(open(sys.argv[1], encoding="utf-8"))
 assert report["existing_processes_detected"] is True
+assert report["existing_processes_envpilot_managed"] is True
+assert report["managed_runtime_was_running"] is True
+assert report["managed_runtime_restarted"] is True
+assert report["existing_config_preserved"] is True
 assert report["existing_processes_stopped"] is True
 assert report["before_ports"]["proxy_listening"] is True
 assert report["after_stop_ports"]["proxy_listening"] is False
@@ -296,6 +316,59 @@ status_check="$(
     bash --noprofile --norc -ic '. "'"$ROOT/templates/bashrc"'"; if proxy_port_is_listening; then printf yes; else printf no; fi' 2>/dev/null | tail -n 1
 )"
 [ "$status_check" = "yes" ]
+
+echo "[TEST] proxy helpers preserve no_proxy and gate SOCKS"
+tmp_home="$(mktemp -d)"
+tmp_bin="$(mktemp -d)"
+cat > "$tmp_bin/ss" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+cat > "$tmp_bin/nc" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+chmod +x "$tmp_bin/ss" "$tmp_bin/nc"
+proxy_values="$(
+    HOME="$tmp_home" \
+    PATH="$tmp_bin:$PATH" \
+    no_proxy="login,compute,10.0.0.0/8" \
+    BASHRC_AUTO_START_MIHOMO=0 \
+    BASHRC_AUTO_ENABLE_PROXY=0 \
+    BASHRC_AUTO_LOAD_MODULES=0 \
+    BASHRC_AUTO_LOAD_SECRETS=0 \
+    bash --noprofile --norc -ic '. "'"$ROOT/templates/bashrc"'"; proxy_on; printf "%s|%s|%s" "$http_proxy" "${all_proxy-unset}" "$no_proxy"' 2>/dev/null | tail -n 1
+)"
+case "$proxy_values" in
+    "http://127.0.0.1:42290|unset|"*"login"*"compute"*"10.0.0.0/8"*"localhost"*"127.0.0.1"*"::1"*) ;;
+    *) echo "Unexpected proxy environment: $proxy_values" >&2; exit 1 ;;
+esac
+socks_value="$(
+    HOME="$tmp_home" \
+    PATH="$tmp_bin:$PATH" \
+    BASHRC_PROXY_ENABLE_SOCKS=1 \
+    BASHRC_AUTO_START_MIHOMO=0 \
+    BASHRC_AUTO_ENABLE_PROXY=0 \
+    BASHRC_AUTO_LOAD_MODULES=0 \
+    BASHRC_AUTO_LOAD_SECRETS=0 \
+    bash --noprofile --norc -ic '. "'"$ROOT/templates/bashrc"'"; proxy_on; printf "%s" "$all_proxy"' 2>/dev/null | tail -n 1
+)"
+[ "$socks_value" = "socks5h://127.0.0.1:42290" ]
+cat > "$tmp_bin/nc" <<'EOF'
+#!/usr/bin/env bash
+exit 1
+EOF
+failed_proxy="$(
+    HOME="$tmp_home" \
+    PATH="$tmp_bin:$PATH" \
+    BASHRC_AUTO_START_MIHOMO=0 \
+    BASHRC_AUTO_ENABLE_PROXY=0 \
+    BASHRC_AUTO_LOAD_MODULES=0 \
+    BASHRC_AUTO_LOAD_SECRETS=0 \
+    bash --noprofile --norc -ic '. "'"$ROOT/templates/bashrc"'"; unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY; proxy_on >/dev/null 2>&1 || true; printf "%s" "${http_proxy-unset}"' 2>/dev/null | tail -n 1
+)"
+[ "$failed_proxy" = "unset" ]
+rm -rf "$tmp_home" "$tmp_bin"
 
 echo "[TEST] mihomo dual-port switch updates config and shell.local"
 tmp_home="$(mktemp -d)"
@@ -598,8 +671,31 @@ cmp -s "$ROOT/templates/condarc" "$tmp_mamba/.condarc"
 test ! -e "$tmp_mamba/software/miniconda3/.condarc"
 rm -rf "$tmp_mamba"
 
+echo "[TEST] tmux manifest target and managed Mihomo detection"
+(
+    HOME="$(mktemp -d)"
+    USER="envpilot-test"
+    HOSTNAME="envpilot-host"
+    ENVPILOT_ROOT="$ROOT"
+    . "$ROOT/lib/common.sh"
+    . "$ROOT/lib/platform.sh"
+    . "$ROOT/lib/manifest.sh"
+    . "$ROOT/components/mihomo.sh"
+    . "$ROOT/components/tmux.sh"
+    [ "$(ep_tmux_target_version)" = "3.7b" ]
+    ep_version_at_least 3.7b 3.5a
+    ep_version_at_least 3.10 3.7b
+    ! ep_version_at_least 3.7 3.7b
+    ! ep_version_at_least 3.5a 3.7b
+    managed="$HOME/software/mihomo/mihomo"
+    runtime="$(ep_mihomo_runtime_bin)"
+    ep_mihomo_processes_are_managed "987654321 $managed -d $HOME/.config/mihomo"
+    ep_mihomo_processes_are_managed "987654322 $runtime -d $(ep_mihomo_runtime_dir)"
+    ! ep_mihomo_processes_are_managed "987654323 /opt/external/mihomo -d /opt/external/config"
+)
+
 echo "[TEST] version"
-grep -q '^0\.1\.15$' "$ROOT/VERSION"
+grep -q '^0\.1\.16$' "$ROOT/VERSION"
 
 echo "[TEST] repository license and mirror helpers"
 grep -q '^MIT License$' "$ROOT/LICENSE"

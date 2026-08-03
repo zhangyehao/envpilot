@@ -27,6 +27,7 @@ try {
     if (-not (Test-Path -LiteralPath $baseline)) { throw "baseline file was not created" }
     $baselineText = Get-Content -LiteralPath $baseline -Raw
     Assert-Match $baselineText "powershell-profile" "baseline missing PowerShell profile entry"
+    Assert-Match $baselineText "repo-root" "baseline missing repository location entry"
     Assert-Match $baselineText "mihomo-bin" "baseline missing mihomo binary entry"
 
     Write-Host "[TEST] mihomo status command"
@@ -45,13 +46,54 @@ try {
     Assert-Match $templateText "Set-MihomoPorts" "PowerShell profile template does not define Set-MihomoPorts"
     Assert-Match $templateText "Update-MihomoSubscription" "PowerShell profile template does not define subscription update"
     Assert-Match $templateText "MIHOMO_API_PORT" "PowerShell profile template does not define the API port"
+    Assert-Match $templateText "Add-EnvpilotNoProxy" "PowerShell profile template does not preserve existing no_proxy entries"
+    Assert-Match $templateText "EnvpilotProxyEnableSocks" "PowerShell profile template does not make SOCKS optional"
+    Assert-Match $templateText "Proxy is not listening at" "PowerShell profile template does not gate proxy variables on a listening port"
     $entryText = Get-Content -LiteralPath (Join-Path $Root "envpilot.ps1") -Raw
     Assert-Match $entryText 'Set-EnvpilotProfileLocalPorts -ProxyPort \$proxyPort -ApiPort \$apiPort' "Windows install does not persist both Mihomo ports"
+    Assert-Match $entryText '"update","upgrade"' "Windows entrypoint does not expose update/upgrade commands"
+    Assert-Match $entryText '\$Script:Upgrade' "Windows entrypoint does not bypass completed state during updates"
 
     Write-Host "[TEST] profile port persistence"
     $tokens = $null
     $parseErrors = $null
     $profileAst = [System.Management.Automation.Language.Parser]::ParseFile($template, [ref]$tokens, [ref]$parseErrors)
+
+    Write-Host "[TEST] PowerShell proxy helpers"
+    foreach ($functionName in @("Add-EnvpilotNoProxy","Enable-EnvpilotProxy","Disable-EnvpilotProxy")) {
+        $definition = $profileAst.Find({
+            param($node)
+            $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $functionName
+        }, $true)
+        if (-not $definition) { throw "PowerShell profile function not found: $functionName" }
+        Invoke-Expression $definition.Extent.Text
+    }
+    function Test-MihomoPort { return $true }
+    $Global:EnvpilotProxyEnableSocks = $false
+    $env:no_proxy = "login,compute,10.0.0.0/8"
+    $env:NO_PROXY = $env:no_proxy
+    Enable-EnvpilotProxy -HostName "127.0.0.1" -Port 42290
+    if ($env:http_proxy -ne "http://127.0.0.1:42290") { throw "PowerShell proxy helper did not set HTTP proxy" }
+    if ($env:all_proxy) { throw "PowerShell proxy helper enabled SOCKS by default" }
+    Assert-Match $env:no_proxy "login" "PowerShell proxy helper removed existing no_proxy entries"
+    Assert-Match $env:no_proxy "localhost" "PowerShell proxy helper did not append localhost"
+    Disable-EnvpilotProxy
+    if ($env:http_proxy) { throw "PowerShell proxy helper did not clear HTTP proxy" }
+    Assert-Match $env:no_proxy "login" "PowerShell proxy disable removed no_proxy"
+    $Global:EnvpilotProxyEnableSocks = $true
+    Enable-EnvpilotProxy -HostName "127.0.0.1" -Port 42290
+    if ($env:all_proxy -ne "socks5h://127.0.0.1:42290") { throw "PowerShell proxy helper did not enable optional SOCKS" }
+    Disable-EnvpilotProxy
+    function Test-MihomoPort { return $false }
+    try {
+        Enable-EnvpilotProxy -HostName "127.0.0.1" -Port 42290
+        throw "PowerShell proxy helper accepted a closed port"
+    } catch {
+        if ($_.Exception.Message -notmatch "Proxy is not listening") { throw }
+    }
+    if ($env:http_proxy) { throw "PowerShell proxy helper left variables after a closed-port failure" }
+    Remove-Item Env:no_proxy,Env:NO_PROXY -ErrorAction SilentlyContinue
+
     $saveFunction = $profileAst.Find({
         param($node)
         $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq "Save-MihomoPorts"

@@ -87,6 +87,7 @@ ep_capture_doctor_baseline()
     shell_target="$(ep_shell_profile_target)"
     ep_baseline_record_file shell-profile "$shell_target"
     ep_baseline_record_file shell-local "$EP_CONFIG_DIR/shell.local"
+    ep_baseline_record_file repo-root "$EP_REPO_ROOT_FILE"
     ep_baseline_record_file condarc "$HOME/.condarc"
     ep_baseline_record_file mihomo-config "$HOME/.config/mihomo/config.yaml"
     ep_baseline_record_file mihomo-country "$HOME/.config/mihomo/country.mmdb"

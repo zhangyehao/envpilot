@@ -7,6 +7,7 @@ EP_ASSUME_YES="${EP_ASSUME_YES:-0}"
 EP_CONDA_DISTRIBUTION="${EP_CONDA_DISTRIBUTION:-miniconda}"
 EP_COMMAND="${EP_COMMAND:-}"
 EP_COMPONENT="${EP_COMPONENT:-all}"
+EP_UPGRADE="${EP_UPGRADE:-0}"
 EP_MIHOMO_ACTION="${EP_MIHOMO_ACTION:-status}"
 EP_MIHOMO_PORT="${EP_MIHOMO_PORT:-}"
 EP_MIHOMO_VALUE2="${EP_MIHOMO_VALUE2:-}"
@@ -18,6 +19,7 @@ EP_LOG_FILE=""
 EP_ROLLBACK_LOG=""
 EP_BASELINE_DIR=""
 EP_BASELINE_FILE=""
+EP_REPO_ROOT_FILE=""
 EP_MIHOMO_TAKEOVER_REPORT_FILE=""
 
 ep_timestamp()
@@ -43,9 +45,14 @@ ep_init()
     # Used by lib/baseline.sh after common.sh is sourced by envpilot.sh.
     # shellcheck disable=SC2034
     EP_BASELINE_FILE="$EP_BASELINE_DIR/baseline.tsv"
+    EP_REPO_ROOT_FILE="$EP_CONFIG_DIR/repo-root"
     # shellcheck disable=SC2034  # consumed by the sourced Mihomo component
     EP_MIHOMO_TAKEOVER_REPORT_FILE="$EP_CONFIG_DIR/mihomo-takeover-report.json"
     mkdir -p "$EP_CONFIG_DIR/logs" "$EP_CONFIG_DIR/backups"
+    if [ -n "${ENVPILOT_ROOT:-}" ] && [ -f "$ENVPILOT_ROOT/envpilot.sh" ]; then
+        printf '%s\n' "$ENVPILOT_ROOT" > "$EP_REPO_ROOT_FILE.tmp"
+        mv "$EP_REPO_ROOT_FILE.tmp" "$EP_REPO_ROOT_FILE"
+    fi
     trap ep_on_interrupt INT TERM
 }
 

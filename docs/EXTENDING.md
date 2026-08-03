@@ -113,6 +113,24 @@ Shell templates must:
 
 If a profile migration is needed, prefer writing a new template or helper file instead of growing the main profile into a branchy script.
 
+Proxy helpers must check that the configured port is listening before exporting variables, default to HTTP/HTTPS only, make SOCKS opt-in, append to existing `no_proxy`, and leave `no_proxy` intact when disabling proxy variables.
+
+## Component update contract
+
+`install` may honor completed state. `update` / `upgrade` must bypass completed state and re-evaluate the selected component without requiring `reset`.
+
+Each component update path must:
+
+- resolve the newest stable version compatible with the detected OS, architecture, libc/runtime, and existing environment
+- report the current version, selected target, source, path, and why an update was applied or skipped
+- avoid overwriting administrator-managed system tools when envpilot cannot prove ownership
+- preserve user configuration and restore the previous running state when updating an envpilot-managed service
+- keep install and update behavior covered on Unix and PowerShell entrypoints
+
+Mihomo updates preserve an existing envpilot `config.yaml` and restart the managed runtime only if it was running before the update. Conda and Mamba defer compatibility selection to the current Conda solver. tmux compares the current command with `manifests/tmux.json` and builds the target in user space when the system/module version is older. Codex updates through npm; GitHub CLI updates only an envpilot-managed copy on Unix and uses winget on Windows when available.
+
+Every initialized run records the repository path in `~/.config/envpilot/repo-root`. Shell templates may default to `$HOME/envpilot`, but must fall back to this recorded path so a repository cloned elsewhere remains manageable after upgrades.
+
 ## Tests
 
 Add fixtures for:

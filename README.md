@@ -79,7 +79,7 @@ export MIHOMO_API_PORT=60290
 
 bash envpilot.sh install mihomo
 bash envpilot.sh apply-shell
-# 建立立刻vim ~/.bashrc 将开头的几个BASHRC_AUTO默认值改为1
+# 可选：vim ~/.bashrc，将需要自动启用的 BASHRC_INIT_CONDA / BASHRC_AUTO_* 默认值改为 1
 source ~/.bashrc
 
 mihomo start
@@ -90,6 +90,14 @@ bash envpilot.sh install
 ```
 
 默认不会自动启动 Mihomo，也不会自动设置代理环境变量。需要代理时执行 `proxy_on`，不用时执行 `proxy_off`。
+
+`proxy_on` 会先确认 `${MIHOMO_PROXY_HOST}:${MIHOMO_PROXY_PORT}` 确实正在监听；检查失败时直接返回，不会留下导致 `Connection refused` 的错误代理变量。默认只设置 HTTP/HTTPS 代理，这对 Conda、Git、curl 和 Codex 通常更稳。确实需要 SOCKS 时，在 `~/.config/envpilot/shell.local` 中设置：
+
+```bash
+BASHRC_PROXY_ENABLE_SOCKS=1
+```
+
+envpilot 只向已有 `no_proxy/NO_PROXY` 追加 `localhost`、`127.0.0.1` 和 `::1`，不会覆盖集群内部域名或网段；`proxy_off` 只清理代理地址并保留 `no_proxy`。
 
 ## Mihomo 运行模型
 
@@ -167,13 +175,13 @@ external-controller: 127.0.0.1:60290
 
 ## Mihomo 接管已有进程
 
-执行 install mihomo 时，envpilot 会先记录当前用户的 Mihomo 进程、版本和目标端口，然后在确认后向已有 Mihomo 发送 SIGTERM，等待几秒；仍未退出时发送 SIGKILL。停止后会重新检查 MIHOMO_PROXY_PORT 和 MIHOMO_API_PORT，端口仍被占用就中止安装，不会生成一个无法启动的配置。
+执行 `install mihomo` 或 `update mihomo` 时，envpilot 会先记录当前用户的 Mihomo 进程、版本和目标端口，然后在确认后向已有 Mihomo 发送 SIGTERM，等待几秒；仍未退出时发送 SIGKILL。停止后会重新检查 `MIHOMO_PROXY_PORT` 和 `MIHOMO_API_PORT`，端口仍被占用就中止安装，不会生成一个无法启动的配置。
 
-安装流程会优先使用当前架构匹配的 downloads 缓存；如果已有 envpilot 二进制版本与选中的 stable 版本一致，则保留二进制，只更新脚本和数据，否则安装或更新二进制。旧 Mihomo 的代理环境变量不会继续用于下载，安装过程会清除当前脚本进程继承的代理变量。
+安装流程会优先使用当前架构匹配的 `downloads/` 缓存；如果已有 envpilot 二进制版本与选中的 stable 版本一致，则保留二进制，只更新脚本和数据，否则安装或更新二进制。旧 Mihomo 的代理环境变量不会继续用于下载，安装过程会清除当前脚本进程继承的代理变量。
 
-接管记录保存到 ~/.config/envpilot/mihomo-takeover-report.json。安装完成后不会自动启动 Mihomo；确认订阅配置后执行 mihomo start。没有提供新订阅链接时，如果检测到旧 Mihomo，旧 config.yaml 会先备份并改名为 config.yaml.disabled.TIMESTAMP，防止重新使用旧代理渠道。
+接管记录保存到 `~/.config/envpilot/mihomo-takeover-report.json`。如果检测到的是 envpilot 已管理的 Mihomo，升级会保留现有 `config.yaml`，不会再次要求粘贴订阅；升级前正在运行的实例会在完成后自动恢复。如果检测到外部 Mihomo 且没有提供新订阅，旧配置才会备份并改名为 `config.yaml.disabled.TIMESTAMP`，防止继续使用旧代理渠道。
 
-如果当前主机只能通过旧代理访问外网，请提前准备 downloads/ 离线资产，或确认主机具备直连网络；因为接管后旧代理不会被用于下载。
+如果当前主机只能通过旧代理访问外网，请提前准备 `downloads/` 离线资产，或确认主机具备直连网络；因为接管外部代理后，旧代理不会被用于下载。
 
 ## Mihomo 订阅更新
 
@@ -252,7 +260,8 @@ downloads/geoip.metadb
 | 命令 | 作用 |
 | --- | --- |
 | `doctor` | 只检查，不安装；同时记录本次 restore baseline。 |
-| `install [all|mihomo|conda|mamba|codex|github|tmux]` | 安装组件；在线模式优先使用匹配的受控缓存。 |
+| `install [all|mihomo|conda|mamba|codex|github|tmux]` | 首次安装组件；在线模式优先使用匹配的受控缓存。 |
+| `update [all|mihomo|conda|mamba|codex|github|tmux]` | 忽略已完成状态，重新解析当前系统可兼容的 stable 版本并更新。 |
 | `apply-shell` | 备份并替换当前 shell/profile。 |
 | `mihomo start|stop|status` | 管理和检查 Mihomo。 |
 | `mihomo ports PROXY API` | 完整修改双端口并重启。 |
@@ -272,6 +281,8 @@ bash envpilot.sh install conda --conda-distribution anaconda
 bash envpilot.sh install mihomo --mode offline
 bash envpilot.sh install mihomo --asset-path downloads/mihomo-linux-amd64-compatible-v1.19.29.gz
 bash envpilot.sh install --prefix "$HOME/software"
+bash envpilot.sh update
+bash envpilot.sh update tmux
 ```
 
 ## Baseline、restore 与 rollback
@@ -289,6 +300,31 @@ bash envpilot.sh install --prefix "$HOME/software"
 
 `rollback` 只恢复最近一次备份的单个文件；`restore` 恢复整组 baseline 对象。
 
+## 已有 envpilot 环境如何升级
+
+仓库更新后不要重新 clone 到同一个目录，直接在原仓库执行：
+
+```bash
+cd ~/envpilot
+git pull --ff-only
+bash envpilot.sh doctor
+bash envpilot.sh apply-shell
+source ~/.bashrc
+bash envpilot.sh update
+```
+
+如果仓库不在 `~/envpilot`，任意 envpilot 命令都会把实际位置写入 `~/.config/envpilot/repo-root`；新 shell 模板会先尝试 `$HOME/envpilot`，不存在时再读取该记录。升级命令会绕过旧版本留下的 `~/.config/envpilot/state` 完成状态，不需要先执行 `reset`。
+
+`update` 会逐项处理：
+
+- Mihomo：保留 envpilot 管理的订阅配置，并恢复升级前的运行状态。
+- Conda/Mamba：让当前 Conda 解析当前平台和 base 环境可兼容的新版本，不强行安装不兼容包。
+- Codex：通过 npm 更新 `@openai/codex`。
+- GitHub CLI：只更新 envpilot 管理的用户态副本；系统管理员提供的副本不强制覆盖。
+- tmux：比较 manifest 的 stable 目标；系统/module 版本过低时，在用户目录构建新版本并让 `~/.local/bin/tmux` 优先生效。
+
+Windows 对应命令为 `.\envpilot.ps1 update`，也可使用 `.\envpilot.ps1 install -Upgrade`。
+
 ## Conda / Mamba
 
 - 默认安装官方 Miniconda，也可显式选择 Anaconda。
@@ -300,6 +336,7 @@ bash envpilot.sh install --prefix "$HOME/software"
 - 在共享服务器执行 Conda/Mamba 时会临时清除 `LD_LIBRARY_PATH`、`PYTHONHOME` 和 `PYTHONPATH`，避免 module 或集群环境污染 Conda。
 - 如果 Conda 在事务完成后的清理阶段返回非零，envpilot 会验证实际 `mamba` 可执行文件；只有验证失败才判定安装失败。
 - Mamba 安装到 Conda base；tmux 不通过 Conda/Mamba 提供。
+- `update conda` 和 `update mamba` 由当前 Conda 求解器选择当前系统可安装的新版本，不用固定旧版本号。
 
 可用以下命令确认实际配置来源和频道：
 
@@ -342,7 +379,7 @@ bash scripts/push-mirrors.sh
 
 Windows PowerShell 可运行 `.\scripts\push-mirrors.ps1`。脚本要求位于干净的 `main`，并依次把 `main` 和标签推送到 GitHub `origin` 与 Gitee `gitee`；不会强推。
 
-tmux 优先使用系统命令或 module；非 root Linux 可构建到用户目录。Windows 原生不承诺 tmux，优先使用 WSL、MSYS2 或 Git Bash。
+tmux 优先使用系统命令或 module。执行 `update tmux` 时会把当前版本与 `manifests/tmux.json` 的 stable 目标比较；系统版本较低且不能由管理员更新时，envpilot 会在用户目录构建兼容的新版本并链接到 `~/.local/bin/tmux`。Windows 原生不承诺 tmux，优先使用 WSL、MSYS2 或 Git Bash。
 
 ## Actions 与发布
 

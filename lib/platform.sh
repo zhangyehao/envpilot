@@ -39,7 +39,39 @@ ep_version_at_least()
 {
     local current="$1"
     local minimum="$2"
-    [ "$(printf '%s\n%s\n' "$current" "$minimum" | sort -V | head -n1)" = "$minimum" ]
+    awk -v current="$current" -v minimum="$minimum" '
+        function trim_prefix(value) {
+            sub(/^[^0-9]*/, "", value)
+            return value
+        }
+        function compare(left, right, left_parts, right_parts, left_count, right_count, count, i, left_num, right_num, left_suffix, right_suffix) {
+            left = trim_prefix(left)
+            right = trim_prefix(right)
+            left_count = split(left, left_parts, /[._+-]/)
+            right_count = split(right, right_parts, /[._+-]/)
+            count = left_count > right_count ? left_count : right_count
+            for (i = 1; i <= count; i++) {
+                match(left_parts[i], /^[0-9]+/)
+                left_num = RLENGTH ? substr(left_parts[i], 1, RLENGTH) + 0 : 0
+                left_suffix = RLENGTH ? substr(left_parts[i], RLENGTH + 1) : left_parts[i]
+                match(right_parts[i], /^[0-9]+/)
+                right_num = RLENGTH ? substr(right_parts[i], 1, RLENGTH) + 0 : 0
+                right_suffix = RLENGTH ? substr(right_parts[i], RLENGTH + 1) : right_parts[i]
+                if (left_num != right_num) {
+                    return left_num > right_num ? 1 : -1
+                }
+                if (left_suffix != right_suffix) {
+                    if (left_suffix == "") return -1
+                    if (right_suffix == "") return 1
+                    return left_suffix > right_suffix ? 1 : -1
+                }
+            }
+            return 0
+        }
+        BEGIN {
+            exit(compare(current, minimum) >= 0 ? 0 : 1)
+        }
+    '
 }
 
 ep_platform_detect()

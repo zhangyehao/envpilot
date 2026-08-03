@@ -100,6 +100,24 @@ Shell 模板必须：
 
 如果需要迁移 profile，优先写新模板或辅助文件，不要把主 profile 写成一大串分支脚本。
 
+代理辅助函数必须先检查目标端口正在监听，再导出代理变量；默认只启用 HTTP/HTTPS，SOCKS 必须显式开启；只能向已有 `no_proxy` 追加本地地址，关闭代理时不得清空 `no_proxy`。
+
+## 组件升级契约
+
+`install` 可以遵循已完成状态；`update` / `upgrade` 必须绕过已完成状态并重新检查目标组件，用户不需要先执行 `reset`。
+
+每个组件的升级路径必须：
+
+- 根据 OS、架构、libc/runtime 和现有环境选择可兼容的最新 stable 版本
+- 报告当前版本、目标版本、来源、路径以及更新或跳过原因
+- 无法确认所有权时，不覆盖管理员维护的系统工具
+- 更新 envpilot 已管理服务时保留用户配置，并恢复升级前的运行状态
+- 同时覆盖 Unix 和 PowerShell 入口的 install/update 测试
+
+Mihomo 升级必须保留已有 envpilot `config.yaml`，并且只在升级前本来就在运行时自动重启。Conda 和 Mamba 由当前 Conda 求解器选择兼容版本。tmux 将当前命令与 `manifests/tmux.json` 比较，系统或 module 版本过低时构建用户态目标版本。Codex 通过 npm 更新；GitHub CLI 在 Unix 上只更新 envpilot 管理的副本，Windows 上优先交给 winget。
+
+每次初始化都会把仓库实际位置记录到 `~/.config/envpilot/repo-root`。Shell 模板可以默认使用 `$HOME/envpilot`，但必须在该目录无效时读取记录路径，确保仓库 clone 到其他位置后仍可升级和管理。
+
 ## 测试
 
 新增组件时，至少补这些 fixture：

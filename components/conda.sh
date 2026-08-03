@@ -187,6 +187,37 @@ ep_write_condarc()
     [ -n "$conda_path" ] && ep_prune_conda_default_seed_config "$conda_path"
 }
 
+ep_update_conda()
+{
+    local conda_path="$1"
+    local before_version after_version
+    before_version="$(ep_run_conda_clean "$conda_path" --version 2>/dev/null || true)"
+    ep_log "Component: conda"
+    ep_log "Current Conda: ${before_version:-unknown} at $conda_path"
+    ep_log "Update strategy: let Conda resolve the newest compatible base conda package for this platform."
+    ep_write_condarc "$conda_path"
+
+    if [ "$EP_MODE" = "offline" ]; then
+        ep_warn "Offline mode cannot resolve a newer Conda package; keeping ${before_version:-the current version}."
+        ep_state_mark_done conda
+        ep_report_event conda skipped "offline update requires a prepared package cache" "$before_version" "$HOME/.condarc" "$conda_path"
+        return 0
+    fi
+
+    ep_confirm "Update the Conda base command to the newest compatible package?" "yes" || {
+        ep_report_event conda skipped "user declined update" "$before_version" "" "$conda_path"
+        return 0
+    }
+    if ! ep_run_conda_clean "$conda_path" update -n base -y conda; then
+        ep_report_event conda failed "conda self-update failed" "$before_version" "$HOME/.condarc" "$conda_path"
+        ep_die "Conda update failed. The existing installation remains at $conda_path."
+    fi
+    after_version="$(ep_run_conda_clean "$conda_path" --version 2>/dev/null || true)"
+    ep_state_mark_done conda
+    ep_report_event conda updated "resolved newest compatible base conda package" "$after_version" "$HOME/.condarc" "$conda_path"
+    ep_log "Conda update complete: ${before_version:-unknown} -> ${after_version:-unknown}"
+}
+
 ep_install_conda()
 {
     ep_require_unix_runtime
@@ -196,6 +227,10 @@ ep_install_conda()
     target_conda="$target/bin/conda"
 
     if [ -x "$target_conda" ]; then
+        if [ "$EP_UPGRADE" = "1" ]; then
+            ep_update_conda "$target_conda"
+            return 0
+        fi
         ep_log "Conda already available at requested target: $target_conda"
         ep_write_condarc "$target_conda"
         ep_state_mark_done conda
@@ -208,6 +243,10 @@ ep_install_conda()
     fi
 
     if [ "$(ep_conda_distribution)" = "miniconda" ] && existing_conda="$(ep_conda_bin 2>/dev/null)"; then
+        if [ "$EP_UPGRADE" = "1" ]; then
+            ep_update_conda "$existing_conda"
+            return 0
+        fi
         ep_log "Conda already available: $existing_conda"
         ep_write_condarc "$existing_conda"
         ep_state_mark_done conda
