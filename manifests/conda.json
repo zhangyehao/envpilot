@@ -55,8 +55,8 @@
     "condarc_template": "templates/condarc"
   },
   "latest": {
-    "checked_at": "2026-07-28T09:36:50Z",
-    "policy": "vendor latest Miniconda URLs are used when compatible; Linux glibc 2.17-2.27 uses the newest archived Miniconda installer that still works on the detected platform; Anaconda is opt-in and uses the newest installable archive for the detected platform",
+    "checked_at": "2026-08-03T08:23:49Z",
+    "policy": "vendor latest Miniconda URLs are used when compatible; Linux glibc 2.17-2.27 uses an archived Miniconda installer; Anaconda is opt-in and may require a user-supplied compatible asset on old glibc",
     "assets": [
       {
         "os": "linux",
