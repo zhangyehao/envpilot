@@ -657,7 +657,7 @@ function Show-Doctor {
     Write-Info "Architecture: $($Script:Platform.Arch)"
     Write-Info "Administrator: $($Script:Platform.IsRoot)"
     Write-Info "Prefix: $Prefix"
-    foreach ($cmd in "git","gh","ssh","conda","mamba","node","npm","codex","wsl") {
+    foreach ($cmd in "git","python","gh","ssh","conda","mamba","node","npm","codex","wsl") {
         if (Test-Command $cmd) {
             Write-Info "${cmd}: $(Get-Command $cmd | Select-Object -ExpandProperty Source)"
         } else {
@@ -845,9 +845,67 @@ function Install-Mihomo {
         Remove-Item -LiteralPath $binaryBackup -Force -ErrorAction SilentlyContinue
     }
 }
+function ConvertFrom-SecureStringPlain {
+    param([System.Security.SecureString]$Value)
+    $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($Value)
+    try { return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr) }
+    finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr) }
+}
+
+function Get-CodexApiKey {
+    if ($env:OPENAI_API_KEY) { return [pscustomobject]@{ Value = $env:OPENAI_API_KEY; Source = "OPENAI_API_KEY environment variable" } }
+    $files = @(
+        (Join-Path $HOME ".config/secrets/api.env.ps1"),
+        (Join-Path $HOME ".config/secrets/api.env")
+    )
+    foreach ($file in $files) {
+        if (-not (Test-Path -LiteralPath $file)) { continue }
+        if ($file.EndsWith(".ps1")) {
+            try { . $file | Out-Null } catch { continue }
+            if ($env:OPENAI_API_KEY) { return [pscustomobject]@{ Value = $env:OPENAI_API_KEY; Source = $file } }
+        } else {
+            $line = Get-Content -LiteralPath $file -ErrorAction SilentlyContinue | Where-Object { $_ -match '^\s*(?:export\s+)?OPENAI_API_KEY\s*=' } | Select-Object -First 1
+            if ($line -match '^\s*(?:export\s+)?OPENAI_API_KEY\s*=\s*["'']?([^"'']+)') {
+                return [pscustomobject]@{ Value = $matches[1].Trim(); Source = $file }
+            }
+        }
+    }
+    if ($env:env_key -and (Confirm-Step "Detected lowercase env_key. Use it as OPENAI_API_KEY?" $true)) {
+        return [pscustomobject]@{ Value = $env:env_key; Source = "corrected lowercase env_key" }
+    }
+    return $null
+}
+
+function Write-CodexAuth {
+    $candidate = Get-CodexApiKey
+    if (-not $candidate) {
+        Write-Warn "No OPENAI_API_KEY was detected. Obtain an OpenAI-compatible key from your provider, for example YanHuoAPI."
+        if (-not (Confirm-Step "Enter an API key now? (input is hidden)" $true)) {
+            Write-Warn "Codex CLI was configured but auth.json was not generated."
+            return
+        }
+        $secure = Read-Host "OpenAI-compatible API key" -AsSecureString
+        $value = ConvertFrom-SecureStringPlain $secure
+        if ([string]::IsNullOrWhiteSpace($value)) {
+            Write-Warn "Empty API key; auth.json was not generated."
+            return
+        }
+        $candidate = [pscustomobject]@{ Value = $value; Source = "interactive input" }
+    }
+    $auth = Join-Path $HOME ".codex/auth.json"
+    if (-not (Confirm-Step "Write plaintext API key to $auth?" $false)) {
+        Write-Warn "auth.json was not changed. Use Use-EnvpilotSecrets before running Codex."
+        return
+    }
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $auth) | Out-Null
+    Backup-File $auth
+    [pscustomobject]@{ OPENAI_API_KEY = $candidate.Value } | ConvertTo-Json | Set-Content -LiteralPath $auth -Encoding UTF8
+    Write-Info "Wrote Codex auth.json without displaying the key. Source: $($candidate.Source)"
+}
+
 function Install-Codex {
     $action = "configured"
-    Write-Info "Codex config will use env_key=OPENAI_API_KEY and will not write auth.json."
+    Write-Info "Codex config will use env_key=OPENAI_API_KEY. If a key is detected, envpilot will ask before writing ~/.codex/auth.json."
     if (-not (Test-Command npm)) {
         if (Test-Command winget) {
             if (Confirm-Step "Install Node.js LTS with winget?" $true) {
@@ -885,10 +943,73 @@ base_url = "https://yanhuoapi.com/v1"
 wire_api = "responses"
 env_key = "OPENAI_API_KEY"
 '@ | Set-Content -LiteralPath $config -Encoding UTF8
+    Write-CodexAuth
     $codexCommand = Get-Command codex -ErrorAction SilentlyContinue
     $version = if ($codexCommand) { (& codex --version 2>$null | Out-String).Trim() } else { "" }
     Add-ReportEvent "codex" $action "installed or updated Codex and configured env_key" $version "npm:@openai/codex" $(if ($codexCommand) { $codexCommand.Source } else { "" })
     Mark-StateDone "codex"
+}
+
+function Get-ToolMajorVersion {
+    param([string]$CommandName, [string[]]$Arguments = @("--version"))
+    $command = Get-Command $CommandName -ErrorAction SilentlyContinue
+    if (-not $command) { return $null }
+    $output = (& $command.Source @Arguments 2>$null | Select-Object -First 1 | Out-String).Trim()
+    $match = [regex]::Match($output, "(\d+\.\d+(\.\d+)?)")
+    if (-not $match.Success) { return $null }
+    try { return [version]$match.Groups[1].Value } catch { return $null }
+}
+
+function Install-Git {
+    $git = Get-Command git -ErrorAction SilentlyContinue
+    $version = if ($git) { Get-ToolMajorVersion "git" } else { $null }
+    if ($git -and $version -and $version -ge [version]"2.30") {
+        Write-Info "Git $version already satisfies the minimum 2.30 at $($git.Source); system Git will not be overwritten."
+        Add-ReportEvent "git" "skipped" "existing compatible Git retained" $version.ToString() "system PATH" $git.Source
+        Mark-StateDone "git"
+        return
+    }
+    if ($git) { Write-Warn "Existing Git $version is below the envpilot minimum 2.30; a user-scope Git will be installed without deleting it." }
+    if (-not (Test-Command winget)) { Stop-Envpilot "Git is missing or below 2.30 and winget is unavailable. Install Git for Windows manually, then rerun doctor." }
+    if (-not (Confirm-Step "Install/update Git for Windows in user scope?" $true)) { Add-ReportEvent "git" "skipped" "user declined"; return }
+    Write-Info "Source: winget package Git.Git; target is the user installation managed by Windows."
+    $arguments = @("install","--id","Git.Git","--exact","--scope","user","--silent","--accept-package-agreements","--accept-source-agreements")
+    $process = Start-Process -FilePath "winget" -ArgumentList $arguments -Wait -PassThru
+    if ($process.ExitCode -ne 0) { Stop-Envpilot "Git for Windows installation failed with exit $($process.ExitCode)." }
+    $candidates = @(
+        (Join-Path $env:LOCALAPPDATA "Programs/Git/cmd"),
+        (Join-Path $env:ProgramFiles "Git/cmd"),
+        (Join-Path $env:ProgramFiles "Git/bin")
+    )
+    foreach ($candidate in $candidates) { if (Test-Path -LiteralPath $candidate) { Add-PathFront $candidate } }
+    $git = Get-Command git -ErrorAction SilentlyContinue
+    $version = if ($git) { Get-ToolMajorVersion "git" } else { $null }
+    if (-not $git -or -not $version -or $version -lt [version]"2.30") { Stop-Envpilot "Git installation completed but a Git 2.30+ command was not found. Open a new PowerShell and rerun doctor." }
+    Add-ReportEvent "git" "installed" "installed user-scope Git without modifying the previous system installation" $version.ToString() "winget:Git.Git" $git.Source
+    Mark-StateDone "git"
+}
+
+function Install-Python {
+    $python = Get-Command python -ErrorAction SilentlyContinue
+    $version = if ($python) { Get-ToolMajorVersion "python" } else { $null }
+    if ($python -and $version -and $version -ge [version]"3.9") {
+        Write-Info "Python $version already satisfies the minimum 3.9 at $($python.Source); system Python will not be overwritten."
+        Add-ReportEvent "python" "skipped" "existing compatible Python retained" $version.ToString() "system PATH" $python.Source
+        Mark-StateDone "python"
+        return
+    }
+    if ($python) { Write-Warn "Existing Python $version is below the envpilot minimum 3.9; a newer user-scope Python will be installed without deleting it." }
+    if (-not (Test-Command winget)) { Stop-Envpilot "Python is missing or below 3.9 and winget is unavailable. Install a compatible Python 3.9+ build manually, then rerun doctor." }
+    if (-not (Confirm-Step "Install Python 3.13 in user scope?" $true)) { Add-ReportEvent "python" "skipped" "user declined"; return }
+    Write-Info "Compatibility rule: Windows architecture is detected by envpilot; Python 3.13 is selected as a stable supported line, not an unbounded latest version."
+    $arguments = @("install","--id","Python.Python.3.13","--exact","--scope","user","--silent","--accept-package-agreements","--accept-source-agreements")
+    $process = Start-Process -FilePath "winget" -ArgumentList $arguments -Wait -PassThru
+    if ($process.ExitCode -ne 0) { Stop-Envpilot "Python installation failed with exit $($process.ExitCode)." }
+    $python = Get-Command python -ErrorAction SilentlyContinue
+    $version = if ($python) { Get-ToolMajorVersion "python" } else { $null }
+    if (-not $python -or -not $version -or $version -lt [version]"3.9") { Stop-Envpilot "Python installation completed but a Python 3.9+ command was not found. Open a new PowerShell and rerun doctor." }
+    Add-ReportEvent "python" "installed" "installed compatible user-scope Python without replacing the previous interpreter" $version.ToString() "winget:Python.Python.3.13" $python.Source
+    Mark-StateDone "python"
 }
 
 function Install-GitHubCli {
@@ -940,6 +1061,8 @@ function Install-Tmux {
 function Install-One {
     param([string]$Name)
     switch ($Name) {
+        "git" { Install-Git }
+        "python" { Install-Python }
         "conda" { Install-Conda }
         "mamba" { Write-Warn "Install mamba from an initialized Conda shell using the configured channels: conda install -n base -y mamba"; Add-ReportEvent "mamba" "skipped" "requires conda shell initialization" }
         "mihomo" { Install-Mihomo }
@@ -952,7 +1075,7 @@ function Install-One {
 
 function Invoke-Install {
     $Script:Platform = Get-EnvpilotPlatform
-    $names = if ($Component -eq "all") { @("mihomo","conda","mamba","codex","github","tmux") } else { @($Component) }
+    $names = if ($Component -eq "all") { @("git","python","mihomo","conda","mamba","codex","github","tmux") } else { @($Component) }
     foreach ($name in $names) {
         if ((Test-StateDone $name) -and -not $Script:Upgrade) {
             Write-Info "Skip ${name}: already marked done. Use update or -Upgrade to re-check versions."
@@ -1015,9 +1138,9 @@ envpilot - cross-platform user-space environment bootstrapper
 Usage:
   .\envpilot.ps1 doctor
       Show system, shell, proxy, and installed tool status.
-  .\envpilot.ps1 install [all|mihomo|conda|mamba|codex|github|tmux] [-Mode online|offline] [-Prefix PATH] [-AssetPath PATH] [-Upgrade] [-Yes]
+  .\envpilot.ps1 install [all|git|python|mihomo|conda|mamba|codex|github|tmux] [-Mode online|offline] [-Prefix PATH] [-AssetPath PATH] [-Upgrade] [-Yes]
       Install selected component(s). Online is the default.
-  .\envpilot.ps1 update [all|mihomo|conda|mamba|codex|github|tmux]
+  .\envpilot.ps1 update [all|git|python|mihomo|conda|mamba|codex|github|tmux]
       Re-check compatible latest versions and update existing envpilot components.
   .\envpilot.ps1 apply-shell
       Back up and replace the active PowerShell profile.

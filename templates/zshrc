@@ -40,11 +40,15 @@ path_prepend()
 path_prepend "$HOME/.local/bin"
 path_prepend "$HOME/bin"
 path_prepend "$HOME/software/bin"
+path_prepend "$HOME/software/git/current/bin"
+path_prepend "$HOME/software/git/bin"
+path_prepend "$HOME/software/python/current/bin"
+path_prepend "$HOME/software/python/bin"
 
-case $- in
-    *i*) ;;
-    *) return 0 ;;
-esac
+# No real TTY: keep only the minimal environment.
+if [[ $- != *i* || ! -t 0 || ! -t 1 ]]; then
+    return 0
+fi
 
 if [ -z "${EDITOR:-}" ]; then
     command -v vim >/dev/null 2>&1 && export EDITOR=vim

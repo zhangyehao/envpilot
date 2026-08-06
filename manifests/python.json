@@ -1,0 +1,38 @@
+{
+  "name": "python",
+  "kind": "standalone-archive",
+  "upstream": "https://github.com/astral-sh/python-build-standalone",
+  "api": "https://api.github.com/repos/astral-sh/python-build-standalone/releases",
+  "stable_policy": "Prefer Python 3.9 or newer. Reuse a compatible system or Conda Python first. Otherwise select a stable install_only asset matching OS, architecture, and libc; never replace the system interpreter.",
+  "minimum_version": "3.9",
+  "asset_rules": [
+    {
+      "os": "linux",
+      "arch": "amd64",
+      "regex": "cpython-[0-9]+\\.[0-9]+\\.[0-9]+\\+.*-x86_64-unknown-linux-gnu-install_only\\.tar\\.gz"
+    },
+    {
+      "os": "linux",
+      "arch": "arm64",
+      "regex": "cpython-[0-9]+\\.[0-9]+\\.[0-9]+\\+.*-aarch64-unknown-linux-gnu-install_only\\.tar\\.gz"
+    },
+    {
+      "os": "darwin",
+      "arch": "amd64",
+      "regex": "cpython-[0-9]+\\.[0-9]+\\.[0-9]+\\+.*-x86_64-apple-darwin-install_only\\.tar\\.gz"
+    },
+    {
+      "os": "darwin",
+      "arch": "arm64",
+      "regex": "cpython-[0-9]+\\.[0-9]+\\.[0-9]+\\+.*-aarch64-apple-darwin-install_only\\.tar\\.gz"
+    }
+  ],
+  "latest": {
+    "checked_at": "2026-08-06T00:00:00Z",
+    "status": "resolver queries the stable upstream release"
+  },
+  "post_install": {
+    "prefix": "$HOME/software/python/current",
+    "system_python_unchanged": true
+  }
+}

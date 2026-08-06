@@ -22,6 +22,10 @@ function Add-PathFront {
 Add-PathFront (Join-Path $HOME ".local/bin")
 Add-PathFront (Join-Path $HOME "bin")
 Add-PathFront (Join-Path $HOME "software/bin")
+Add-PathFront (Join-Path $HOME "software/git/current/bin")
+Add-PathFront (Join-Path $HOME "software/git/bin")
+Add-PathFront (Join-Path $HOME "software/python/current/bin")
+Add-PathFront (Join-Path $HOME "software/python/bin")
 
 function Use-EnvpilotSecrets {
     param([string]$Path = $EnvpilotSecrets)

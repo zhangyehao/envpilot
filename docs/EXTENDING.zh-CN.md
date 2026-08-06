@@ -162,3 +162,11 @@ Mihomo 的 Unix 实现采用“家目录持久化、节点本地运行”模型�
 - 订阅 URL、API secret 和生成的 `config.yaml` 不得进入测试 fixture 或 Git 历史。
 
 `bootstrap.sh` / `bootstrap.ps1` 使用 partial clone + sparse checkout 按架构选择 `downloads/` 缓存。新增缓存平台时，需要同步更新 bootstrap 选择规则、manifest、更新 Action 和测试。
+
+## Git / Python 组件约定
+
+Git 组件的最低版本是 2.30，Python 组件的最低版本是 3.9。doctor 和 install 必须先验证现有命令的真实版本，不能只用 command -v 判断。达标的系统命令直接复用；低版本系统命令不能被删除或覆盖，新的用户态版本应安装到 prefix/git/current 或 prefix/python/current，并由 shell 模板在非交互 TTY 守卫之前加入 PATH。
+
+Git 的 Linux/macOS 兜底路径是用户态源码构建，因此 manifest 必须记录稳定源码版本、离线文件名和构建依赖检查。Python 优先使用系统或 Conda 解释器，兜底资产必须同时匹配 OS、架构和 libc。新增版本下限时，要同步修改组件、manifest、doctor 输出、README、PowerShell 实现和 fixture 测试。
+
+Codex 组件不得把密钥写入日志。密钥来源、auth.json 写入和明文配置覆盖都必须单独确认；新增敏感配置文件时要加入 doctor baseline、备份、rollback/restore 和 gitignore 规则。

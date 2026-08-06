@@ -101,10 +101,13 @@ ep_capture_doctor_baseline()
     ep_baseline_record_file mihomo-log "$HOME/logs/mihomo.log"
     ep_baseline_record_file mihomo-state-log "$HOME/.local/state/mihomo/start.log"
     ep_baseline_record_file codex-config "$HOME/.codex/config.toml"
+    ep_baseline_record_file codex-auth "$HOME/.codex/auth.json"
     ep_baseline_record_file codex-secrets "$HOME/.config/secrets/api.env.example"
     ep_baseline_record_file gh-link "$HOME/.local/bin/gh"
     ep_baseline_record_file tmux-link "$HOME/.local/bin/tmux"
 
+    ep_baseline_record_dir git-prefix "$EP_PREFIX/git"
+    ep_baseline_record_dir python-prefix "$EP_PREFIX/python"
     ep_baseline_record_dir conda-miniconda-prefix "$EP_PREFIX/miniconda3"
     ep_baseline_record_dir conda-anaconda-prefix "$EP_PREFIX/anaconda3"
     ep_baseline_record_dir github-prefix "$EP_PREFIX/github-cli"
@@ -112,6 +115,8 @@ ep_capture_doctor_baseline()
     ep_baseline_record_dir nvm-dir "$HOME/.nvm"
     ep_baseline_record_dir tmux-prefix "$HOME/.local/envpilot"
 
+    ep_baseline_record_tool git "$(command -v git 2>/dev/null || true)"
+    ep_baseline_record_tool python "$(command -v python3 2>/dev/null || command -v python 2>/dev/null || true)"
     ep_baseline_record_tool conda "$(command -v conda 2>/dev/null || true)"
     ep_baseline_record_tool mamba "$(command -v mamba 2>/dev/null || true)"
     ep_baseline_record_tool codex "$(command -v codex 2>/dev/null || true)"

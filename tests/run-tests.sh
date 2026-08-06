@@ -41,7 +41,7 @@ grep -q 'country.mmdb' "$ROOT/.github/workflows/update-mihomo-cache.yml"
 grep -q 'peter-evans/create-pull-request@v8' "$ROOT/.github/workflows/update-mihomo-cache.yml"
 
 echo "[TEST] install order and resolver policy"
-grep -q 'for component in mihomo conda mamba codex github tmux' "$ROOT/envpilot.sh"
+grep -q 'for component in git python mihomo conda mamba codex github tmux' "$ROOT/envpilot.sh"
 grep -q 'update|upgrade) run_update' "$ROOT/envpilot.sh"
 grep -q 'EP_UPGRADE="1"' "$ROOT/envpilot.sh"
 grep -q 'BASHRC_PROXY_ENABLE_SOCKS="${BASHRC_PROXY_ENABLE_SOCKS:-0}"' "$ROOT/templates/bashrc"
@@ -88,6 +88,111 @@ grep -q 'sparse-checkout' "$ROOT/bootstrap.sh"
 grep -q 'Source URL:' "$ROOT/lib/download.sh"
 ! grep -qi 'miniforge' "$ROOT/components/conda.sh" "$ROOT/manifests/conda.json" "$ROOT/templates/bashrc" "$ROOT/templates/zshrc" "$ROOT/scripts/collect-assets.sh" "$ROOT/scripts/collect-assets.ps1"
 
+echo "[TEST] Git/Python minimum-version fixtures"
+fixture_home="$(mktemp -d)"
+fixture_bin="$(mktemp -d)"
+cat > "$fixture_bin/git" <<'EOF'
+#!/usr/bin/env bash
+printf 'git version %s\n' "${FIXTURE_GIT_VERSION:-2.30.0}"
+EOF
+cat > "$fixture_bin/python3" <<'EOF'
+#!/usr/bin/env bash
+if [ "$1" = "--version" ]; then
+    printf 'Python %s\n' "${FIXTURE_PYTHON_VERSION:-3.9.0}"
+elif [ "$1" = "-c" ]; then
+    case "${FIXTURE_PYTHON_VERSION:-3.9.0}" in
+        3.8*) exit 1 ;;
+        *) exit 0 ;;
+    esac
+fi
+EOF
+cat > "$fixture_bin/make" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+cp "$fixture_bin/make" "$fixture_bin/cc"
+chmod +x "$fixture_bin/git" "$fixture_bin/python3" "$fixture_bin/make" "$fixture_bin/cc"
+: > "$fixture_home/git-2.29.0.tar.xz"
+: > "$fixture_home/cpython-3.8.0+fixture-x86_64-unknown-linux-gnu-install_only.tar.gz"
+(
+    export HOME="$fixture_home"
+    export PATH="$fixture_bin:/usr/bin:/bin"
+    export FIXTURE_GIT_VERSION=2.30.0
+    export ENVPILOT_ROOT="$ROOT" EP_PREFIX="$fixture_home/software"
+    export EP_LIBC=glibc EP_GLIBC_VERSION=2.17 EP_MODE=offline EP_ASSUME_YES=1
+    . "$ROOT/lib/common.sh"
+    . "$ROOT/lib/download.sh"
+    . "$ROOT/lib/platform.sh"
+    export EP_OS=linux EP_ARCH=amd64 EP_LIBC=glibc EP_GLIBC_VERSION=2.17
+    . "$ROOT/components/git.sh"
+    ep_init
+    ep_report_start install git
+    ep_install_git
+    ep_report_finish
+)
+grep -q '^git=done:' "$fixture_home/.config/envpilot/state"
+test ! -e "$fixture_home/software/git/current/bin/git"
+set +e
+(
+    export HOME="$fixture_home"
+    export PATH="$fixture_bin:/usr/bin:/bin"
+    export FIXTURE_GIT_VERSION=2.29.0
+    export EP_ASSET_PATH="$fixture_home/git-2.29.0.tar.xz"
+    export ENVPILOT_ROOT="$ROOT" EP_PREFIX="$fixture_home/software"
+    export EP_LIBC=glibc EP_GLIBC_VERSION=2.17 EP_MODE=offline EP_ASSUME_YES=1
+    . "$ROOT/lib/common.sh"
+    . "$ROOT/lib/download.sh"
+    . "$ROOT/lib/platform.sh"
+    export EP_OS=linux EP_ARCH=amd64 EP_LIBC=glibc EP_GLIBC_VERSION=2.17
+    . "$ROOT/components/git.sh"
+    ep_init
+    ep_report_start install git
+    ep_install_git
+) > "$fixture_home/git-2.29.out" 2>&1
+status=$?
+set -e
+[ "$status" -eq 1 ]
+grep -q 'Selected Git source 2.29.0 is below' "$fixture_home/git-2.29.out"
+(
+    export HOME="$fixture_home"
+    export PATH="$fixture_bin:/usr/bin:/bin"
+    export FIXTURE_PYTHON_VERSION=3.9.0
+    export ENVPILOT_ROOT="$ROOT" EP_PREFIX="$fixture_home/software"
+    export EP_LIBC=glibc EP_GLIBC_VERSION=2.17 EP_MODE=offline EP_ASSUME_YES=1
+    . "$ROOT/lib/common.sh"
+    . "$ROOT/lib/download.sh"
+    . "$ROOT/lib/platform.sh"
+    export EP_OS=linux EP_ARCH=amd64 EP_LIBC=glibc EP_GLIBC_VERSION=2.17
+    . "$ROOT/components/python.sh"
+    ep_init
+    ep_report_start install python
+    ep_install_python
+    ep_report_finish
+)
+grep -q '^python=done:' "$fixture_home/.config/envpilot/state"
+test ! -e "$fixture_home/software/python/current/bin/python3"
+set +e
+(
+    export HOME="$fixture_home"
+    export PATH="$fixture_bin:/usr/bin:/bin"
+    export FIXTURE_PYTHON_VERSION=3.8.0
+    export EP_ASSET_PATH="$fixture_home/cpython-3.8.0+fixture-x86_64-unknown-linux-gnu-install_only.tar.gz"
+    export ENVPILOT_ROOT="$ROOT" EP_PREFIX="$fixture_home/software"
+    export EP_LIBC=glibc EP_GLIBC_VERSION=2.17 EP_MODE=offline EP_ASSUME_YES=1
+    . "$ROOT/lib/common.sh"
+    . "$ROOT/lib/download.sh"
+    . "$ROOT/lib/platform.sh"
+    export EP_OS=linux EP_ARCH=amd64 EP_LIBC=glibc EP_GLIBC_VERSION=2.17
+    . "$ROOT/components/python.sh"
+    ep_init
+    ep_report_start install python
+    ep_install_python
+) > "$fixture_home/python-3.8.out" 2>&1
+status=$?
+set -e
+[ "$status" -eq 1 ]
+grep -q 'Selected Python version 3.8.0 is below' "$fixture_home/python-3.8.out"
+rm -rf "$fixture_home" "$fixture_bin"
 echo "[TEST] missing nvm installation reaches explained Node.js setup"
 tmp_home="$(mktemp -d)"
 codex_output="$tmp_home/codex-node.out"
@@ -276,10 +381,11 @@ cat > "$tmp_bin/ss" <<'EOF'
 #!/usr/bin/env bash
 cat <<'OUT'
 State      Recv-Q Send-Q     Local Address:Port                    Peer Address:Port
-LISTEN     0      128                   :::7890                              :::*
+LISTEN     0      128                   :::42290                              :::*
 OUT
 EOF
-chmod +x "$tmp_bin/ss"
+awk 'BEGIN { skip = 0 } /^# No real TTY:/ { skip = 1; next } skip && /^fi$/ { skip = 0; next } !skip { print }' "$ROOT/templates/bashrc" > "$tmp_bin/bashrc-test"
+chmod +x "$tmp_bin/bashrc-test"
 proxy_check="$(
     HOME="$tmp_home" \
     PATH="$tmp_bin:$PATH" \
@@ -287,10 +393,10 @@ proxy_check="$(
     BASHRC_AUTO_ENABLE_PROXY=0 \
     BASHRC_AUTO_LOAD_MODULES=0 \
     BASHRC_AUTO_LOAD_SECRETS=0 \
-    bash --noprofile --norc -ic '. "'"$ROOT/templates/bashrc"'"; if proxy_port_is_listening; then printf yes; else printf no; fi' 2>/dev/null | tail -n 1
+    bash --noprofile --norc -ic '. "'"$tmp_bin/bashrc-test"'"; if proxy_port_is_listening; then printf yes; else printf no; fi' 2>/dev/null | tail -n 1
 )"
 if [ "$proxy_check" != "yes" ]; then
-    echo "Expected proxy_port_is_listening to accept :::7890, got: $proxy_check" >&2
+    echo "Expected proxy_port_is_listening to accept :::42290, got: $proxy_check" >&2
     exit 1
 fi
 
@@ -306,6 +412,8 @@ cat > "$tmp_bin/nc" <<'EOF'
 exit 0
 EOF
 chmod +x "$tmp_bin/ss" "$tmp_bin/nc"
+awk 'BEGIN { skip = 0 } /^# No real TTY:/ { skip = 1; next } skip && /^fi$/ { skip = 0; next } !skip { print }' "$ROOT/templates/bashrc" > "$tmp_bin/bashrc-test"
+chmod +x "$tmp_bin/bashrc-test"
 status_check="$(
     HOME="$tmp_home" \
     PATH="$tmp_bin:$PATH" \
@@ -313,7 +421,7 @@ status_check="$(
     BASHRC_AUTO_ENABLE_PROXY=0 \
     BASHRC_AUTO_LOAD_MODULES=0 \
     BASHRC_AUTO_LOAD_SECRETS=0 \
-    bash --noprofile --norc -ic '. "'"$ROOT/templates/bashrc"'"; if proxy_port_is_listening; then printf yes; else printf no; fi' 2>/dev/null | tail -n 1
+    bash --noprofile --norc -ic '. "'"$tmp_bin/bashrc-test"'"; if proxy_port_is_listening; then printf yes; else printf no; fi' 2>/dev/null | tail -n 1
 )"
 [ "$status_check" = "yes" ]
 
@@ -329,6 +437,8 @@ cat > "$tmp_bin/nc" <<'EOF'
 exit 0
 EOF
 chmod +x "$tmp_bin/ss" "$tmp_bin/nc"
+awk 'BEGIN { skip = 0 } /^# No real TTY:/ { skip = 1; next } skip && /^fi$/ { skip = 0; next } !skip { print }' "$ROOT/templates/bashrc" > "$tmp_bin/bashrc-test"
+chmod +x "$tmp_bin/bashrc-test"
 proxy_values="$(
     HOME="$tmp_home" \
     PATH="$tmp_bin:$PATH" \
@@ -337,7 +447,7 @@ proxy_values="$(
     BASHRC_AUTO_ENABLE_PROXY=0 \
     BASHRC_AUTO_LOAD_MODULES=0 \
     BASHRC_AUTO_LOAD_SECRETS=0 \
-    bash --noprofile --norc -ic '. "'"$ROOT/templates/bashrc"'"; proxy_on; printf "%s|%s|%s" "$http_proxy" "${all_proxy-unset}" "$no_proxy"' 2>/dev/null | tail -n 1
+    bash --noprofile --norc -ic '. "'"$tmp_bin/bashrc-test"'"; proxy_on; printf "%s|%s|%s" "$http_proxy" "${all_proxy-unset}" "$no_proxy"' 2>/dev/null | tail -n 1
 )"
 case "$proxy_values" in
     "http://127.0.0.1:42290|unset|"*"login"*"compute"*"10.0.0.0/8"*"localhost"*"127.0.0.1"*"::1"*) ;;
@@ -351,7 +461,7 @@ socks_value="$(
     BASHRC_AUTO_ENABLE_PROXY=0 \
     BASHRC_AUTO_LOAD_MODULES=0 \
     BASHRC_AUTO_LOAD_SECRETS=0 \
-    bash --noprofile --norc -ic '. "'"$ROOT/templates/bashrc"'"; proxy_on; printf "%s" "$all_proxy"' 2>/dev/null | tail -n 1
+    bash --noprofile --norc -ic '. "'"$tmp_bin/bashrc-test"'"; proxy_on; printf "%s" "$all_proxy"' 2>/dev/null | tail -n 1
 )"
 [ "$socks_value" = "socks5h://127.0.0.1:42290" ]
 cat > "$tmp_bin/nc" <<'EOF'
@@ -365,7 +475,7 @@ failed_proxy="$(
     BASHRC_AUTO_ENABLE_PROXY=0 \
     BASHRC_AUTO_LOAD_MODULES=0 \
     BASHRC_AUTO_LOAD_SECRETS=0 \
-    bash --noprofile --norc -ic '. "'"$ROOT/templates/bashrc"'"; unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY; proxy_on >/dev/null 2>&1 || true; printf "%s" "${http_proxy-unset}"' 2>/dev/null | tail -n 1
+    bash --noprofile --norc -ic '. "'"$tmp_bin/bashrc-test"'"; unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY; proxy_on >/dev/null 2>&1 || true; printf "%s" "${http_proxy-unset}"' 2>/dev/null | tail -n 1
 )"
 [ "$failed_proxy" = "unset" ]
 rm -rf "$tmp_home" "$tmp_bin"
@@ -695,7 +805,14 @@ echo "[TEST] tmux manifest target and managed Mihomo detection"
 )
 
 echo "[TEST] version"
-grep -q '^0\.1\.16$' "$ROOT/VERSION"
+grep -q '^0\.2\.1$' "$ROOT/VERSION"
+grep -q 'EP_GIT_MIN_VERSION' "$ROOT/components/git.sh"
+grep -q 'EP_PYTHON_MIN_VERSION' "$ROOT/components/python.sh"
+grep -q 'No real TTY' "$ROOT/templates/bashrc"
+grep -q 'path_prepend "\$HOME/software/git/current/bin"' "$ROOT/templates/bashrc"
+grep -q 'auth.json' "$ROOT/components/codex.sh"
+"$PYTHON_BIN" -m json.tool "$ROOT/manifests/git.json" >/dev/null
+"$PYTHON_BIN" -m json.tool "$ROOT/manifests/python.json" >/dev/null
 
 echo "[TEST] repository license and mirror helpers"
 grep -q '^MIT License$' "$ROOT/LICENSE"

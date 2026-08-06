@@ -31,9 +31,9 @@ envpilot - cross-platform user-space environment bootstrapper
 
 Usage:
   bash envpilot.sh doctor             Show status and capture a restore baseline.
-  bash envpilot.sh install [all|mihomo|conda|mamba|codex|github|tmux] [--mode online|offline] [--prefix PATH] [--asset-path PATH] [--upgrade] [--yes]
+  bash envpilot.sh install [all|git|python|mihomo|conda|mamba|codex|github|tmux] [--mode online|offline] [--prefix PATH] [--asset-path PATH] [--upgrade] [--yes]
                                       Install the selected component(s). Online is the default.
-  bash envpilot.sh update [all|mihomo|conda|mamba|codex|github|tmux]
+  bash envpilot.sh update [all|git|python|mihomo|conda|mamba|codex|github|tmux]
                                        Re-check compatible latest versions and update existing envpilot components.
   bash envpilot.sh apply-shell [--yes]
                                       Back up and replace the active shell profile.
@@ -153,6 +153,8 @@ run_doctor()
     ep_log "envpilot doctor"
     ep_platform_print
     ep_capture_doctor_baseline
+    ep_doctor_git
+    ep_doctor_python
     ep_doctor_conda
     ep_doctor_mamba
     ep_doctor_mihomo
@@ -165,6 +167,8 @@ install_one()
 {
     local component="$1"
     case "$component" in
+        git) ep_install_git ;;
+        python) ep_install_python ;;
         conda) ep_install_conda ;;
         mamba) ep_install_mamba ;;
         mihomo) ep_install_mihomo ;;
@@ -185,7 +189,7 @@ run_install()
 
     case "$EP_COMPONENT" in
         all)
-            for component in mihomo conda mamba codex github tmux; do
+            for component in git python mihomo conda mamba codex github tmux; do
                 if ep_state_is_done "$component" && [ "$EP_UPGRADE" != "1" ]; then
                     ep_log "Skip $component: already marked done. Use update or --upgrade to re-check versions."
                     ep_report_event "$component" "skipped" "already marked done" "" "" ""
@@ -197,7 +201,7 @@ run_install()
                 install_one "$component"
             done
             ;;
-        mihomo|conda|mamba|codex|github|tmux)
+        git|python|mihomo|conda|mamba|codex|github|tmux)
             install_one "$EP_COMPONENT"
             ;;
         *)

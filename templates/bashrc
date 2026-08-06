@@ -64,11 +64,16 @@ umask "$BASHRC_UMASK"
 path_prepend "$HOME/.local/bin"
 path_prepend "$HOME/bin"
 path_prepend "$HOME/software/bin"
+# User-managed Git and Python must be visible to non-interactive commands too.
+path_prepend "$HOME/software/git/current/bin"
+path_prepend "$HOME/software/git/bin"
+path_prepend "$HOME/software/python/current/bin"
+path_prepend "$HOME/software/python/bin"
 
-case $- in
-    *i*) ;;
-    *) return 0 ;;
-esac
+# No real TTY: keep only the minimal environment.
+if [[ $- != *i* || ! -t 0 || ! -t 1 ]]; then
+    return 0
+fi
 
 if [ -r /etc/bashrc ]; then
     . /etc/bashrc

@@ -2,7 +2,7 @@
 
 envpilot 是面向非管理员用户的跨平台环境引导仓库，用于在新服务器、HPC 登录节点、工作站或远程主机上安装和管理常用工具，并保留可恢复的用户态状态。
 
-当前重点支持 Mihomo、Conda/Anaconda、Mamba、Codex、GitHub CLI 和 tmux。默认在线安装；Mihomo 和地理数据可优先使用仓库内的受控缓存。
+当前重点支持 Mihomo、Conda/Anaconda、Mamba、Codex、Git、Python、GitHub CLI 和 tmux。默认在线安装；Mihomo 和地理数据可优先使用仓库内的受控缓存。
 
 代码同时发布到：
 
@@ -260,8 +260,8 @@ downloads/geoip.metadb
 | 命令 | 作用 |
 | --- | --- |
 | `doctor` | 只检查，不安装；同时记录本次 restore baseline。 |
-| `install [all|mihomo|conda|mamba|codex|github|tmux]` | 首次安装组件；在线模式优先使用匹配的受控缓存。 |
-| `update [all|mihomo|conda|mamba|codex|github|tmux]` | 忽略已完成状态，重新解析当前系统可兼容的 stable 版本并更新。 |
+| `install [all|git|python|mihomo|conda|mamba|codex|github|tmux]` | 首次安装组件；在线模式优先使用匹配的受控缓存。 |
+| `update [all|git|python|mihomo|conda|mamba|codex|github|tmux]` | 忽略已完成状态，重新解析当前系统可兼容的 stable 版本并更新。 |
 | `apply-shell` | 备份并替换当前 shell/profile。 |
 | `mihomo start|stop|status` | 管理和检查 Mihomo。 |
 | `mihomo ports PROXY API` | 完整修改双端口并重启。 |
@@ -294,7 +294,7 @@ bash envpilot.sh update tmux
 ~/.config/envpilot/baseline/files/
 ```
 
-`restore` 会停止 envpilot 管理的 Mihomo、清理对应节点的 `/tmp` 运行目录，并把受管文件恢复到最近一次 `doctor` 状态。适合安装中途失败后回到初始状态。
+`restore` 会停止 envpilot 管理的 Mihomo、清理对应节点的 `/tmp` 运行目录，并把受管文件恢复到最近一次 `doctor` 状态。适合安装中途失败后回到初始状态。baseline 也会记录 Git/Python 用户态目录和 Codex `auth.json`，因此失败后不需要手动停止代理、卸载工具或逐个删除配置。
 
 再次执行 `doctor` 会覆盖 baseline。需要保留最初状态时，不要在半安装状态重新运行 `doctor`。
 
@@ -319,6 +319,8 @@ bash envpilot.sh update
 
 - Mihomo：保留 envpilot 管理的订阅配置，并恢复升级前的运行状态。
 - Conda/Mamba：让当前 Conda 解析当前平台和 base 环境可兼容的新版本，不强行安装不兼容包。
+- Git：系统 Git 达到 2.30 时直接复用；低于 2.30 时构建 `$HOME/software/git/current`，不覆盖 `/usr/bin/git`。
+- Python：系统或 Conda Python 达到 3.9 时直接复用；低于 3.9 时选择匹配 OS、架构和 libc 的稳定用户态解释器。
 - Codex：通过 npm 更新 `@openai/codex`。
 - GitHub CLI：只更新 envpilot 管理的用户态副本；系统管理员提供的副本不强制覆盖。
 - tmux：比较 manifest 的 stable 目标；系统/module 版本过低时，在用户目录构建新版本并让 `~/.local/bin/tmux` 优先生效。
@@ -345,6 +347,25 @@ conda config --show-sources
 conda config --show channels default_channels
 ```
 
+## Git / Python
+
+`install all` 会先检查 Git 和 Python。检测规则不是只看“命令是否存在”：
+
+- Git 最低版本为 2.30。系统 Git 达标时直接使用；系统 Git 过低时保留原文件，并把新 Git 安装到 `$HOME/software/git/current/bin/git`。
+- Python 最低版本为 3.9。优先使用系统 Python 3.9+ 或已有 Conda Python；都不满足时，Linux/macOS 根据 OS、架构和 libc 选择 `python-build-standalone` 的 stable `install_only` 资产。
+- shell 模板会在非交互 shell 的 TTY 判断之前加入这些用户态目录，因此 `scp`、批处理和远程命令也能找到用户安装的 Git/Python。
+- 系统目录和系统解释器不会被 envpilot 删除或覆盖。缺少编译器、开发库或可用的用户态安装源时，安装会停止并给出恢复路径，不会假装已经完成。
+- 在线缓存、`downloads/` 离线包和 `--asset-path` 都会再次解析文件名版本；低于 Git 2.30 或 Python 3.9 的资产会在写入前停止。
+
+手动执行：
+
+```bash
+bash envpilot.sh doctor
+bash envpilot.sh install git
+bash envpilot.sh install python
+bash envpilot.sh update git
+bash envpilot.sh update python
+```
 ## Codex
 
 单独安装 Codex：
@@ -361,11 +382,22 @@ Codex 配置使用：
 env_key = "OPENAI_API_KEY"
 ```
 
-密钥推荐放到 `~/.config/secrets/api.env`，再通过：
+这里的 `env_key` 是 Codex 配置项，不是 shell 变量名。正确的环境变量是 `OPENAI_API_KEY`，不是 `export env_key=...`。
+
+安装器会按以下顺序查找密钥：
+
+1. 当前 shell 的 `OPENAI_API_KEY`。
+2. 权限为 600 或 400、且属于当前用户的 `~/.config/secrets/api.env`。
+3. 检测到误写的 `env_key` 时提示是否修正使用。
+4. 没有找到时，提示从兼容服务商（例如 YanHuoAPI）获取密钥并安全输入。
+
+检测到密钥后，安装器仍会单独确认是否写入明文 `~/.codex/auth.json`，并先备份旧文件、设置权限 600。拒绝写入时仍可使用：
 
 ```bash
+chmod 600 ~/.config/secrets/api.env
 with_secrets codex
 ```
+
 
 ## GitHub/Gitee 镜像与 tmux
 

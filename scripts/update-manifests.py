@@ -206,6 +206,19 @@ def update_tmux_manifest(data: dict[str, Any]) -> bool:
     return True
 
 
+
+def update_git_manifest(data: dict[str, Any]) -> bool:
+    tags = fetch_json("https://api.github.com/repos/git/git/tags")
+    tag = stable_tag(tags)
+    version = str(tag.get("name", "")).lstrip("v")
+    data["latest"] = {
+        "version": version,
+        "checked_at": now_iso(),
+        "source": f"https://www.kernel.org/pub/software/scm/git/git-{version}.tar.xz",
+        "html_url": f"https://github.com/git/git/tree/{tag.get('name', '')}",
+    }
+    return True
+
 def update_manifest(path: Path) -> bool:
     original = load_json(path)
     validate_manifest(path, original)
@@ -219,6 +232,10 @@ def update_manifest(path: Path) -> bool:
         routed = update_conda_manifest(data)
     elif name == "tmux":
         routed = update_tmux_manifest(data)
+    elif name == "python":
+        routed = update_github_release_manifest(data)
+    elif name == "git":
+        routed = update_git_manifest(data)
     else:
         data["latest"] = {"checked_at": now_iso(), "status": "no updater implemented"}
         routed = True

@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.2.1 - 2026-08-06
+
+### Added
+
+- Added first-class Git and Python components to Unix and PowerShell entrypoints.
+- Added stable compatibility floors: Git 2.30+ and Python 3.9+.
+- Added user-space Git/Python PATH setup before the non-interactive shell TTY guard.
+- Added Codex API-key source detection and confirmed auth.json generation with backup and mode 600.
+- Added Git/Python manifests and automatic manifest updater routes.
+- Revalidated cached, offline, and explicit Git/Python assets against the 2.30/3.9 floors and fixed replacement of older user-space current directories.
+- Extended doctor baseline/restore coverage to Git, Python, and Codex auth state.
+
+### Changed
+
+- Existing system Git and Python are reused when compatible and never overwritten.
+- Older system tools remain available while newer user-space tools are preferred from git/current and python/current.
+- Codex now explains that env_key is a configuration key name; the shell variable is OPENAI_API_KEY.
+
+### Fixed
+
+- Corrected the shell startup guard to Bash syntax with fi; no real TTY now keeps only the minimal environment.
+- Removed the silent Codex post-confirmation path that previously left users unsure whether installation continued.
+# Changelog
+
 ## 0.1.16 - 2026-08-03
 
 ### Added

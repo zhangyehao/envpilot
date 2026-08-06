@@ -23,6 +23,11 @@ ep_doctor_codex()
     else
         ep_warn "Codex config: not found"
     fi
+    if [ -f "$HOME/.codex/auth.json" ]; then
+        ep_log "Codex auth: found at $HOME/.codex/auth.json (value not displayed)"
+    else
+        ep_warn "Codex auth: not found; install will ask before creating it"
+    fi
 }
 
 ep_load_nvm()
@@ -103,6 +108,118 @@ EOF
     ep_log "Wrote Codex config using env_key=OPENAI_API_KEY: $config_file"
 }
 
+ep_codex_secret_file_mode()
+{
+    local secret_file="$1"
+    stat -c '%a' "$secret_file" 2>/dev/null || stat -f '%Lp' "$secret_file" 2>/dev/null || true
+}
+
+ep_codex_secret_file_is_safe()
+{
+    local secret_file="$1"
+    local mode owner current
+    [ -f "$secret_file" ] || return 1
+    current="$(id -u)"
+    owner="$(stat -c '%u' "$secret_file" 2>/dev/null || stat -f '%u' "$secret_file" 2>/dev/null || printf '%s' "$current")"
+    [ "$owner" = "$current" ] || return 1
+    mode="$(ep_codex_secret_file_mode "$secret_file")"
+    case "$mode" in
+        400|600) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+ep_codex_key_from_secret_file()
+{
+    local secret_file="$1"
+    EP_CODEX_API_KEY=""
+    if ! ep_codex_secret_file_is_safe "$secret_file"; then
+        return 1
+    fi
+    EP_CODEX_API_KEY="$(
+        set +e
+        . "$secret_file" >/dev/null 2>&1
+        printenv OPENAI_API_KEY 2>/dev/null || true
+    )"
+    [ -n "$EP_CODEX_API_KEY" ]
+}
+
+ep_codex_prompt_api_key()
+{
+    local value
+    if [ ! -t 0 ] && [ ! -r /dev/tty ]; then
+        return 1
+    fi
+    if [ -r /dev/tty ]; then
+        exec 9</dev/tty
+    else
+        exec 9<&0
+    fi
+    printf 'Enter an OpenAI-compatible API key (press Enter to skip): '
+    IFS= read -r -s value <&9 || value=""
+    printf '\n'
+    exec 9<&-
+    if [ -n "$value" ]; then
+        EP_CODEX_API_KEY="$value"
+        return 0
+    fi
+    unset value
+    return 1
+}
+
+ep_codex_write_auth()
+{
+    local auth_file="$HOME/.codex/auth.json"
+    local tmp escaped_key
+    ep_confirm "Write plaintext API key to $auth_file with mode 600?" "no" || {
+        ep_warn "auth.json was not changed. Use: chmod 600 $HOME/.config/secrets/api.env; with_secrets codex"
+        return 0
+    }
+    mkdir -p "$HOME/.codex"
+    ep_backup_file "$auth_file"
+    escaped_key="$(printf '%s' "$EP_CODEX_API_KEY" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')"
+    tmp="$auth_file.tmp.$$"
+    printf '{\n  "OPENAI_API_KEY": "%s"\n}\n' "$escaped_key" > "$tmp"
+    chmod 600 "$tmp" 2>/dev/null || true
+    mv "$tmp" "$auth_file"
+    chmod 600 "$auth_file" 2>/dev/null || true
+    ep_log "Wrote Codex auth file without printing its value: $auth_file"
+}
+
+ep_codex_configure_auth()
+{
+    local secret_file candidate
+    secret_file="$HOME/.config/secrets/api.env"
+    EP_CODEX_API_KEY=""
+    if [ -n "$(printenv OPENAI_API_KEY 2>/dev/null || true)" ]; then
+        EP_CODEX_API_KEY="$(printenv OPENAI_API_KEY)"
+        ep_log "Codex API key source: current OPENAI_API_KEY environment variable."
+    elif ep_codex_key_from_secret_file "$secret_file"; then
+        ep_log "Codex API key source: protected $secret_file."
+    elif [ -n "$(printenv env_key 2>/dev/null || true)" ]; then
+        ep_warn "Found lowercase env_key in the environment. The correct variable name is OPENAI_API_KEY."
+        if ep_confirm "Use the detected lowercase env_key value to create Codex auth.json?" "yes"; then
+            EP_CODEX_API_KEY="$(printenv env_key)"
+            ep_log "Codex API key source: corrected lowercase env_key environment variable."
+        fi
+    fi
+    if [ -z "$EP_CODEX_API_KEY" ]; then
+        mkdir -p "$HOME/.config/secrets"
+        if [ ! -f "$secret_file" ]; then
+            cp "$ENVPILOT_ROOT/templates/api.env.example" "$HOME/.config/secrets/api.env.example"
+            chmod 600 "$HOME/.config/secrets/api.env.example" 2>/dev/null || true
+        fi
+        ep_warn "No OPENAI_API_KEY was detected. Obtain an OpenAI-compatible key from your provider, for example YanHuoAPI, and put it in $secret_file or enter it now."
+        ep_codex_prompt_api_key || {
+            ep_warn "Codex CLI was installed/configured, but auth.json was not generated. Run: with_secrets codex"
+            return 0
+        }
+        ep_log "Codex API key source: interactive input."
+    fi
+    ep_codex_write_auth
+    unset EP_CODEX_API_KEY
+}
+
 ep_install_codex()
 {
     ep_require_unix_runtime
@@ -110,7 +227,7 @@ ep_install_codex()
     action=configured
     ep_log "Component: codex"
     ep_log "Package: $EP_CODEX_PACKAGE"
-    ep_log "Config uses env_key=OPENAI_API_KEY; auth.json is not generated."
+    ep_log "Codex config uses env_key=OPENAI_API_KEY; installer will detect a key and ask before writing auth.json."
     ep_confirm "Install/update and configure Codex CLI?" "yes" || {
         ep_report_event codex skipped "user declined" "" "" ""
         return 0
@@ -142,12 +259,7 @@ ep_install_codex()
         ep_log "Codex CLI already exists at $(command -v codex); keeping the installed executable and updating config."
     fi
     ep_write_codex_config
-    mkdir -p "$HOME/.config/secrets"
-    if [ ! -f "$HOME/.config/secrets/api.env" ]; then
-        cp "$ENVPILOT_ROOT/templates/api.env.example" "$HOME/.config/secrets/api.env.example"
-        chmod 600 "$HOME/.config/secrets/api.env.example" 2>/dev/null || true
-        ep_warn "Add OPENAI_API_KEY to $HOME/.config/secrets/api.env before running: with_secrets codex"
-    fi
+    ep_codex_configure_auth
     ep_state_mark_done codex
     ep_report_event codex "$action" "installed or updated Codex and configured env_key" "$(codex --version 2>/dev/null || true)" "npm:$EP_CODEX_PACKAGE" "$(command -v codex 2>/dev/null || true)"
 }
