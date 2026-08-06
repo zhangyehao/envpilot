@@ -138,6 +138,8 @@ ep_codex_key_from_secret_file()
     fi
     EP_CODEX_API_KEY="$(
         set +e
+        # The path is user-specific and validated above.
+        # shellcheck disable=SC1090
         . "$secret_file" >/dev/null 2>&1
         printenv OPENAI_API_KEY 2>/dev/null || true
     )"
@@ -188,7 +190,7 @@ ep_codex_write_auth()
 
 ep_codex_configure_auth()
 {
-    local secret_file candidate
+    local secret_file
     secret_file="$HOME/.config/secrets/api.env"
     EP_CODEX_API_KEY=""
     if [ -n "$(printenv OPENAI_API_KEY 2>/dev/null || true)" ]; then
