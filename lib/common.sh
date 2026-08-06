@@ -200,8 +200,8 @@ ep_json_escape()
 {
     sed \
         -e 's/\\/\\\\/g' \
-        -e 's/"/\\"/g' \
-        -e ':a;N;$!ba;s/\n/\\n/g'
+        -e 's/"/\\"/g' |
+        awk 'NR > 1 { printf "\\n" } { printf "%s", $0 }'
 }
 
 ep_report_start()

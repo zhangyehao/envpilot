@@ -88,6 +88,13 @@ grep -q 'sparse-checkout' "$ROOT/bootstrap.sh"
 grep -q 'Source URL:' "$ROOT/lib/download.sh"
 ! grep -qi 'miniforge' "$ROOT/components/conda.sh" "$ROOT/manifests/conda.json" "$ROOT/templates/bashrc" "$ROOT/templates/zshrc" "$ROOT/scripts/collect-assets.sh" "$ROOT/scripts/collect-assets.ps1"
 
+echo "[TEST] portable JSON escaping"
+(
+    . "$ROOT/lib/common.sh"
+    escaped="$(printf 'path\\value\n"quoted"' | ep_json_escape)"
+    [ "$escaped" = 'path\\value\n\"quoted\"' ]
+)
+
 echo "[TEST] Git/Python minimum-version fixtures"
 fixture_home="$(mktemp -d)"
 fixture_bin="$(mktemp -d)"
@@ -110,8 +117,9 @@ cat > "$fixture_bin/make" <<'EOF'
 #!/usr/bin/env bash
 exit 0
 EOF
+cp "$fixture_bin/python3" "$fixture_bin/python"
 cp "$fixture_bin/make" "$fixture_bin/cc"
-chmod +x "$fixture_bin/git" "$fixture_bin/python3" "$fixture_bin/make" "$fixture_bin/cc"
+chmod +x "$fixture_bin/git" "$fixture_bin/python3" "$fixture_bin/python" "$fixture_bin/make" "$fixture_bin/cc"
 : > "$fixture_home/git-2.29.0.tar.xz"
 : > "$fixture_home/cpython-3.8.0+fixture-x86_64-unknown-linux-gnu-install_only.tar.gz"
 (
@@ -384,6 +392,7 @@ State      Recv-Q Send-Q     Local Address:Port                    Peer Address:
 LISTEN     0      128                   :::42290                              :::*
 OUT
 EOF
+chmod +x "$tmp_bin/ss"
 awk 'BEGIN { skip = 0 } /^# No real TTY:/ { skip = 1; next } skip && /^fi$/ { skip = 0; next } !skip { print }' "$ROOT/templates/bashrc" > "$tmp_bin/bashrc-test"
 chmod +x "$tmp_bin/bashrc-test"
 proxy_check="$(
@@ -805,7 +814,7 @@ echo "[TEST] tmux manifest target and managed Mihomo detection"
 )
 
 echo "[TEST] version"
-grep -q '^0\.2\.1$' "$ROOT/VERSION"
+grep -q '^0\.2\.2$' "$ROOT/VERSION"
 grep -q 'EP_GIT_MIN_VERSION' "$ROOT/components/git.sh"
 grep -q 'EP_PYTHON_MIN_VERSION' "$ROOT/components/python.sh"
 grep -q 'No real TTY' "$ROOT/templates/bashrc"

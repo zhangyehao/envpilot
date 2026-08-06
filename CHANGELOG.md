@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.2 - 2026-08-06
+
+### Fixed
+
+- Made JSON report escaping portable across GNU/BSD sed environments, removing macOS CI warnings and failures.
+- Hardened Git/Python version fixtures so system `python` aliases cannot bypass Python 3.8 rejection.
+- Restored executable permissions for the fake `ss` command used by Linux/macOS proxy-listener tests.
+
 ## 0.2.1 - 2026-08-06
 
 ### Added
