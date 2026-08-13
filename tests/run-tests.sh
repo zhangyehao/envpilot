@@ -414,17 +414,26 @@ fi
 EOF
 chmod +x "$tmp_home/software/mihomo/start_mihomo.sh" "$tmp_bin/ss"
 configured_proxy="$(
-    env -i \
-        HOME="$tmp_home" \
-        PATH="$tmp_bin:$PATH" \
-        ENVPILOT_TEST_MARKER="$marker" \
-        BASHRC_LOCAL_FILE="$tmp_home/.config/envpilot/shell.local" \
-        BASHRC_CODEX_TMP_ROOT="$tmp_root" \
-        BASHRC_AUTO_START_MIHOMO=0 \
-        BASHRC_AUTO_ENABLE_PROXY=0 \
-        BASHRC_AUTO_LOAD_MODULES=0 \
-        BASHRC_AUTO_LOAD_SECRETS=0 \
-    bash -c 'source "'"$ROOT/templates/bashrc"'"; printf "%s|%s|%s|%s|%s|%s|%s" "$MIHOMO_PROXY_PORT" "$MIHOMO_API_PORT" "$http_proxy" "$https_proxy" "${all_proxy-unset}" "$TMPDIR" "$(cat "$ENVPILOT_TEST_MARKER")"' 2>/dev/null
+    bash -c '
+        unset MIHOMO_PROXY_HOST MIHOMO_PROXY_PORT MIHOMO_API_PORT \
+            BASHRC_PROXY_HOST BASHRC_PROXY_PORT BASHRC_PROXY_ENABLE_SOCKS \
+            BASHRC_PROXY_PRESTART_NONINTERACTIVE BASHRC_USE_NODE_LOCAL_TMP \
+            BASHRC_CODEX_TMP_ROOT BASHRC_LOCAL_FILE ENVPILOT_PROFILE_ACTIVE \
+            ENVPILOT_LAST_MIHOMO_PROXY_HOST ENVPILOT_LAST_MIHOMO_PROXY_PORT \
+            ENVPILOT_LAST_MIHOMO_API_PORT ENVPILOT_LAST_BASHRC_PROXY_ENABLE_SOCKS \
+            ENVPILOT_LAST_BASHRC_PROXY_PRESTART_NONINTERACTIVE \
+            ENVPILOT_LAST_BASHRC_USE_NODE_LOCAL_TMP ENVPILOT_LAST_BASHRC_CODEX_TMP_ROOT
+        export HOME="$1"
+        export PATH="$2"
+        export ENVPILOT_TEST_MARKER="$3"
+        export BASHRC_LOCAL_FILE="$4"
+        export BASHRC_CODEX_TMP_ROOT="$5"
+        export BASHRC_AUTO_START_MIHOMO=0 BASHRC_AUTO_ENABLE_PROXY=0
+        export BASHRC_AUTO_LOAD_MODULES=0 BASHRC_AUTO_LOAD_SECRETS=0
+        source "$6"
+        printf "%s|%s|%s|%s|%s|%s|%s" "$MIHOMO_PROXY_PORT" "$MIHOMO_API_PORT" "$http_proxy" "$https_proxy" "${all_proxy-unset}" "$TMPDIR" "$(cat "$ENVPILOT_TEST_MARKER")"
+    ' bash "$tmp_home" "$tmp_bin:$PATH" "$marker" \
+        "$tmp_home/.config/envpilot/shell.local" "$tmp_root" "$ROOT/templates/bashrc" 2>/dev/null
 )"
 case "$configured_proxy" in
     "43333|43334|http://127.0.0.1:43333|http://127.0.0.1:43333|unset|$tmp_root|43333") ;;

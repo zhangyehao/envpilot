@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.6 - 2026-08-13
+
+### Fixed
+
+- Made the macOS non-interactive proxy fixture pass all test inputs as positional arguments inside the child Bash process, avoiding hosted-runner environment propagation differences.
+- Kept the fixture's host-variable cleanup explicit so the test continues to verify `shell.local` precedence without changing production behavior.
+
 ## 0.2.5 - 2026-08-13
 
 ### Fixed
