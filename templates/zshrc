@@ -85,7 +85,7 @@ envpilot_shell_local_value()
                 (first == "\047" && last_char == "\047")) {
                 value = substr(value, 2, length(value) - 2)
             }
-            if (value !~ /[$`;&|<>]/ && value ~ /^[A-Za-z0-9_./:@+-]+$/) result = value
+            if (value ~ /^[A-Za-z0-9_./:@+-][A-Za-z0-9_./:@+-]*$/) result = value
         }
     ' "$ENVPILOT_CONFIG_DIR/shell.local" 2>/dev/null
 }

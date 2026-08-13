@@ -476,10 +476,7 @@ updated_settings="$(
             printf "%s|%s|%s" "$MIHOMO_PROXY_PORT" "$MIHOMO_API_PORT" "$BASHRC_PROXY_PRESTART_NONINTERACTIVE"
         ' bash "$override_fixture" 2>/dev/null
 )"
-if [ "$updated_settings" != "43336|43337|0" ]; then
-    printf 'Unexpected shell.local override environment: %s\n' "$updated_settings" >&2
-    exit 1
-fi
+[ "$updated_settings" = "43336|43337|0" ]
 rm -rf "$tmp_home" "$tmp_bin" "$tmp_root"
 
 echo "[TEST] non-interactive proxy startup failure remains quiet and unset"
