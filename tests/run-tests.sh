@@ -430,6 +430,7 @@ configured_proxy="$(
         export BASHRC_CODEX_TMP_ROOT="$5"
         export BASHRC_AUTO_START_MIHOMO=0 BASHRC_AUTO_ENABLE_PROXY=0
         export BASHRC_AUTO_LOAD_MODULES=0 BASHRC_AUTO_LOAD_SECRETS=0
+        . "$4"
         source "$6"
         printf "%s|%s|%s|%s|%s|%s|%s" "$MIHOMO_PROXY_PORT" "$MIHOMO_API_PORT" "$http_proxy" "$https_proxy" "${all_proxy-unset}" "$TMPDIR" "$(cat "$ENVPILOT_TEST_MARKER")"
     ' bash "$tmp_home" "$tmp_bin:$PATH" "$marker" \
