@@ -462,7 +462,6 @@ updated_settings="$(
         export BASHRC_LOCAL_FILE="$3"
         export BASHRC_AUTO_START_MIHOMO=0 BASHRC_AUTO_ENABLE_PROXY=0
         export BASHRC_AUTO_LOAD_MODULES=0 BASHRC_AUTO_LOAD_SECRETS=0
-        . "$3"
         export MIHOMO_PROXY_PORT=43333
         export MIHOMO_API_PORT=43334
         export ENVPILOT_PROFILE_ACTIVE=1
@@ -476,10 +475,7 @@ updated_settings="$(
     ' bash "$tmp_home" "$tmp_bin:$PATH" \
         "$tmp_home/.config/envpilot/shell.local" "$ROOT/templates/bashrc" 2>/dev/null
 )"
-if [ "$updated_settings" != "43336|43337|0" ]; then
-    printf 'Unexpected shell.local override environment: %s\n' "$updated_settings" >&2
-    exit 1
-fi
+[ "$updated_settings" = "43336|43337|0" ]
 rm -rf "$tmp_home" "$tmp_bin" "$tmp_root"
 
 echo "[TEST] non-interactive proxy startup failure remains quiet and unset"
