@@ -449,41 +449,35 @@ BASHRC_PROXY_PRESTART_NONINTERACTIVE=0
 EOF
 override_fixture="$tmp_home/override-fixture.sh"
 cat > "$override_fixture" <<'EOF'
-#!/usr/bin/env bash
-unset MIHOMO_PROXY_HOST MIHOMO_PROXY_PORT MIHOMO_API_PORT
-unset BASHRC_PROXY_HOST BASHRC_PROXY_PORT BASHRC_PROXY_ENABLE_SOCKS
-unset BASHRC_PROXY_PRESTART_NONINTERACTIVE BASHRC_USE_NODE_LOCAL_TMP
-unset BASHRC_CODEX_TMP_ROOT BASHRC_LOCAL_FILE ENVPILOT_PROFILE_ACTIVE
-unset ENVPILOT_LAST_MIHOMO_PROXY_HOST ENVPILOT_LAST_MIHOMO_PROXY_PORT
-unset ENVPILOT_LAST_MIHOMO_API_PORT ENVPILOT_LAST_BASHRC_PROXY_ENABLE_SOCKS
-unset ENVPILOT_LAST_BASHRC_PROXY_PRESTART_NONINTERACTIVE
-unset ENVPILOT_LAST_BASHRC_USE_NODE_LOCAL_TMP ENVPILOT_LAST_BASHRC_CODEX_TMP_ROOT
-export HOME="$ENVPILOT_FIXTURE_HOME"
-export PATH="$ENVPILOT_FIXTURE_PATH"
-export BASHRC_LOCAL_FILE="$ENVPILOT_FIXTURE_LOCAL"
-export BASHRC_AUTO_START_MIHOMO=0 BASHRC_AUTO_ENABLE_PROXY=0
-export BASHRC_AUTO_LOAD_MODULES=0 BASHRC_AUTO_LOAD_SECRETS=0
-export MIHOMO_PROXY_PORT=43333
-export MIHOMO_API_PORT=43334
-export ENVPILOT_PROFILE_ACTIVE=1
-export ENVPILOT_LAST_MIHOMO_PROXY_HOST=127.0.0.1
-export ENVPILOT_LAST_MIHOMO_PROXY_PORT=43333
-export ENVPILOT_LAST_MIHOMO_API_PORT=43334
-export ENVPILOT_LAST_BASHRC_PROXY_ENABLE_SOCKS=0
-export ENVPILOT_LAST_BASHRC_PROXY_PRESTART_NONINTERACTIVE=1
 . "$ENVPILOT_FIXTURE_TEMPLATE"
-printf "%s|%s|%s" "$MIHOMO_PROXY_PORT" "$MIHOMO_API_PORT" "$BASHRC_PROXY_PRESTART_NONINTERACTIVE"
 EOF
-chmod +x "$override_fixture"
 updated_settings="$(
-    ENVPILOT_FIXTURE_HOME="$tmp_home" \
-    ENVPILOT_FIXTURE_PATH="$tmp_bin:$PATH" \
-    ENVPILOT_FIXTURE_LOCAL="$tmp_home/.config/envpilot/shell.local" \
-    ENVPILOT_FIXTURE_TEMPLATE="$ROOT/templates/bashrc" \
-    BASH_ENV=/dev/null bash --noprofile --norc "$override_fixture" 2>/dev/null
+    env -i \
+        HOME="$tmp_home" \
+        PATH="$tmp_bin:$PATH" \
+        BASHRC_LOCAL_FILE="$tmp_home/.config/envpilot/shell.local" \
+        BASHRC_AUTO_START_MIHOMO=0 \
+        BASHRC_AUTO_ENABLE_PROXY=0 \
+        BASHRC_AUTO_LOAD_MODULES=0 \
+        BASHRC_AUTO_LOAD_SECRETS=0 \
+        BASHRC_CODEX_TMP_ROOT="/tmp/envpilot-override-codex-tmp-$$" \
+        MIHOMO_PROXY_PORT=43333 \
+        MIHOMO_API_PORT=43334 \
+        ENVPILOT_PROFILE_ACTIVE=1 \
+        ENVPILOT_LAST_MIHOMO_PROXY_HOST=127.0.0.1 \
+        ENVPILOT_LAST_MIHOMO_PROXY_PORT=43333 \
+        ENVPILOT_LAST_MIHOMO_API_PORT=43334 \
+        ENVPILOT_LAST_BASHRC_PROXY_ENABLE_SOCKS=0 \
+        ENVPILOT_LAST_BASHRC_PROXY_PRESTART_NONINTERACTIVE=1 \
+        ENVPILOT_FIXTURE_TEMPLATE="$ROOT/templates/bashrc" \
+        BASH_ENV=/dev/null \
+        bash --noprofile --norc -c '
+            . "$1"
+            printf "%s|%s|%s" "$MIHOMO_PROXY_PORT" "$MIHOMO_API_PORT" "$BASHRC_PROXY_PRESTART_NONINTERACTIVE"
+        ' bash "$override_fixture" 2>/dev/null
 )"
 [ "$updated_settings" = "43336|43337|0" ]
-rm -rf "$tmp_home" "$tmp_bin" "$tmp_root" "$override_fixture"
+rm -rf "$tmp_home" "$tmp_bin" "$tmp_root"
 
 echo "[TEST] non-interactive proxy startup failure remains quiet and unset"
 tmp_home="$(mktemp -d)"
