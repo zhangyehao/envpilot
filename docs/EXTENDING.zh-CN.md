@@ -9,7 +9,7 @@
 - 安装前必须说清楚：装什么、为什么选这个版本、写到哪里、会不会改配置。
 - 不要把密钥、订阅链接、生成凭据写进受版本控制的 profile。
 - 非交互 shell 必须保持安静。
-- 敏感服务默认不自动启动，除非用户明确选择。
+- 交互式 shell 中敏感服务默认不自动启动，除非用户明确选择；如果远程自动化确实需要，可以提供有文档说明、安静且有边界的非交互就绪钩子。
 
 ## 组件契约
 
@@ -93,7 +93,7 @@ git remote set-url --add --push gitee git@gitee.com:zhangyehao0422/envpilot.git
 Shell 模板必须：
 
 - 在非交互 shell 中保持安静
-- 默认不自动启动 mihomo
+- 交互式 shell 默认不自动启动 mihomo；非交互预启动必须可关闭、有超时、保持安静，并且只有存在有效配置时才执行
 - 默认不自动加载 secrets
 - 默认不自动激活 Conda base
 - 允许从 `~/.config/envpilot/shell.local` 读取用户自定义内容
@@ -101,6 +101,14 @@ Shell 模板必须：
 如果需要迁移 profile，优先写新模板或辅助文件，不要把主 profile 写成一大串分支脚本。
 
 代理辅助函数必须先检查目标端口正在监听，再导出代理变量；默认只启用 HTTP/HTTPS，SOCKS 必须显式开启；只能向已有 `no_proxy` 追加本地地址，关闭代理时不得清空 `no_proxy`。
+
+### 非交互 SSH 与 Codex 启动
+
+Unix shell 模板必须把一段安静、尽力而为的准备逻辑放在非交互 TTY `return` 之前。这段逻辑可以创建节点本地 `TMPDIR`、读取持久化 Mihomo 端口、在存在有效配置时启动 envpilot 管理的 Mihomo，并且只在代理端口真实监听后导出 HTTP/HTTPS。启动等待必须有上限；它不能输出常规日志、让 shell 失败，或导出一个不可用的代理地址。
+
+进程模型是“用户 + 节点”级别：同一用户在同一主机上的多个 SSH 窗口共享一个 envpilot Mihomo 运行实例，启动锁必须放在运行目录外。代理环境变量则是当前 shell 级别，所以 `proxy_on` 和 `proxy_off` 只影响当前窗口。不要把完整的 `~/.codex` 或 SQLite/会话状态迁移到 `/tmp`，这里只放临时文件、Mihomo 节点本地运行副本和启动锁。
+
+不是所有远程启动器都会读取 `.bashrc`。测试和文档要分别覆盖 `bash -lc`、`BASH_ENV` 以及 supervisor/app-server 的直接启动；当 Mihomo 缺失、没有配置或健康检查失败时，非交互 profile 仍必须安静返回。
 
 ## 组件升级契约
 
@@ -114,7 +122,7 @@ Shell 模板必须：
 - 更新 envpilot 已管理服务时保留用户配置，并恢复升级前的运行状态
 - 同时覆盖 Unix 和 PowerShell 入口的 install/update 测试
 
-Mihomo 升级必须保留已有 envpilot `config.yaml`，并且只在升级前本来就在运行时自动重启。Conda 和 Mamba 由当前 Conda 求解器选择兼容版本。tmux 将当前命令与 `manifests/tmux.json` 比较，系统或 module 版本过低时构建用户态目标版本。Codex 通过 npm 更新；GitHub CLI 在 Unix 上只更新 envpilot 管理的副本，Windows 上优先交给 winget。
+Mihomo 升级必须保留已有 envpilot `config.yaml`，并且只在升级前本来就在运行时自动重启。`install all` 必须先准备 Mihomo，再处理 Git/Python/Conda/Mamba/Codex 等网络依赖，确保后续下载有机会使用代理。Conda 和 Mamba 由当前 Conda 求解器选择兼容版本。tmux 将当前命令与 `manifests/tmux.json` 比较，系统或 module 版本过低时构建用户态目标版本。Codex 通过 npm 更新；GitHub CLI 在 Unix 上只更新 envpilot 管理的副本，Windows 上优先交给 winget。
 
 每次初始化都会把仓库实际位置记录到 `~/.config/envpilot/repo-root`。Shell 模板可以默认使用 `$HOME/envpilot`，但必须在该目录无效时读取记录路径，确保仓库 clone 到其他位置后仍可升级和管理。
 

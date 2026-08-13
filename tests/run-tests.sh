@@ -41,7 +41,7 @@ grep -q 'country.mmdb' "$ROOT/.github/workflows/update-mihomo-cache.yml"
 grep -q 'peter-evans/create-pull-request@v8' "$ROOT/.github/workflows/update-mihomo-cache.yml"
 
 echo "[TEST] install order and resolver policy"
-grep -q 'for component in git python mihomo conda mamba codex github tmux' "$ROOT/envpilot.sh"
+grep -q 'for component in mihomo git python conda mamba codex github tmux' "$ROOT/envpilot.sh"
 grep -q 'update|upgrade) run_update' "$ROOT/envpilot.sh"
 grep -q 'EP_UPGRADE="1"' "$ROOT/envpilot.sh"
 grep -q 'BASHRC_PROXY_ENABLE_SOCKS="${BASHRC_PROXY_ENABLE_SOCKS:-0}"' "$ROOT/templates/bashrc"
@@ -81,6 +81,14 @@ grep -q 'mihomo_ports()' "$ROOT/templates/zshrc"
 grep -q 'mihomo_update_subscription()' "$ROOT/templates/zshrc"
 grep -q 'envpilot_restore()' "$ROOT/templates/zshrc"
 grep -q 'MIHOMO_RUNTIME_DIR="/tmp/' "$ROOT/templates/mihomo_common.sh"
+grep -q 'MIHOMO_START_LOCK_DIR="\${MIHOMO_RUNTIME_DIR}.start.lock"' "$ROOT/templates/mihomo_common.sh"
+! grep -q 'MIHOMO_START_LOCK_DIR="\${MIHOMO_RUNTIME_DIR}/' "$ROOT/templates/mihomo_common.sh"
+grep -q 'MIHOMO_QUIET_START=1' "$ROOT/templates/bashrc" "$ROOT/templates/zshrc"
+grep -q 'envpilot_prepare_noninteractive_proxy' "$ROOT/templates/bashrc" "$ROOT/templates/zshrc"
+grep -q 'envpilot_export_proxy_if_ready' "$ROOT/templates/bashrc" "$ROOT/templates/zshrc"
+grep -q 'timeout 1 bash -c ": </dev/tcp/\$host/\$port"' "$ROOT/templates/zshrc"
+grep -q 'BASHRC_USE_NODE_LOCAL_TMP' "$ROOT/templates/shell.local.example"
+grep -q 'install-time proxy preparation trust an already-listening port' "$ROOT/CHANGELOG.md"
 grep -q 'API .* was not ready' "$ROOT/templates/start_mihomo.sh"
 grep -q 'update-subscription' "$ROOT/envpilot.sh"
 grep -q 'partial clone' "$ROOT/README.md"
@@ -381,6 +389,93 @@ if [ -n "$output" ]; then
     printf '%s\n' "$output" >&2
     exit 1
 fi
+
+echo "[TEST] non-interactive shell prepares a configured Mihomo proxy"
+tmp_home="$(mktemp -d)"
+tmp_bin="$(mktemp -d)"
+tmp_root="/tmp/envpilot-codex-tmp-$$"
+marker="$tmp_home/mihomo-started"
+mkdir -p "$tmp_home/.config/mihomo" "$tmp_home/.config/envpilot" "$tmp_home/software/mihomo"
+printf 'mixed-port: 43333\n' > "$tmp_home/.config/mihomo/config.yaml"
+cat > "$tmp_home/.config/envpilot/shell.local" <<'EOF'
+MIHOMO_PROXY_PORT=43333
+MIHOMO_API_PORT=43334
+BASHRC_PROXY_PRESTART_NONINTERACTIVE=1
+EOF
+cat > "$tmp_home/software/mihomo/start_mihomo.sh" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$MIHOMO_PROXY_PORT" > "$ENVPILOT_TEST_MARKER"
+EOF
+cat > "$tmp_bin/ss" <<'EOF'
+#!/usr/bin/env bash
+if [ -f "$ENVPILOT_TEST_MARKER" ]; then
+    printf 'LISTEN 0 128 127.0.0.1:%s 0.0.0.0:*\n' "$MIHOMO_PROXY_PORT"
+fi
+EOF
+chmod +x "$tmp_home/software/mihomo/start_mihomo.sh" "$tmp_bin/ss"
+configured_proxy="$(
+    HOME="$tmp_home" \
+    PATH="$tmp_bin:$PATH" \
+    ENVPILOT_TEST_MARKER="$marker" \
+    BASHRC_CODEX_TMP_ROOT="$tmp_root" \
+    BASHRC_AUTO_START_MIHOMO=0 \
+    BASHRC_AUTO_ENABLE_PROXY=0 \
+    BASHRC_AUTO_LOAD_MODULES=0 \
+    BASHRC_AUTO_LOAD_SECRETS=0 \
+    bash -c 'source "'"$ROOT/templates/bashrc"'"; printf "%s|%s|%s|%s|%s|%s|%s" "$MIHOMO_PROXY_PORT" "$MIHOMO_API_PORT" "$http_proxy" "$https_proxy" "${all_proxy-unset}" "$TMPDIR" "$(cat "$ENVPILOT_TEST_MARKER")"' 2>/dev/null
+)"
+case "$configured_proxy" in
+    "43333|43334|http://127.0.0.1:43333|http://127.0.0.1:43333|unset|$tmp_root|43333") ;;
+    *) echo "Unexpected non-interactive proxy environment: $configured_proxy" >&2; exit 1 ;;
+esac
+
+echo "[TEST] shell.local overrides prior envpilot-managed settings"
+cat > "$tmp_home/.config/envpilot/shell.local" <<'EOF'
+MIHOMO_PROXY_PORT=43336
+MIHOMO_API_PORT=43337
+BASHRC_PROXY_PRESTART_NONINTERACTIVE=0
+EOF
+updated_settings="$(
+    HOME="$tmp_home" \
+    PATH="$tmp_bin:$PATH" \
+    MIHOMO_PROXY_PORT=43333 \
+    MIHOMO_API_PORT=43334 \
+    ENVPILOT_PROFILE_ACTIVE=1 \
+    ENVPILOT_LAST_MIHOMO_PROXY_HOST=127.0.0.1 \
+    ENVPILOT_LAST_MIHOMO_PROXY_PORT=43333 \
+    ENVPILOT_LAST_MIHOMO_API_PORT=43334 \
+    ENVPILOT_LAST_BASHRC_PROXY_ENABLE_SOCKS=0 \
+    ENVPILOT_LAST_BASHRC_PROXY_PRESTART_NONINTERACTIVE=1 \
+    bash -c 'source "'"$ROOT/templates/bashrc"'"; printf "%s|%s|%s" "$MIHOMO_PROXY_PORT" "$MIHOMO_API_PORT" "$BASHRC_PROXY_PRESTART_NONINTERACTIVE"' 2>/dev/null
+)"
+[ "$updated_settings" = "43336|43337|0" ]
+rm -rf "$tmp_home" "$tmp_bin" "$tmp_root"
+
+echo "[TEST] non-interactive proxy startup failure remains quiet and unset"
+tmp_home="$(mktemp -d)"
+tmp_bin="$(mktemp -d)"
+mkdir -p "$tmp_home/.config/mihomo" "$tmp_home/software/mihomo"
+printf 'mixed-port: 43335\n' > "$tmp_home/.config/mihomo/config.yaml"
+cat > "$tmp_home/software/mihomo/start_mihomo.sh" <<'EOF'
+#!/usr/bin/env bash
+exit 1
+EOF
+cat > "$tmp_bin/ss" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+chmod +x "$tmp_home/software/mihomo/start_mihomo.sh" "$tmp_bin/ss"
+failed_noninteractive="$(
+    HOME="$tmp_home" \
+    PATH="$tmp_bin:$PATH" \
+    BASHRC_AUTO_START_MIHOMO=0 \
+    BASHRC_AUTO_ENABLE_PROXY=0 \
+    BASHRC_AUTO_LOAD_MODULES=0 \
+    BASHRC_AUTO_LOAD_SECRETS=0 \
+    bash -c 'source "'"$ROOT/templates/bashrc"'"; printf "%s|%s" "${http_proxy-unset}" "${https_proxy-unset}"' 2>&1
+)"
+[ "$failed_noninteractive" = "unset|unset" ]
+rm -rf "$tmp_home" "$tmp_bin"
 
 echo "[TEST] proxy port detection accepts IPv6 wildcard"
 tmp_home="$(mktemp -d)"
@@ -814,10 +909,12 @@ echo "[TEST] tmux manifest target and managed Mihomo detection"
 )
 
 echo "[TEST] version"
-grep -q '^0\.2\.2$' "$ROOT/VERSION"
+grep -q '^0\.2\.3$' "$ROOT/VERSION"
 grep -q 'EP_GIT_MIN_VERSION' "$ROOT/components/git.sh"
 grep -q 'EP_PYTHON_MIN_VERSION' "$ROOT/components/python.sh"
 grep -q 'No real TTY' "$ROOT/templates/bashrc"
+! grep -q 'MIHMOMO' "$ROOT/templates/bashrc" "$ROOT/templates/zshrc"
+grep -q 'ENVPILOT_LAST_MIHOMO_PROXY_PORT' "$ROOT/templates/bashrc" "$ROOT/templates/zshrc"
 grep -q 'path_prepend "\$HOME/software/git/current/bin"' "$ROOT/templates/bashrc"
 grep -q 'auth.json' "$ROOT/components/codex.sh"
 "$PYTHON_BIN" -m json.tool "$ROOT/manifests/git.json" >/dev/null

@@ -9,7 +9,7 @@ This document is for maintainers who add components, update manifests, or change
 - Explain what will be installed, why that version was chosen, where it will be written, and whether config files will change.
 - Never write secrets, subscription URLs, or generated credentials into tracked profile files.
 - Keep non-interactive shells quiet.
-- Do not auto-start sensitive services unless the user explicitly opts in.
+- Do not auto-start sensitive services in interactive shells unless the user explicitly opts in; a documented non-interactive readiness hook may be best-effort and quiet when it is required for remote automation.
 
 ## Component contract
 
@@ -106,7 +106,7 @@ If a component writes a user config, back it up before writing. If a component w
 Shell templates must:
 
 - stay quiet in non-interactive shells
-- avoid auto-starting mihomo by default
+- avoid auto-starting mihomo in interactive shells by default; any non-interactive pre-start must be opt-out, bounded, quiet, and conditional on a valid config
 - avoid auto-loading secrets by default
 - avoid auto-activating Conda base by default
 - load user-specific additions from `~/.config/envpilot/shell.local`
@@ -114,6 +114,14 @@ Shell templates must:
 If a profile migration is needed, prefer writing a new template or helper file instead of growing the main profile into a branchy script.
 
 Proxy helpers must check that the configured port is listening before exporting variables, default to HTTP/HTTPS only, make SOCKS opt-in, append to existing `no_proxy`, and leave `no_proxy` intact when disabling proxy variables.
+
+### Non-interactive SSH and Codex startup
+
+The Unix shell templates intentionally place a quiet, best-effort preparation block before the non-interactive TTY return. That block may create the node-local `TMPDIR`, read the persisted Mihomo ports, start the envpilot-managed Mihomo instance when a valid config exists, and export HTTP/HTTPS variables only after the proxy port is actually listening. Its startup wait must be bounded; it must never print routine output, fail the shell, or export a dead proxy endpoint.
+
+The process model is node-scoped: one envpilot-managed Mihomo runtime is shared by the same user on the same host, guarded by a lock outside the runtime directory. Proxy variables are shell-scoped, so `proxy_on` and `proxy_off` affect only the current shell. Do not move the complete `~/.codex` directory or its SQLite/session state to `/tmp`; only transient files, the Mihomo runtime copy, and startup locks belong there.
+
+Not every remote launcher reads `.bashrc`. Tests and documentation must cover `bash -lc`, `BASH_ENV`, and direct supervisor/app-server invocation separately. A non-interactive profile must remain safe when Mihomo is absent, has no config, or fails health checks.
 
 ## Component update contract
 
@@ -127,7 +135,7 @@ Each component update path must:
 - preserve user configuration and restore the previous running state when updating an envpilot-managed service
 - keep install and update behavior covered on Unix and PowerShell entrypoints
 
-Mihomo updates preserve an existing envpilot `config.yaml` and restart the managed runtime only if it was running before the update. Conda and Mamba defer compatibility selection to the current Conda solver. tmux compares the current command with `manifests/tmux.json` and builds the target in user space when the system/module version is older. Codex updates through npm; GitHub CLI updates only an envpilot-managed copy on Unix and uses winget on Windows when available.
+Mihomo updates preserve an existing envpilot `config.yaml` and restart the managed runtime only if it was running before the update. `install all` prepares Mihomo before network-dependent components so a configured proxy is available before Git/Python/Conda/Mamba/Codex downloads. Conda and Mamba defer compatibility selection to the current Conda solver. tmux compares the current command with `manifests/tmux.json` and builds the target in user space when the system/module version is older. Codex updates through npm; GitHub CLI updates only an envpilot-managed copy on Unix and uses winget on Windows when available.
 
 Every initialized run records the repository path in `~/.config/envpilot/repo-root`. Shell templates may default to `$HOME/envpilot`, but must fall back to this recorded path so a repository cloned elsewhere remains manageable after upgrades.
 

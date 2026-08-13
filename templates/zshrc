@@ -1,6 +1,40 @@
 # ~/.zshrc managed by envpilot
 # Keep non-interactive zsh quiet.
 
+BASHRC_EXTERNAL_PROXY_HOST_SET="${MIHOMO_PROXY_HOST+x}"
+[ -n "$BASHRC_EXTERNAL_PROXY_HOST_SET" ] || BASHRC_EXTERNAL_PROXY_HOST_SET="${BASHRC_PROXY_HOST+x}"
+BASHRC_EXTERNAL_PROXY_PORT_SET="${MIHOMO_PROXY_PORT+x}"
+[ -n "$BASHRC_EXTERNAL_PROXY_PORT_SET" ] || BASHRC_EXTERNAL_PROXY_PORT_SET="${BASHRC_PROXY_PORT+x}"
+BASHRC_EXTERNAL_API_PORT_SET="${MIHOMO_API_PORT+x}"
+BASHRC_EXTERNAL_SOCKS_SET="${BASHRC_PROXY_ENABLE_SOCKS+x}"
+BASHRC_EXTERNAL_PRESTART_SET="${BASHRC_PROXY_PRESTART_NONINTERACTIVE+x}"
+BASHRC_EXTERNAL_TMP_SET="${BASHRC_USE_NODE_LOCAL_TMP+x}"
+BASHRC_EXTERNAL_TMP_ROOT_SET="${BASHRC_CODEX_TMP_ROOT+x}"
+BASHRC_PROFILE_ACTIVE="${ENVPILOT_PROFILE_ACTIVE:-0}"
+BASHRC_LAST_PROXY_HOST="${ENVPILOT_LAST_MIHOMO_PROXY_HOST:-}"
+BASHRC_LAST_PROXY_PORT="${ENVPILOT_LAST_MIHOMO_PROXY_PORT:-}"
+BASHRC_LAST_API_PORT="${ENVPILOT_LAST_MIHOMO_API_PORT:-}"
+BASHRC_LAST_SOCKS="${ENVPILOT_LAST_BASHRC_PROXY_ENABLE_SOCKS:-}"
+BASHRC_LAST_PRESTART="${ENVPILOT_LAST_BASHRC_PROXY_PRESTART_NONINTERACTIVE:-}"
+BASHRC_LAST_TMP="${ENVPILOT_LAST_BASHRC_USE_NODE_LOCAL_TMP:-}"
+BASHRC_LAST_TMP_ROOT="${ENVPILOT_LAST_BASHRC_CODEX_TMP_ROOT:-}"
+if [ "$BASHRC_PROFILE_ACTIVE" = "1" ]; then
+    [ -n "$BASHRC_LAST_PROXY_HOST" ] && [ "${MIHOMO_PROXY_HOST:-${BASHRC_PROXY_HOST:-}}" = "$BASHRC_LAST_PROXY_HOST" ] && BASHRC_EXTERNAL_PROXY_HOST_SET=""
+    [ -n "$BASHRC_LAST_PROXY_PORT" ] && [ "${MIHOMO_PROXY_PORT:-${BASHRC_PROXY_PORT:-}}" = "$BASHRC_LAST_PROXY_PORT" ] && BASHRC_EXTERNAL_PROXY_PORT_SET=""
+    [ -n "$BASHRC_LAST_API_PORT" ] && [ "${MIHOMO_API_PORT:-}" = "$BASHRC_LAST_API_PORT" ] && BASHRC_EXTERNAL_API_PORT_SET=""
+    [ -n "$BASHRC_LAST_SOCKS" ] && [ "${BASHRC_PROXY_ENABLE_SOCKS:-}" = "$BASHRC_LAST_SOCKS" ] && BASHRC_EXTERNAL_SOCKS_SET=""
+    [ -n "$BASHRC_LAST_PRESTART" ] && [ "${BASHRC_PROXY_PRESTART_NONINTERACTIVE:-}" = "$BASHRC_LAST_PRESTART" ] && BASHRC_EXTERNAL_PRESTART_SET=""
+    [ -n "$BASHRC_LAST_TMP" ] && [ "${BASHRC_USE_NODE_LOCAL_TMP:-}" = "$BASHRC_LAST_TMP" ] && BASHRC_EXTERNAL_TMP_SET=""
+    [ -n "$BASHRC_LAST_TMP_ROOT" ] && [ "${BASHRC_CODEX_TMP_ROOT:-}" = "$BASHRC_LAST_TMP_ROOT" ] && BASHRC_EXTERNAL_TMP_ROOT_SET=""
+fi
+BASHRC_EXTERNAL_PROXY_HOST_VALUE="${MIHOMO_PROXY_HOST:-${BASHRC_PROXY_HOST:-}}"
+BASHRC_EXTERNAL_PROXY_PORT_VALUE="${MIHOMO_PROXY_PORT:-${BASHRC_PROXY_PORT:-}}"
+BASHRC_EXTERNAL_API_PORT_VALUE="${MIHOMO_API_PORT:-}"
+BASHRC_EXTERNAL_SOCKS_VALUE="${BASHRC_PROXY_ENABLE_SOCKS:-}"
+BASHRC_EXTERNAL_PRESTART_VALUE="${BASHRC_PROXY_PRESTART_NONINTERACTIVE:-}"
+BASHRC_EXTERNAL_TMP_VALUE="${BASHRC_USE_NODE_LOCAL_TMP:-}"
+BASHRC_EXTERNAL_TMP_ROOT_VALUE="${BASHRC_CODEX_TMP_ROOT:-}"
+
 export ENVPILOT_CONFIG_DIR="${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}"
 export BASHRC_SECRETS_FILE="${BASHRC_SECRETS_FILE:-$HOME/.config/secrets/api.env}"
 export MIHOMO_PROXY_HOST="${MIHOMO_PROXY_HOST:-${BASHRC_PROXY_HOST:-127.0.0.1}}"
@@ -16,6 +50,9 @@ export BASHRC_MIHOMO_UPDATE_SCRIPT="${BASHRC_MIHOMO_UPDATE_SCRIPT:-$HOME/softwar
 export BASHRC_ENVPILOT_ROOT="${BASHRC_ENVPILOT_ROOT:-$HOME/envpilot}"
 export BASHRC_REPO_ROOT_FILE="${BASHRC_REPO_ROOT_FILE:-$HOME/.config/envpilot/repo-root}"
 export BASHRC_PROXY_ENABLE_SOCKS="${BASHRC_PROXY_ENABLE_SOCKS:-0}"
+export BASHRC_PROXY_PRESTART_NONINTERACTIVE="${BASHRC_PROXY_PRESTART_NONINTERACTIVE:-1}"
+export BASHRC_USE_NODE_LOCAL_TMP="${BASHRC_USE_NODE_LOCAL_TMP:-1}"
+export BASHRC_CODEX_TMP_ROOT="${BASHRC_CODEX_TMP_ROOT:-/tmp/${USER:-$(id -un 2>/dev/null || printf unknown)}-codex-tmp}"
 if [ ! -f "$BASHRC_ENVPILOT_ROOT/envpilot.sh" ] && [ -r "$BASHRC_REPO_ROOT_FILE" ]; then
     BASHRC_REPO_ROOT_CANDIDATE="$(sed -n '1p' "$BASHRC_REPO_ROOT_FILE" 2>/dev/null || true)"
     if [ -f "$BASHRC_REPO_ROOT_CANDIDATE/envpilot.sh" ]; then
@@ -27,6 +64,103 @@ command_exists()
 {
     command -v "$1" >/dev/null 2>&1
 }
+
+envpilot_shell_local_value()
+{
+    local key="${1:-}"
+    [ -r "$ENVPILOT_CONFIG_DIR/shell.local" ] || return 1
+    awk -v key="$key" '
+        END { if (result != "") print result }
+        {
+            line = $0
+            sub(/^[[:space:]]*/, "", line)
+            sub(/^export[[:space:]]+/, "", line)
+            prefix = key "="
+            if (index(line, prefix) != 1) next
+            value = substr(line, length(prefix) + 1)
+            sub(/[[:space:]]+$/, "", value)
+            first = substr(value, 1, 1)
+            last_char = substr(value, length(value), 1)
+            if ((first == "\"" && last_char == "\"") ||
+                (first == "\047" && last_char == "\047")) {
+                value = substr(value, 2, length(value) - 2)
+            }
+            if (value !~ /[$`;&|<>]/ && value ~ /^[A-Za-z0-9_./:@+-]+$/) result = value
+        }
+    ' "$ENVPILOT_CONFIG_DIR/shell.local" 2>/dev/null
+}
+
+envpilot_load_noninteractive_settings()
+{
+    local value
+    if [ -z "$BASHRC_EXTERNAL_PROXY_PORT_SET" ]; then
+        value="$(envpilot_shell_local_value MIHOMO_PROXY_PORT || true)"
+        [ -n "$value" ] || value="$(envpilot_shell_local_value BASHRC_PROXY_PORT || true)"
+        [ -n "$value" ] && MIHOMO_PROXY_PORT="$value"
+    fi
+    if [ -z "$BASHRC_EXTERNAL_API_PORT_SET" ]; then
+        value="$(envpilot_shell_local_value MIHOMO_API_PORT || true)"
+        [ -n "$value" ] && MIHOMO_API_PORT="$value"
+    fi
+    if [ -z "$BASHRC_EXTERNAL_PROXY_HOST_SET" ]; then
+        value="$(envpilot_shell_local_value MIHOMO_PROXY_HOST || true)"
+        [ -n "$value" ] || value="$(envpilot_shell_local_value BASHRC_PROXY_HOST || true)"
+        [ -n "$value" ] && MIHOMO_PROXY_HOST="$value"
+    fi
+    if [ -z "$BASHRC_EXTERNAL_SOCKS_SET" ]; then
+        value="$(envpilot_shell_local_value BASHRC_PROXY_ENABLE_SOCKS || true)"
+        [ -n "$value" ] && BASHRC_PROXY_ENABLE_SOCKS="$value"
+    fi
+    if [ -z "$BASHRC_EXTERNAL_PRESTART_SET" ]; then
+        value="$(envpilot_shell_local_value BASHRC_PROXY_PRESTART_NONINTERACTIVE || true)"
+        [ -n "$value" ] && BASHRC_PROXY_PRESTART_NONINTERACTIVE="$value"
+    fi
+    if [ -z "$BASHRC_EXTERNAL_TMP_SET" ]; then
+        value="$(envpilot_shell_local_value BASHRC_USE_NODE_LOCAL_TMP || true)"
+        [ -n "$value" ] && BASHRC_USE_NODE_LOCAL_TMP="$value"
+    fi
+    if [ -z "$BASHRC_EXTERNAL_TMP_ROOT_SET" ]; then
+        value="$(envpilot_shell_local_value BASHRC_CODEX_TMP_ROOT || true)"
+        [ -n "$value" ] && BASHRC_CODEX_TMP_ROOT="$value"
+    fi
+}
+
+envpilot_restore_external_settings()
+{
+    if [ -n "$BASHRC_EXTERNAL_PROXY_HOST_SET" ]; then MIHOMO_PROXY_HOST="$BASHRC_EXTERNAL_PROXY_HOST_VALUE"; fi
+    if [ -n "$BASHRC_EXTERNAL_PROXY_PORT_SET" ]; then MIHOMO_PROXY_PORT="$BASHRC_EXTERNAL_PROXY_PORT_VALUE"; fi
+    if [ -n "$BASHRC_EXTERNAL_API_PORT_SET" ]; then MIHOMO_API_PORT="$BASHRC_EXTERNAL_API_PORT_VALUE"; fi
+    if [ -n "$BASHRC_EXTERNAL_SOCKS_SET" ]; then BASHRC_PROXY_ENABLE_SOCKS="$BASHRC_EXTERNAL_SOCKS_VALUE"; fi
+    if [ -n "$BASHRC_EXTERNAL_PRESTART_SET" ]; then BASHRC_PROXY_PRESTART_NONINTERACTIVE="$BASHRC_EXTERNAL_PRESTART_VALUE"; fi
+    if [ -n "$BASHRC_EXTERNAL_TMP_SET" ]; then BASHRC_USE_NODE_LOCAL_TMP="$BASHRC_EXTERNAL_TMP_VALUE"; fi
+    if [ -n "$BASHRC_EXTERNAL_TMP_ROOT_SET" ]; then BASHRC_CODEX_TMP_ROOT="$BASHRC_EXTERNAL_TMP_ROOT_VALUE"; fi
+    export MIHOMO_PROXY_HOST MIHOMO_PROXY_PORT MIHOMO_API_PORT
+    export BASHRC_PROXY_HOST="$MIHOMO_PROXY_HOST"
+    export BASHRC_PROXY_PORT="$MIHOMO_PROXY_PORT"
+}
+
+envpilot_record_managed_settings()
+{
+    ENVPILOT_PROFILE_ACTIVE=1
+    ENVPILOT_LAST_MIHOMO_PROXY_HOST="$MIHOMO_PROXY_HOST"
+    ENVPILOT_LAST_MIHOMO_PROXY_PORT="$MIHOMO_PROXY_PORT"
+    ENVPILOT_LAST_MIHOMO_API_PORT="$MIHOMO_API_PORT"
+    ENVPILOT_LAST_BASHRC_PROXY_ENABLE_SOCKS="$BASHRC_PROXY_ENABLE_SOCKS"
+    ENVPILOT_LAST_BASHRC_PROXY_PRESTART_NONINTERACTIVE="$BASHRC_PROXY_PRESTART_NONINTERACTIVE"
+    ENVPILOT_LAST_BASHRC_USE_NODE_LOCAL_TMP="$BASHRC_USE_NODE_LOCAL_TMP"
+    ENVPILOT_LAST_BASHRC_CODEX_TMP_ROOT="$BASHRC_CODEX_TMP_ROOT"
+    export ENVPILOT_PROFILE_ACTIVE ENVPILOT_LAST_MIHOMO_PROXY_HOST
+    export ENVPILOT_LAST_MIHOMO_PROXY_PORT ENVPILOT_LAST_MIHOMO_API_PORT
+    export ENVPILOT_LAST_BASHRC_PROXY_ENABLE_SOCKS
+    export ENVPILOT_LAST_BASHRC_PROXY_PRESTART_NONINTERACTIVE
+    export ENVPILOT_LAST_BASHRC_USE_NODE_LOCAL_TMP ENVPILOT_LAST_BASHRC_CODEX_TMP_ROOT
+}
+
+envpilot_load_noninteractive_settings
+envpilot_record_managed_settings
+export MIHOMO_PROXY_HOST MIHOMO_PROXY_PORT MIHOMO_API_PORT
+export BASHRC_PROXY_HOST="$MIHOMO_PROXY_HOST"
+export BASHRC_PROXY_PORT="$MIHOMO_PROXY_PORT"
 
 path_prepend()
 {
@@ -45,8 +179,119 @@ path_prepend "$HOME/software/git/bin"
 path_prepend "$HOME/software/python/current/bin"
 path_prepend "$HOME/software/python/bin"
 
+if [ "${BASHRC_USE_NODE_LOCAL_TMP:-1}" = "1" ] && [ -d /tmp ] && [ -w /tmp ]; then
+    case "$BASHRC_CODEX_TMP_ROOT" in
+        /tmp/*)
+            if [ ! -d "$BASHRC_CODEX_TMP_ROOT" ]; then
+                mkdir -p "$BASHRC_CODEX_TMP_ROOT" 2>/dev/null &&
+                    chmod 700 "$BASHRC_CODEX_TMP_ROOT" 2>/dev/null || true
+            fi
+            if [ -d "$BASHRC_CODEX_TMP_ROOT" ] && [ -w "$BASHRC_CODEX_TMP_ROOT" ]; then
+                case "${TMPDIR:-}" in
+                    /tmp/*)
+                        if [ ! -d "$TMPDIR" ] || [ ! -w "$TMPDIR" ]; then
+                            export TMPDIR="$BASHRC_CODEX_TMP_ROOT"
+                        fi
+                        ;;
+                    *) export TMPDIR="$BASHRC_CODEX_TMP_ROOT" ;;
+                esac
+            fi
+            ;;
+    esac
+fi
+
+proxy_no_proxy_add()
+{
+    local value="${1:-}"
+    [ -n "$value" ] || return 0
+    no_proxy="${no_proxy:-${NO_PROXY:-}}"
+    case ",${no_proxy:-}," in
+        *",$value,"*) ;;
+        *) no_proxy="${no_proxy:+$no_proxy,}$value" ;;
+    esac
+    export no_proxy
+    export NO_PROXY="$no_proxy"
+}
+
+proxy_port_socket_listening()
+{
+    local port="${1:-$MIHOMO_PROXY_PORT}"
+    local line
+    if command_exists ss; then
+        line="$(ss -lntH "sport = :$port" 2>/dev/null | head -n 1 || true)"
+        [ -n "$line" ] && return 0
+    fi
+    if command_exists lsof; then
+        line="$(lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | awk 'NR == 2 { print; exit }' || true)"
+        [ -n "$line" ] && return 0
+    fi
+    if command_exists netstat; then
+        line="$(netstat -an 2>/dev/null | grep -E "[.:]${port}[[:space:]].*LISTEN" | head -n 1 || true)"
+        [ -n "$line" ] && return 0
+    fi
+    return 1
+}
+
+proxy_port_is_listening()
+{
+    local host="${1:-$MIHOMO_PROXY_HOST}"
+    local port="${2:-$MIHOMO_PROXY_PORT}"
+    proxy_port_socket_listening "$port" && return 0
+    if command_exists nc && nc -z -w 1 "$host" "$port" >/dev/null 2>&1; then
+        return 0
+    fi
+    if command_exists timeout && timeout 1 bash -c ": </dev/tcp/$host/$port" >/dev/null 2>&1; then
+        return 0
+    fi
+    return 1
+}
+
+envpilot_prepare_noninteractive_proxy()
+{
+    [ "${BASHRC_PROXY_PRESTART_NONINTERACTIVE:-1}" = "1" ] || return 1
+    [ -x "$BASHRC_MIHOMO_START_SCRIPT" ] || return 1
+    [ -s "$HOME/.config/mihomo/config.yaml" ] || return 1
+    proxy_port_is_listening "$MIHOMO_PROXY_HOST" "$MIHOMO_PROXY_PORT" && return 0
+    (
+        unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY
+        export no_proxy="127.0.0.1,localhost,::1"
+        export NO_PROXY="$no_proxy"
+        MIHOMO_PROXY_PORT="$MIHOMO_PROXY_PORT" \
+            MIHOMO_API_PORT="$MIHOMO_API_PORT" \
+            MIHOMO_QUIET_START=1 \
+            "$BASHRC_MIHOMO_START_SCRIPT"
+    ) >/dev/null 2>&1 || return 1
+    proxy_port_is_listening "$MIHOMO_PROXY_HOST" "$MIHOMO_PROXY_PORT"
+}
+
+envpilot_export_proxy_if_ready()
+{
+    proxy_port_is_listening "$MIHOMO_PROXY_HOST" "$MIHOMO_PROXY_PORT" || return 0
+    export http_proxy="http://${MIHOMO_PROXY_HOST}:${MIHOMO_PROXY_PORT}"
+    export https_proxy="$http_proxy"
+    export HTTP_PROXY="$http_proxy"
+    export HTTPS_PROXY="$https_proxy"
+    if [ "$BASHRC_PROXY_ENABLE_SOCKS" = "1" ]; then
+        export all_proxy="socks5h://${MIHOMO_PROXY_HOST}:${MIHOMO_PROXY_PORT}"
+        export ALL_PROXY="$all_proxy"
+    else
+        unset all_proxy ALL_PROXY
+    fi
+    proxy_no_proxy_add localhost
+    proxy_no_proxy_add 127.0.0.1
+    proxy_no_proxy_add ::1
+}
+
+envpilot_prepare_noninteractive_environment()
+{
+    if envpilot_prepare_noninteractive_proxy; then
+        envpilot_export_proxy_if_ready
+    fi
+}
+
 # No real TTY: keep only the minimal environment.
 if [[ $- != *i* || ! -t 0 || ! -t 1 ]]; then
+    envpilot_prepare_noninteractive_environment
     return 0
 fi
 
@@ -95,46 +340,6 @@ proxy_on()
 proxy_off()
 {
     unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY
-}
-
-proxy_no_proxy_add()
-{
-    local value="${1:-}"
-    [ -n "$value" ] || return 0
-    no_proxy="${no_proxy:-${NO_PROXY:-}}"
-    case ",${no_proxy:-}," in
-        *",$value,"*) ;;
-        *) no_proxy="${no_proxy:+$no_proxy,}$value" ;;
-    esac
-    export no_proxy
-    export NO_PROXY="$no_proxy"
-}
-
-proxy_port_socket_listening()
-{
-    local port="${1:-$MIHOMO_PROXY_PORT}"
-    local line
-    if command_exists ss; then
-        line="$(ss -lntH "sport = :$port" 2>/dev/null | head -n 1 || true)"
-        [ -n "$line" ] && return 0
-    fi
-    if command_exists lsof; then
-        line="$(lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | awk 'NR == 2 { print; exit }' || true)"
-        [ -n "$line" ] && return 0
-    fi
-    if command_exists netstat; then
-        line="$(netstat -an 2>/dev/null | grep -E "[.:]${port}[[:space:]].*LISTEN" | head -n 1 || true)"
-        [ -n "$line" ] && return 0
-    fi
-    return 1
-}
-
-proxy_port_is_listening()
-{
-    local host="${1:-$MIHOMO_PROXY_HOST}"
-    local port="${2:-$MIHOMO_PROXY_PORT}"
-    proxy_port_socket_listening "$port" && return 0
-    command_exists nc && nc -z -w 1 "$host" "$port" >/dev/null 2>&1
 }
 
 mihomo_start()
@@ -261,15 +466,20 @@ with_secrets()
     )
 }
 
-[ -r "$ENVPILOT_CONFIG_DIR/shell.local" ] && . "$ENVPILOT_CONFIG_DIR/shell.local"
-if [ -r "$ENVPILOT_CONFIG_DIR/shell.local" ] && ! grep -qE "^[[:space:]]*(export[[:space:]]+)?MIHOMO_PROXY_PORT=" "$ENVPILOT_CONFIG_DIR/shell.local" 2>/dev/null; then
-    export MIHOMO_PROXY_PORT="${BASHRC_PROXY_PORT:-$MIHOMO_PROXY_PORT}"
+if [ -r "$ENVPILOT_CONFIG_DIR/shell.local" ]; then
+    . "$ENVPILOT_CONFIG_DIR/shell.local"
 fi
-export BASHRC_PROXY_HOST="$MIHOMO_PROXY_HOST"
-export BASHRC_PROXY_PORT="$MIHOMO_PROXY_PORT"
+envpilot_restore_external_settings
+envpilot_record_managed_settings
+unset BASHRC_EXTERNAL_PROXY_HOST_SET BASHRC_EXTERNAL_PROXY_PORT_SET BASHRC_EXTERNAL_API_PORT_SET
+unset BASHRC_EXTERNAL_SOCKS_SET BASHRC_EXTERNAL_PRESTART_SET
+unset BASHRC_EXTERNAL_TMP_SET BASHRC_EXTERNAL_TMP_ROOT_SET
+unset BASHRC_EXTERNAL_PROXY_HOST_VALUE BASHRC_EXTERNAL_PROXY_PORT_VALUE
+unset BASHRC_EXTERNAL_API_PORT_VALUE BASHRC_EXTERNAL_SOCKS_VALUE
+unset BASHRC_EXTERNAL_PRESTART_VALUE BASHRC_EXTERNAL_TMP_VALUE
+unset BASHRC_EXTERNAL_TMP_ROOT_VALUE
 
 alias ..='cd ..'
 alias ...='cd ../..'
 alias ll='ls -lhA'
 alias la='ls -A'
-

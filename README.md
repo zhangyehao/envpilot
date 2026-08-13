@@ -89,7 +89,7 @@ proxy_on
 bash envpilot.sh install
 ```
 
-默认不会自动启动 Mihomo，也不会自动设置代理环境变量。需要代理时执行 `proxy_on`，不用时执行 `proxy_off`。
+交互式 shell 默认不会自动启动 Mihomo，也不会自动设置代理环境变量；需要代理时执行 `proxy_on`，不用时执行 `proxy_off`。非交互 SSH/Codex shell 则会按下一节的规则，在配置存在且端口准备好后安静地预启动并继承 HTTP/HTTPS 代理。
 
 `proxy_on` 会先确认 `${MIHOMO_PROXY_HOST}:${MIHOMO_PROXY_PORT}` 确实正在监听；检查失败时直接返回，不会留下导致 `Connection refused` 的错误代理变量。默认只设置 HTTP/HTTPS 代理，这对 Conda、Git、curl 和 Codex 通常更稳。确实需要 SOCKS 时，在 `~/.config/envpilot/shell.local` 中设置：
 
@@ -98,6 +98,19 @@ BASHRC_PROXY_ENABLE_SOCKS=1
 ```
 
 envpilot 只向已有 `no_proxy/NO_PROXY` 追加 `localhost`、`127.0.0.1` 和 `::1`，不会覆盖集群内部域名或网段；`proxy_off` 只清理代理地址并保留 `no_proxy`。
+
+### 非交互 SSH / Codex shell
+
+`apply-shell` 生成的 Bash/zsh 模板会在非交互 TTY 判断之前执行一段安静的、尽力而为的准备逻辑：
+
+1. 从当前环境或 `~/.config/envpilot/shell.local` 读取 `MIHOMO_PROXY_PORT` 和 `MIHOMO_API_PORT`。
+2. 如果配置文件存在且目标端口尚未监听，尝试以 `MIHOMO_QUIET_START=1` 启动 envpilot 管理的 Mihomo。
+3. 只有确认 HTTP 代理端口真实监听后，才向当前 shell 导出 HTTP/HTTPS 代理；启动失败时不输出错误，也不设置错误代理变量。
+4. 默认只导出 HTTP/HTTPS；`all_proxy/ALL_PROXY` 只有 `BASHRC_PROXY_ENABLE_SOCKS=1` 时才启用。
+
+因此，多个 SSH 窗口在同一用户、同一节点上共享一个 Mihomo 进程；`proxy_on` 和 `proxy_off` 仍然只改变当前 shell 的代理变量。启动锁会让并发的非交互 shell 等待已有启动流程，不会反复删除和重建同一个 `/tmp/${USER}_mihomo_${HOSTNAME}/` 运行目录。
+
+这段逻辑不会在没有 `~/.config/mihomo/config.yaml` 时凭空启动服务；启动检查是有界的，代理不可用时不会无限阻塞，shell 最终仍会安静返回。若你的远程启动器不读取 `.bashrc`，请显式使用 `bash -lc 'command'`，或在受信任的启动环境中设置 `BASH_ENV` 指向一个只包含安全初始化逻辑的文件；`ssh host command`、某些 supervisor 和 app-server 启动器并不保证读取交互式 profile。
 
 ## Mihomo 运行模型
 
@@ -115,6 +128,8 @@ Linux/macOS/Unix-like 环境按以下方式运行：
 ```
 
 二进制和订阅配置保存在用户目录；实际运行时复制到节点本地 `/tmp`。这样可以减少 NFS、Lustre、GPFS、BeeGFS 等共享文件系统上的锁、元数据和缓存 I/O 问题。
+
+`BASHRC_USE_NODE_LOCAL_TMP=1` 时，模板还会创建 `/tmp/${USER}-codex-tmp` 并在可用时设置 `TMPDIR`。这只迁移临时文件、运行时副本和锁，不会把整个 `~/.codex`、SQLite 数据库、会话历史或长期配置搬到易失的 `/tmp`。节点重启或清理 `/tmp` 后，重新登录并执行 `mihomo start` 即可重建运行时副本。
 
 切换登录节点后，`/tmp` 和 `127.0.0.1` 都会变化，需要在新节点重新执行：
 

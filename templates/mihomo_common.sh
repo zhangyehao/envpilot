@@ -62,7 +62,53 @@ mihomo_init_runtime()
     MIHOMO_RUNTIME_BIN="${MIHOMO_RUNTIME_DIR}/mihomo"
     MIHOMO_RUNTIME_LOG="${MIHOMO_RUNTIME_DIR}/mihomo.log"
     MIHOMO_PID_FILE="${MIHOMO_RUNTIME_DIR}/mihomo.pid"
-    export MIHOMO_RUNTIME_DIR MIHOMO_RUNTIME_BIN MIHOMO_RUNTIME_LOG MIHOMO_PID_FILE
+    # Keep the lock beside the runtime directory. start_mihomo.sh removes the
+    # runtime directory before copying a fresh node-local instance.
+    MIHOMO_START_LOCK_DIR="${MIHOMO_RUNTIME_DIR}.start.lock"
+    export MIHOMO_RUNTIME_DIR MIHOMO_RUNTIME_BIN MIHOMO_RUNTIME_LOG MIHOMO_PID_FILE MIHOMO_START_LOCK_DIR
+}
+
+mihomo_release_start_lock()
+{
+    local owner=""
+    [ -d "${MIHOMO_START_LOCK_DIR:-}" ] || return 0
+    owner="$(cat "$MIHOMO_START_LOCK_DIR/pid" 2>/dev/null || true)"
+    [ "$owner" = "$$" ] || return 0
+    rm -rf -- "$MIHOMO_START_LOCK_DIR" 2>/dev/null || true
+}
+
+mihomo_acquire_start_lock()
+{
+    local attempts=0
+    local max_attempts="${MIHOMO_START_LOCK_TIMEOUT:-${MIHOMO_STARTUP_TIMEOUT:-30}}"
+    local owner=""
+
+    case "$MIHOMO_RUNTIME_DIR" in
+        /tmp/*_mihomo_*) ;;
+        *) mihomo_die "unsafe runtime directory for start lock: $MIHOMO_RUNTIME_DIR" ;;
+    esac
+    while ! mkdir "$MIHOMO_START_LOCK_DIR" 2>/dev/null; do
+        owner="$(cat "$MIHOMO_START_LOCK_DIR/pid" 2>/dev/null || true)"
+        if [ -n "$owner" ] && ! kill -0 "$owner" 2>/dev/null; then
+            rm -rf -- "$MIHOMO_START_LOCK_DIR" 2>/dev/null || true
+            continue
+        fi
+        if [ -z "$owner" ] && [ "$attempts" -ge 2 ]; then
+            rm -rf -- "$MIHOMO_START_LOCK_DIR" 2>/dev/null || true
+            continue
+        fi
+        if [ "$attempts" -ge "$max_attempts" ]; then
+            return 1
+        fi
+        sleep 1
+        attempts=$((attempts + 1))
+    done
+    if ! printf '%s\n' "$$" > "$MIHOMO_START_LOCK_DIR/pid"; then
+        rm -rf -- "$MIHOMO_START_LOCK_DIR" 2>/dev/null || true
+        return 1
+    fi
+    trap 'mihomo_release_start_lock' EXIT
+    return 0
 }
 
 mihomo_port_socket_listening()

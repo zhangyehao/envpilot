@@ -303,6 +303,14 @@ ep_proxy_port_is_listening()
     return 1
 }
 
+ep_mihomo_api_healthy()
+{
+    local api_port="${1:-$(ep_mihomo_api_port)}"
+    ep_command_exists curl || return 1
+    curl --noproxy '*' --connect-timeout 1 --max-time 2 \
+        -fsS -o /dev/null "http://127.0.0.1:$api_port/version"
+}
+
 ep_mihomo_asset_version()
 {
     local name
@@ -538,8 +546,9 @@ ep_mihomo_runtime_running()
 
 ep_cleanup_mihomo_runtime()
 {
-    local runtime_dir
+    local runtime_dir lock_dir
     runtime_dir="$(ep_mihomo_runtime_dir)"
+    lock_dir="${runtime_dir}.start.lock"
     case "$runtime_dir" in
         /tmp/*_mihomo_*) ;;
         *) ep_warn "Skip unsafe Mihomo runtime cleanup target: $runtime_dir"; return 0 ;;
@@ -547,6 +556,10 @@ ep_cleanup_mihomo_runtime()
     if [ -d "$runtime_dir" ]; then
         rm -rf -- "$runtime_dir"
         ep_log "Removed Mihomo runtime directory: $runtime_dir"
+    fi
+    if [ -d "$lock_dir" ]; then
+        rm -rf -- "$lock_dir"
+        ep_log "Removed Mihomo start lock: $lock_dir"
     fi
 }
 

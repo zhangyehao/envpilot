@@ -6,6 +6,17 @@
 # BASHRC_AUTO_ENABLE_PROXY="1"
 # BASHRC_AUTO_LOAD_SECRETS="0"
 
+# Non-interactive SSH/Codex shells may prepare the envpilot Mihomo proxy
+# before returning from the profile. Set to 0 to disable this behavior.
+# BASHRC_PROXY_PRESTART_NONINTERACTIVE="1"
+
+# Keep temporary files and Mihomo runtime state on the current node.
+# This does not move the whole ~/.codex directory or its session database.
+# BASHRC_USE_NODE_LOCAL_TMP="1"
+# BASHRC_CODEX_TMP_ROOT="/tmp/${USER}-codex-tmp"
+
+# HTTP/HTTPS are enabled by proxy_on when the port is ready. SOCKS is opt-in.
+# BASHRC_PROXY_ENABLE_SOCKS="1"
+
 # path_append "$HOME/software/mytool/bin"
 # module load apps/singularity/4.0.1
-

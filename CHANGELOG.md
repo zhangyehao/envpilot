@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.2.3 - 2026-08-13
+
+### Fixed
+
+- Prepared the envpilot-managed Mihomo proxy before the non-interactive shell guard so SSH commands, Codex app-server startup, and other non-TTY processes can inherit a usable proxy.
+- Exported HTTP/HTTPS variables only after the configured proxy port passes a real listener check; startup failures remain quiet and do not leave unusable proxy variables behind.
+- Preserved existing `no_proxy/NO_PROXY` entries and kept SOCKS opt-in through `BASHRC_PROXY_ENABLE_SOCKS=1`.
+- Added a node-local temporary directory path for non-interactive Codex-related startup state while keeping the persistent `~/.codex` state and session database in the user's home directory.
+- Added a sibling start lock so concurrent SSH windows reuse one envpilot Mihomo process per user and node instead of racing to replace the runtime directory.
+- Ensured `shell.local` changes can replace values exported by an earlier envpilot profile generation without requiring a new shell or a manual `reset`.
+- Made install-time proxy preparation trust an already-listening port before optional process/API inspection, improving compatibility with minimal server toolchains.
+
+### Changed
+
+- `install all` now prepares Mihomo before network-dependent Git, Python, Conda, Mamba, Codex, GitHub CLI, and tmux steps.
+- Documented non-interactive SSH/Codex inheritance, `bash -lc`/`BASH_ENV` requirements for launchers that do not read `.bashrc`, and the distinction between the shared Mihomo process and per-shell proxy variables.
+- Added regression fixtures for non-interactive proxy startup, bounded startup failure, and managed shell setting migration.
+
 ## 0.2.2 - 2026-08-06
 
 ### Fixed

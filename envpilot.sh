@@ -179,9 +179,61 @@ install_one()
     esac
 }
 
+ep_install_no_proxy_add()
+{
+    local value="${1:-}"
+    [ -n "$value" ] || return 0
+    no_proxy="${no_proxy:-${NO_PROXY:-}}"
+    case ",${no_proxy:-}," in
+        *",$value,"*) ;;
+        *) no_proxy="${no_proxy:+$no_proxy,}$value" ;;
+    esac
+    export no_proxy
+    export NO_PROXY="$no_proxy"
+}
+
+ep_prepare_install_proxy()
+{
+    local config proxy_port
+    config="$(ep_mihomo_config_file 2>/dev/null || true)"
+    [ -s "$config" ] || {
+        ep_warn "Install proxy unavailable: Mihomo config not found at ${config:-$HOME/.config/mihomo/config.yaml}; continuing without proxy."
+        return 1
+    }
+
+    proxy_port="$(ep_mihomo_proxy_port)"
+    if ! ep_proxy_port_is_listening 127.0.0.1 "$proxy_port"; then
+        ep_log "Preparing envpilot-managed Mihomo before the next installation step."
+        if ! MIHOMO_PROXY_PORT="$proxy_port" MIHOMO_API_PORT="$(ep_mihomo_api_port)" ep_start_mihomo; then
+            ep_warn "Mihomo could not be started on 127.0.0.1:$proxy_port; subsequent downloads will use direct network if available."
+            return 1
+        fi
+    fi
+    if ! ep_proxy_port_is_listening 127.0.0.1 "$proxy_port"; then
+        ep_warn "Mihomo proxy port 127.0.0.1:$proxy_port is not listening; continuing without proxy."
+        return 1
+    fi
+
+    export http_proxy="http://127.0.0.1:$proxy_port"
+    export https_proxy="$http_proxy"
+    export HTTP_PROXY="$http_proxy"
+    export HTTPS_PROXY="$https_proxy"
+    if [ "${BASHRC_PROXY_ENABLE_SOCKS:-0}" = "1" ]; then
+        export all_proxy="socks5h://127.0.0.1:$proxy_port"
+        export ALL_PROXY="$all_proxy"
+    else
+        unset all_proxy ALL_PROXY
+    fi
+    ep_install_no_proxy_add localhost
+    ep_install_no_proxy_add 127.0.0.1
+    ep_install_no_proxy_add ::1
+    ep_log "Proxy ready for subsequent installation steps: http://127.0.0.1:$proxy_port"
+    return 0
+}
+
 run_install()
 {
-    local action="install"
+    local action="install" component proxy_attempted
     [ "$EP_UPGRADE" = "1" ] && action="update"
     ep_init
     ep_platform_detect
@@ -189,7 +241,12 @@ run_install()
 
     case "$EP_COMPONENT" in
         all)
-            for component in git python mihomo conda mamba codex github tmux; do
+            proxy_attempted=0
+            for component in mihomo git python conda mamba codex github tmux; do
+                if [ "$component" != "mihomo" ] && [ "$proxy_attempted" = "0" ]; then
+                    ep_prepare_install_proxy || true
+                    proxy_attempted=1
+                fi
                 if ep_state_is_done "$component" && [ "$EP_UPGRADE" != "1" ]; then
                     ep_log "Skip $component: already marked done. Use update or --upgrade to re-check versions."
                     ep_report_event "$component" "skipped" "already marked done" "" "" ""
@@ -199,9 +256,16 @@ run_install()
                     ep_log "Re-checking installed $component for compatible updates."
                 fi
                 install_one "$component"
+                if [ "$component" = "mihomo" ]; then
+                    ep_prepare_install_proxy || true
+                    proxy_attempted=1
+                fi
             done
             ;;
         git|python|mihomo|conda|mamba|codex|github|tmux)
+            if [ "$EP_COMPONENT" != "mihomo" ]; then
+                ep_prepare_install_proxy || true
+            fi
             install_one "$EP_COMPONENT"
             ;;
         *)

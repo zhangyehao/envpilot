@@ -11,12 +11,22 @@ mihomo_command_exists curl || mihomo_die "curl is required for Mihomo health che
 [ -s "$MIHOMO_SOURCE_CONFIG/config.yaml" ] ||
     mihomo_die "mihomo config not found: $MIHOMO_SOURCE_CONFIG/config.yaml"
 
+if ! mihomo_acquire_start_lock; then
+    if mihomo_runtime_running && mihomo_api_healthy; then
+        [ "${MIHOMO_QUIET_START:-0}" = "1" ] || printf '[OK] mihomo is already starting or healthy.\n'
+        exit 0
+    fi
+    mihomo_die "another Mihomo start is in progress and did not become healthy within ${MIHOMO_START_LOCK_TIMEOUT:-${MIHOMO_STARTUP_TIMEOUT:-30}}s"
+fi
+
 if mihomo_runtime_running; then
     if mihomo_api_healthy; then
-        printf '[OK] mihomo is already running and healthy.\n'
-        pgrep -u "${USER:-$(id -un)}" -af "$MIHOMO_RUNTIME_BIN" || true
-        printf '[OK] proxy: %s:%s\n' "$MIHOMO_PROXY_HOST" "$MIHOMO_PROXY_PORT"
-        printf '[OK] API:   %s:%s\n' "$MIHOMO_PROXY_HOST" "$MIHOMO_API_PORT"
+        if [ "${MIHOMO_QUIET_START:-0}" != "1" ]; then
+            printf '[OK] mihomo is already running and healthy.\n'
+            pgrep -u "${USER:-$(id -un)}" -af "$MIHOMO_RUNTIME_BIN" || true
+            printf '[OK] proxy: %s:%s\n' "$MIHOMO_PROXY_HOST" "$MIHOMO_PROXY_PORT"
+            printf '[OK] API:   %s:%s\n' "$MIHOMO_PROXY_HOST" "$MIHOMO_API_PORT"
+        fi
         exit 0
     fi
 
@@ -66,11 +76,13 @@ while [ "$count" -lt "$MIHOMO_STARTUP_TIMEOUT" ]; do
         exit 1
     fi
     if mihomo_api_healthy && mihomo_port_reachable "$MIHOMO_PROXY_PORT"; then
-        printf '[OK] mihomo is ready. PID=%s\n' "$mihomo_pid"
-        printf '[OK] runtime: %s\n' "$MIHOMO_RUNTIME_DIR"
-        printf '[OK] log:     %s\n' "$MIHOMO_RUNTIME_LOG"
-        printf '[OK] proxy:   %s:%s\n' "$MIHOMO_PROXY_HOST" "$MIHOMO_PROXY_PORT"
-        printf '[OK] API:     %s:%s\n' "$MIHOMO_PROXY_HOST" "$MIHOMO_API_PORT"
+        if [ "${MIHOMO_QUIET_START:-0}" != "1" ]; then
+            printf '[OK] mihomo is ready. PID=%s\n' "$mihomo_pid"
+            printf '[OK] runtime: %s\n' "$MIHOMO_RUNTIME_DIR"
+            printf '[OK] log:     %s\n' "$MIHOMO_RUNTIME_LOG"
+            printf '[OK] proxy:   %s:%s\n' "$MIHOMO_PROXY_HOST" "$MIHOMO_PROXY_PORT"
+            printf '[OK] API:     %s:%s\n' "$MIHOMO_PROXY_HOST" "$MIHOMO_API_PORT"
+        fi
         exit 0
     fi
     sleep 1
