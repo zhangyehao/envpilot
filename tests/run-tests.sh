@@ -418,6 +418,7 @@ configured_proxy="$(
         HOME="$tmp_home" \
         PATH="$tmp_bin:$PATH" \
         ENVPILOT_TEST_MARKER="$marker" \
+        BASHRC_LOCAL_FILE="$tmp_home/.config/envpilot/shell.local" \
         BASHRC_CODEX_TMP_ROOT="$tmp_root" \
         BASHRC_AUTO_START_MIHOMO=0 \
         BASHRC_AUTO_ENABLE_PROXY=0 \
@@ -910,7 +911,9 @@ echo "[TEST] tmux manifest target and managed Mihomo detection"
 )
 
 echo "[TEST] version"
-grep -q '^0\.2\.4$' "$ROOT/VERSION"
+version="$(tr -d '\r\n' < "$ROOT/VERSION")"
+printf '%s\n' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'
+grep -q "^## $version - " "$ROOT/CHANGELOG.md"
 grep -q 'EP_GIT_MIN_VERSION' "$ROOT/components/git.sh"
 grep -q 'EP_PYTHON_MIN_VERSION' "$ROOT/components/python.sh"
 grep -q 'No real TTY' "$ROOT/templates/bashrc"

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.5 - 2026-08-13
+
+### Fixed
+
+- Made the macOS non-interactive shell fixture independent of runner `HOME` behavior by passing its temporary `shell.local` path explicitly.
+- Made the release-version test derive its expected version from `VERSION` and verify that the same version is documented in `CHANGELOG.md`, preventing future release-only CI failures.
+
 ## 0.2.4 - 2026-08-13
 
 ### Fixed
