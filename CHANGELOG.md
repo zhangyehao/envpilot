@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.4 - 2026-08-13
+
+### Fixed
+
+- Isolated the non-interactive Mihomo proxy fixture from CI runner environment variables so macOS, Linux, and other hosted runners cannot override the fixture's `shell.local` settings.
+- Kept the production shell behavior unchanged: explicitly supplied user environment variables still take precedence over `shell.local`.
+
 ## 0.2.3 - 2026-08-13
 
 ### Fixed

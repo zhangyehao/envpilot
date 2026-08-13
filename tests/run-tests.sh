@@ -414,14 +414,15 @@ fi
 EOF
 chmod +x "$tmp_home/software/mihomo/start_mihomo.sh" "$tmp_bin/ss"
 configured_proxy="$(
-    HOME="$tmp_home" \
-    PATH="$tmp_bin:$PATH" \
-    ENVPILOT_TEST_MARKER="$marker" \
-    BASHRC_CODEX_TMP_ROOT="$tmp_root" \
-    BASHRC_AUTO_START_MIHOMO=0 \
-    BASHRC_AUTO_ENABLE_PROXY=0 \
-    BASHRC_AUTO_LOAD_MODULES=0 \
-    BASHRC_AUTO_LOAD_SECRETS=0 \
+    env -i \
+        HOME="$tmp_home" \
+        PATH="$tmp_bin:$PATH" \
+        ENVPILOT_TEST_MARKER="$marker" \
+        BASHRC_CODEX_TMP_ROOT="$tmp_root" \
+        BASHRC_AUTO_START_MIHOMO=0 \
+        BASHRC_AUTO_ENABLE_PROXY=0 \
+        BASHRC_AUTO_LOAD_MODULES=0 \
+        BASHRC_AUTO_LOAD_SECRETS=0 \
     bash -c 'source "'"$ROOT/templates/bashrc"'"; printf "%s|%s|%s|%s|%s|%s|%s" "$MIHOMO_PROXY_PORT" "$MIHOMO_API_PORT" "$http_proxy" "$https_proxy" "${all_proxy-unset}" "$TMPDIR" "$(cat "$ENVPILOT_TEST_MARKER")"' 2>/dev/null
 )"
 case "$configured_proxy" in
@@ -909,7 +910,7 @@ echo "[TEST] tmux manifest target and managed Mihomo detection"
 )
 
 echo "[TEST] version"
-grep -q '^0\.2\.3$' "$ROOT/VERSION"
+grep -q '^0\.2\.4$' "$ROOT/VERSION"
 grep -q 'EP_GIT_MIN_VERSION' "$ROOT/components/git.sh"
 grep -q 'EP_PYTHON_MIN_VERSION' "$ROOT/components/python.sh"
 grep -q 'No real TTY' "$ROOT/templates/bashrc"
