@@ -78,26 +78,47 @@ command_exists()
 envpilot_shell_local_value()
 {
     local key="${1:-}"
+    local line value result=""
     [ -r "$BASHRC_LOCAL_FILE" ] || return 1
-    awk -v key="$key" '
-        END { if (result != "") print result }
-        {
-            line = $0
-            sub(/^[[:space:]]*/, "", line)
-            sub(/^export[[:space:]]+/, "", line)
-            prefix = key "="
-            if (index(line, prefix) != 1) next
-            value = substr(line, length(prefix) + 1)
-            sub(/[[:space:]]+$/, "", value)
-            first = substr(value, 1, 1)
-            last_char = substr(value, length(value), 1)
-            if ((first == "\"" && last_char == "\"") ||
-                (first == "\047" && last_char == "\047")) {
-                value = substr(value, 2, length(value) - 2)
-            }
-            if (value ~ /^[A-Za-z0-9_./:@+-][A-Za-z0-9_./:@+-]*$/) result = value
-        }
-    ' "$BASHRC_LOCAL_FILE" 2>/dev/null
+    while IFS= read -r line || [ -n "$line" ]; do
+        while :; do
+            case "$line" in
+                [[:space:]]*) line="${line#?}" ;;
+                *) break ;;
+            esac
+        done
+        case "$line" in
+            export[[:space:]]*)
+                line="${line#export}"
+                while :; do
+                    case "$line" in
+                        [[:space:]]*) line="${line#?}" ;;
+                        *) break ;;
+                    esac
+                done
+                ;;
+        esac
+        case "$line" in
+            "$key="*) value="${line#*=}" ;;
+            *) continue ;;
+        esac
+        while :; do
+            case "$value" in
+                *[[:space:]]) value="${value%?}" ;;
+                *) break ;;
+            esac
+        done
+        case "$value" in
+            \"*\") value="${value#\"}"; value="${value%\"}" ;;
+            \'*\') value="${value#\'}"; value="${value%\'}" ;;
+        esac
+        case "$value" in
+            ''|*[!A-Za-z0-9_./:@+-]*) continue ;;
+            *) result="$value" ;;
+        esac
+    done < "$BASHRC_LOCAL_FILE"
+    [ -n "$result" ] || return 1
+    printf '%s\n' "$result"
 }
 
 envpilot_load_noninteractive_settings()

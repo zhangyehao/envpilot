@@ -443,9 +443,10 @@ esac
 
 echo "[TEST] shell.local overrides prior envpilot-managed settings"
 cat > "$tmp_home/.config/envpilot/shell.local" <<'EOF'
-MIHOMO_PROXY_PORT=43336
-MIHOMO_API_PORT=43337
+  export MIHOMO_PROXY_PORT="43336"
+MIHOMO_API_PORT='43337'
 BASHRC_PROXY_PRESTART_NONINTERACTIVE=0
+MIHOMO_PROXY_PORT=$(invalid-command)
 EOF
 override_fixture="$tmp_home/override-fixture.sh"
 cat > "$override_fixture" <<'EOF'
@@ -476,7 +477,10 @@ updated_settings="$(
             printf "%s|%s|%s" "$MIHOMO_PROXY_PORT" "$MIHOMO_API_PORT" "$BASHRC_PROXY_PRESTART_NONINTERACTIVE"
         ' bash "$override_fixture" 2>/dev/null
 )"
-[ "$updated_settings" = "43336|43337|0" ]
+if [ "$updated_settings" != "43336|43337|0" ]; then
+    printf 'Unexpected shell.local override environment: %s\n' "$updated_settings" >&2
+    exit 1
+fi
 rm -rf "$tmp_home" "$tmp_bin" "$tmp_root"
 
 echo "[TEST] non-interactive proxy startup failure remains quiet and unset"
