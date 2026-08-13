@@ -476,7 +476,10 @@ updated_settings="$(
     ' bash "$tmp_home" "$tmp_bin:$PATH" \
         "$tmp_home/.config/envpilot/shell.local" "$ROOT/templates/bashrc" 2>/dev/null
 )"
-[ "$updated_settings" = "43336|43337|0" ]
+if [ "$updated_settings" != "43336|43337|0" ]; then
+    printf 'Unexpected shell.local override environment: %s\n' "$updated_settings" >&2
+    exit 1
+fi
 rm -rf "$tmp_home" "$tmp_bin" "$tmp_root"
 
 echo "[TEST] non-interactive proxy startup failure remains quiet and unset"
