@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.7 - 2026-08-13
+
+### Fixed
+
+- Isolated both macOS non-interactive shell fixtures from \`BASH_ENV\`, startup files, and inherited environment variables by using \`bash --noprofile --norc\` with an explicit temporary fixture environment.
+- Kept the production shell templates unchanged while making the hosted-runner tests deterministic across macOS and Linux Bash implementations.
+
 ## 0.2.6 - 2026-08-13
 
 ### Fixed
