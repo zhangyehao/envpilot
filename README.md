@@ -80,10 +80,13 @@ export MIHOMO_API_PORT=60290
 bash envpilot.sh install mihomo
 bash envpilot.sh apply-shell
 # 可选：vim ~/.bashrc，将需要自动启用的 BASHRC_INIT_CONDA / BASHRC_AUTO_* 默认值改为 1
+# 修改之后，进行source后，mihomo start, mihomo status, proxy_on这些都会自动加载，可以不运行了
 source ~/.bashrc
 
 mihomo start
 mihomo status
+# 除此之外，还可以这样查看代理变量：
+# printenv | grep -E '^(http_proxy|https_proxy|all_proxy|no_proxy|HTTP_PROXY|HTTPS_PROXY|ALL_PROXY|NO_PROXY)='
 proxy_on
 
 bash envpilot.sh install
