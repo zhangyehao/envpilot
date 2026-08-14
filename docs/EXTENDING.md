@@ -139,6 +139,8 @@ Mihomo updates preserve an existing envpilot `config.yaml` and restart the manag
 
 Every initialized run records the repository path in `~/.config/envpilot/repo-root`. Shell templates may default to `$HOME/envpilot`, but must fall back to this recorded path so a repository cloned elsewhere remains manageable after upgrades.
 
+Codex must keep credentials separate from profile and TOML configuration. `~/.codex/config.toml` stores only `env_key = "OPENAI_API_KEY"`; the actual key belongs in mode-600 `~/.config/secrets/api.env`. `apply-shell` and `install codex` may create a key-free protected scaffold, and persistence of a detected or entered key requires separate confirmation. `auth.json` is an optional plaintext compatibility copy and also requires separate confirmation. New sensitive files must be added to doctor baseline, backup, rollback/restore, and ignore-rule coverage.
+
 ## Tests
 
 Add fixtures for:

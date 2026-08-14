@@ -47,6 +47,37 @@ ep_migrate_shell_local()
     ep_log "Migrated safe exported variables; excluded old proxy/Mihomo functions and secret-like variables."
 }
 
+ep_secrets_file()
+{
+    printf '%s/.config/secrets/api.env' "$HOME"
+}
+
+ep_ensure_secrets_file()
+{
+    local secret_dir="$HOME/.config/secrets"
+    local secret_file
+    local template="$ENVPILOT_ROOT/templates/api.env.example"
+    local tmp
+
+    secret_file="$(ep_secrets_file)"
+    [ -f "$template" ] || ep_die "Secrets template missing: $template"
+    mkdir -p "$secret_dir"
+    chmod 700 "$secret_dir" 2>/dev/null || ep_die "Could not restrict secrets directory: $secret_dir"
+
+    if [ -e "$secret_file" ] || [ -L "$secret_file" ]; then
+        [ -f "$secret_file" ] || ep_die "Secrets path is not a regular file: $secret_file"
+    else
+        tmp="$secret_file.tmp.$$"
+        ( umask 077; cp "$template" "$tmp" ) || ep_die "Could not create secrets file: $secret_file"
+        chmod 600 "$tmp" || ep_die "Could not restrict secrets file: $secret_file"
+        mv "$tmp" "$secret_file" || ep_die "Could not install secrets file: $secret_file"
+        ep_log "Created protected secrets file: $secret_file"
+    fi
+
+    chmod 600 "$secret_file" 2>/dev/null ||
+        ep_die "Could not set mode 600 on secrets file: $secret_file"
+}
+
 ep_apply_shell_profile()
 {
     ep_require_unix_runtime
@@ -63,6 +94,7 @@ ep_apply_shell_profile()
         return 0
     fi
 
+    ep_ensure_secrets_file
     ep_backup_file "$target"
     ep_migrate_shell_local "$target"
     cp "$template" "$target.tmp"
@@ -70,4 +102,3 @@ ep_apply_shell_profile()
     ep_log "Applied shell profile: $target"
     ep_log "Reload with: source $target"
 }
-

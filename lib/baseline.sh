@@ -102,7 +102,7 @@ ep_capture_doctor_baseline()
     ep_baseline_record_file mihomo-state-log "$HOME/.local/state/mihomo/start.log"
     ep_baseline_record_file codex-config "$HOME/.codex/config.toml"
     ep_baseline_record_file codex-auth "$HOME/.codex/auth.json"
-    ep_baseline_record_file codex-secrets "$HOME/.config/secrets/api.env.example"
+    ep_baseline_record_file codex-secrets "$HOME/.config/secrets/api.env"
     ep_baseline_record_file gh-link "$HOME/.local/bin/gh"
     ep_baseline_record_file tmux-link "$HOME/.local/bin/tmux"
 

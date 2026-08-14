@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.9 - 2026-08-14
+
+### Fixed
+
+- Created a protected `~/.config/secrets/api.env` scaffold during `apply-shell` and Codex setup instead of creating only an example file.
+- Persisted detected or interactively entered `OPENAI_API_KEY` after explicit confirmation, preserving other variables and enforcing mode 600.
+- Added doctor and baseline/restore coverage for the real secrets file without exposing secret values in logs or tests.
+
 ## 0.2.8 - 2026-08-14
 
 ### Fixed

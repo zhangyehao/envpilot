@@ -12,6 +12,8 @@ ep_node_major()
 
 ep_doctor_codex()
 {
+    local secret_file
+
     if ep_command_exists codex; then
         ep_log "Codex: found at $(command -v codex)"
         codex --version 2>/dev/null | sed 's/^/[INFO] Codex version: /' || true
@@ -27,6 +29,16 @@ ep_doctor_codex()
         ep_log "Codex auth: found at $HOME/.codex/auth.json (value not displayed)"
     else
         ep_warn "Codex auth: not found; install will ask before creating it"
+    fi
+    secret_file="$(ep_secrets_file)"
+    if [ -f "$secret_file" ]; then
+        if ep_codex_secret_file_is_safe "$secret_file"; then
+            ep_log "Codex secrets: protected file at $secret_file"
+        else
+            ep_warn "Codex secrets: $secret_file exists but is not owned by the current user or is not mode 600/400"
+        fi
+    else
+        ep_warn "Codex secrets: not found; install or apply-shell will create a protected scaffold"
     fi
 }
 
@@ -188,36 +200,86 @@ ep_codex_write_auth()
     ep_log "Wrote Codex auth file without printing its value: $auth_file"
 }
 
+ep_codex_shell_quote()
+{
+    local value="${1//\'/\'\\\'\'}"
+    printf "'%s'" "$value"
+}
+
+ep_codex_persist_api_key()
+{
+    local secret_file="$HOME/.config/secrets/api.env"
+    local tmp line quoted written=0
+
+    ep_ensure_secrets_file
+    quoted="$(ep_codex_shell_quote "$1")"
+    ep_backup_file "$secret_file"
+    tmp="$secret_file.tmp.$$"
+    : > "$tmp"
+    while IFS= read -r line || [ -n "$line" ]; do
+        if [[ "$line" =~ ^[[:space:]]*(export[[:space:]]+)?OPENAI_API_KEY= ]]; then
+            if [ "$written" = "0" ]; then
+                printf 'export OPENAI_API_KEY=%s\n' "$quoted" >> "$tmp"
+                written=1
+            fi
+        else
+            printf '%s\n' "$line" >> "$tmp"
+        fi
+    done < "$secret_file"
+    if [ "$written" = "0" ]; then
+        printf '\nexport OPENAI_API_KEY=%s\n' "$quoted" >> "$tmp"
+    fi
+    chmod 600 "$tmp" || ep_die "Could not restrict secrets file: $secret_file"
+    mv "$tmp" "$secret_file" || ep_die "Could not save API key to: $secret_file"
+    ep_log "Saved OPENAI_API_KEY to protected secrets file: $secret_file"
+}
+
+ep_codex_offer_secret_persistence()
+{
+    local source="$1"
+    local secret_file="$HOME/.config/secrets/api.env"
+
+    [ "$source" = "secret-file" ] && return 0
+    if ep_confirm "Save OPENAI_API_KEY to protected $secret_file?" "yes"; then
+        ep_codex_persist_api_key "$EP_CODEX_API_KEY"
+    else
+        ep_warn "API key will remain available only in the current process; no persistent api.env key was written."
+    fi
+}
+
 ep_codex_configure_auth()
 {
     local secret_file
+    local key_source=none
+
     secret_file="$HOME/.config/secrets/api.env"
+    ep_ensure_secrets_file
     EP_CODEX_API_KEY=""
     if [ -n "$(printenv OPENAI_API_KEY 2>/dev/null || true)" ]; then
         EP_CODEX_API_KEY="$(printenv OPENAI_API_KEY)"
+        key_source=current-environment
         ep_log "Codex API key source: current OPENAI_API_KEY environment variable."
     elif ep_codex_key_from_secret_file "$secret_file"; then
+        key_source=secret-file
         ep_log "Codex API key source: protected $secret_file."
     elif [ -n "$(printenv env_key 2>/dev/null || true)" ]; then
         ep_warn "Found lowercase env_key in the environment. The correct variable name is OPENAI_API_KEY."
-        if ep_confirm "Use the detected lowercase env_key value to create Codex auth.json?" "yes"; then
+        if ep_confirm "Use the detected lowercase env_key value as OPENAI_API_KEY?" "yes"; then
             EP_CODEX_API_KEY="$(printenv env_key)"
+            key_source=corrected-environment
             ep_log "Codex API key source: corrected lowercase env_key environment variable."
         fi
     fi
     if [ -z "$EP_CODEX_API_KEY" ]; then
-        mkdir -p "$HOME/.config/secrets"
-        if [ ! -f "$secret_file" ]; then
-            cp "$ENVPILOT_ROOT/templates/api.env.example" "$HOME/.config/secrets/api.env.example"
-            chmod 600 "$HOME/.config/secrets/api.env.example" 2>/dev/null || true
-        fi
         ep_warn "No OPENAI_API_KEY was detected. Obtain an OpenAI-compatible key from your provider, for example YanHuoAPI, and put it in $secret_file or enter it now."
         ep_codex_prompt_api_key || {
-            ep_warn "Codex CLI was installed/configured, but auth.json was not generated. Run: with_secrets codex"
+            ep_warn "Codex CLI was installed/configured, but no API key was saved and auth.json was not generated. Put a key in $secret_file, then run: with_secrets codex"
             return 0
         }
+        key_source=interactive
         ep_log "Codex API key source: interactive input."
     fi
+    ep_codex_offer_secret_persistence "$key_source"
     ep_codex_write_auth
     unset EP_CODEX_API_KEY
 }
@@ -265,4 +327,3 @@ ep_install_codex()
     ep_state_mark_done codex
     ep_report_event codex "$action" "installed or updated Codex and configured env_key" "$(codex --version 2>/dev/null || true)" "npm:$EP_CODEX_PACKAGE" "$(command -v codex 2>/dev/null || true)"
 }
-

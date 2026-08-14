@@ -177,4 +177,4 @@ Git 组件的最低版本是 2.30，Python 组件的最低版本是 3.9。doctor
 
 Git 的 Linux/macOS 兜底路径是用户态源码构建，因此 manifest 必须记录稳定源码版本、离线文件名和构建依赖检查。Python 优先使用系统或 Conda 解释器，兜底资产必须同时匹配 OS、架构和 libc。新增版本下限时，要同步修改组件、manifest、doctor 输出、README、PowerShell 实现和 fixture 测试。
 
-Codex 组件不得把密钥写入日志。密钥来源、auth.json 写入和明文配置覆盖都必须单独确认；新增敏感配置文件时要加入 doctor baseline、备份、rollback/restore 和 gitignore 规则。
+Codex 组件不得把密钥写入日志。`~/.codex/config.toml` 只保存 `env_key = "OPENAI_API_KEY"`；实际密钥放在权限为 600 的 `~/.config/secrets/api.env`。`apply-shell` 和 `install codex` 可以创建不含密钥的安全模板，获得密钥后必须单独确认是否持久化。`auth.json` 是可选的明文兼容副本，也必须单独确认。新增敏感配置文件时要加入 doctor baseline、备份、rollback/restore 和 gitignore 规则。

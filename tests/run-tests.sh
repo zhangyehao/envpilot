@@ -908,6 +908,52 @@ echo "[TEST] codex config template uses env_key"
 grep -q 'env_key = "OPENAI_API_KEY"' "$ROOT/components/codex.sh"
 ! grep -q 'requires_openai_auth = true' "$ROOT/components/codex.sh"
 
+echo "[TEST] protected Codex secret file lifecycle"
+tmp_secrets_home="$(mktemp -d)"
+(
+    HOME="$tmp_secrets_home"
+    ENVPILOT_ROOT="$ROOT"
+    . "$ROOT/lib/common.sh"
+    . "$ROOT/lib/shell.sh"
+    . "$ROOT/components/codex.sh"
+    EP_ROLLBACK_LOG="$tmp_secrets_home/rollback.log"
+    ep_ensure_secrets_file >/dev/null
+    secret_file="$HOME/.config/secrets/api.env"
+    test -f "$secret_file"
+    case "$(uname -s)" in
+        MINGW*|MSYS*|CYGWIN*) ;;
+        *)
+            mode="$(stat -c '%a' "$secret_file" 2>/dev/null || stat -f '%Lp' "$secret_file")"
+            case "$mode" in 600|400) ;; *) exit 1 ;; esac
+            ;;
+    esac
+    printf 'export NCBI_API_KEY=preserved\n' > "$secret_file"
+    chmod 600 "$secret_file"
+    ep_codex_persist_api_key "test-key-'quoted"
+)
+grep -q '^export NCBI_API_KEY=preserved$' "$tmp_secrets_home/.config/secrets/api.env"
+grep -q '^export OPENAI_API_KEY=' "$tmp_secrets_home/.config/secrets/api.env"
+bash_bin="$(command -v bash)"
+stored_key="$(env -i HOME="$tmp_secrets_home" PATH=/usr/bin:/bin "$bash_bin" --noprofile --norc -c '. "$HOME/.config/secrets/api.env"; printf "%s" "$OPENAI_API_KEY"')"
+[ "$stored_key" = "test-key-'quoted" ]
+rm -rf "$tmp_secrets_home"
+
+echo "[TEST] apply-shell creates the protected secrets scaffold"
+tmp_apply_home="$(mktemp -d)"
+(
+    HOME="$tmp_apply_home"
+    ENVPILOT_ROOT="$ROOT"
+    . "$ROOT/lib/common.sh"
+    . "$ROOT/lib/shell.sh"
+    EP_CONFIG_DIR="$tmp_apply_home/.config/envpilot"
+    EP_SHELL_NAME=bash
+    ep_require_unix_runtime() { return 0; }
+    ep_confirm() { return 0; }
+    ep_apply_shell_profile >/dev/null
+)
+test -f "$tmp_apply_home/.config/secrets/api.env"
+rm -rf "$tmp_apply_home"
+
 echo "[TEST] mamba uses clean mirror-only Conda configuration"
 grep -q '^default_channels: \[\]$' "$ROOT/templates/condarc"
 ! grep -q -- '-c conda-forge' "$ROOT/components/mamba.sh" "$ROOT/manifests/mamba.json" "$ROOT/envpilot.ps1"
