@@ -488,7 +488,15 @@ ep_codex_write_auth()
 {
     local auth_file="$HOME/.codex/auth.json"
     local tmp escaped_key
-    ep_confirm "Write plaintext API key to $auth_file with mode 600?" "no" || {
+
+    # Existing auth may be a user login or API-key file. Never replace it
+    # during an ordinary install/configure run.
+    if [ -e "$auth_file" ] && [ "${EP_FORCE_CODEX_AUTH_WRITE:-0}" != "1" ]; then
+        ep_log "Existing Codex auth file preserved: $auth_file"
+        return 0
+    fi
+
+    ep_confirm "Create $auth_file from the detected API key with mode 600?" "yes" || {
         ep_warn "auth.json was not changed. Use: chmod 600 $HOME/.config/secrets/api.env; with_secrets codex"
         return 0
     }
@@ -551,12 +559,18 @@ ep_codex_offer_secret_persistence()
 
 ep_codex_configure_auth()
 {
-    local secret_file
+    local auth_file secret_file
     local key_source=none
 
     secret_file="$HOME/.config/secrets/api.env"
     ep_ensure_secrets_file
+    auth_file="$HOME/.codex/auth.json"
     EP_CODEX_API_KEY=""
+    if [ -e "$auth_file" ] && [ "${EP_FORCE_CODEX_AUTH_WRITE:-0}" != "1" ]; then
+        ep_log "Existing Codex auth file detected; preserving it and skipping API-key import: $auth_file"
+        return 0
+    fi
+
     if [ -n "$(printenv OPENAI_API_KEY 2>/dev/null || true)" ]; then
         EP_CODEX_API_KEY="$(printenv OPENAI_API_KEY)"
         key_source="current-environment"
@@ -593,7 +607,7 @@ ep_install_codex()
     action=configured
     ep_log "Component: codex"
     ep_log "Package: $EP_CODEX_PACKAGE"
-    ep_log "Codex config uses env_key=OPENAI_API_KEY; installer will detect a key and ask before writing auth.json."
+    ep_log "Codex config uses env_key=OPENAI_API_KEY; existing auth.json is preserved, and a missing file may be created from a detected key."
     ep_confirm "Install/update and configure Codex CLI?" "yes" || {
         ep_report_event codex skipped "user declined" "" "" ""
         return 0

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.12 - 2026-08-14
+
+### Fixed
+
+- Preserved an existing Codex `auth.json` during ordinary install/configure runs instead of re-importing or replacing authentication state.
+- Created a new `auth.json` from an existing `OPENAI_API_KEY` or protected `api.env` only when the file is absent, prompting for a new key only as the final fallback.
+- Documented the interactive and non-interactive loading boundaries between `shell.local`, `api.env`, and the managed shell profile.
+- Added regression fixtures for existing-auth preservation and first-install environment-key import.
+
 ## 0.2.11 - 2026-08-14
 
 ### Fixed

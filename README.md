@@ -94,6 +94,8 @@ bash envpilot.sh install
 
 `apply-shell` 会同时创建 `~/.config/secrets/api.env` 安全模板，目录权限为 700、文件权限为 600。模板只包含注释，不会写入假密钥；真正的 API key 只在 Codex 安装时检测到或交互输入后，经确认才会保存。
 
+`~/.config/envpilot/shell.local` 是 `.bashrc`/`.zshrc` 的用户配置覆盖层：交互式 shell 会完整加载它；静默的非交互 shell 只读取其中经过白名单校验的 Mihomo 端口、代理模式和节点临时目录设置，不执行任意 `module load` 或自定义命令。`~/.config/secrets/api.env` 则是独立的受保护密钥源，默认不会注入所有静默 SSH 命令，避免 API key 扩散到无关子进程。Codex 可使用受保护的 `auth.json`，或通过 `with_secrets codex` 只把密钥提供给目标进程。
+
 交互式 shell 默认不会自动启动 Mihomo，也不会自动设置代理环境变量；需要代理时执行 `proxy_on`，不用时执行 `proxy_off`。非交互 SSH/Codex shell 则会按下一节的规则，在配置存在且端口准备好后安静地预启动并继承 HTTP/HTTPS 代理。
 
 `proxy_on` 会先确认 `${MIHOMO_PROXY_HOST}:${MIHOMO_PROXY_PORT}` 确实正在监听；检查失败时直接返回，不会留下导致 `Connection refused` 的错误代理变量。默认只设置 HTTP/HTTPS 代理，这对 Conda、Git、curl 和 Codex 通常更稳。确实需要 SOCKS 时，在 `~/.config/envpilot/shell.local` 中设置：
@@ -423,7 +425,7 @@ env_key = "OPENAI_API_KEY"
 3. 检测到误写的 `env_key` 时提示是否修正使用。
 4. 没有找到时，提示从兼容服务商（例如 YanHuoAPI）获取密钥并安全输入。
 
-`install codex` 会确保 `~/.config/secrets/api.env` 存在。密钥来自当前环境变量、修正后的 `env_key` 或交互输入时，安装器会单独询问是否写入这个受保护文件，并保留其中已有的其他变量。检测到密钥后，还会单独确认是否写入明文 `~/.codex/auth.json`，并先备份旧文件、设置权限 600。拒绝保存到 `api.env` 时，密钥只在本次进程中有效；拒绝写入 `auth.json` 时仍可使用：
+`install codex` 会确保 `~/.config/secrets/api.env` 存在。如果 `~/.codex/auth.json` 已经存在，普通安装或配置流程会原样保留它，不删除、不覆盖，也不会要求重新输入密钥。只有新用户尚无 `auth.json` 时，安装器才按上述顺序查找密钥：当前环境已有 `OPENAI_API_KEY` 就直接复用；否则读取受保护的 `api.env`；两处都没有时才提示安全输入。来自当前环境、修正后的 `env_key` 或交互输入的密钥会询问是否保存到 `api.env`，并保留其中已有的其他变量；随后默认确认创建权限为 600 的 `auth.json`。拒绝保存到 `api.env` 时，密钥只在本次进程中有效；拒绝创建 `auth.json` 时仍可使用：
 
 ```bash
 chmod 600 ~/.config/secrets/api.env

@@ -1067,6 +1067,47 @@ stored_key="$(env -i HOME="$tmp_secrets_home" PATH=/usr/bin:/bin "$bash_bin" --n
 [ "$stored_key" = "test-key-'quoted" ]
 rm -rf "$tmp_secrets_home"
 
+echo "[TEST] existing Codex auth is preserved"
+tmp_existing_auth_home="$(mktemp -d)"
+existing_auth_output="$tmp_existing_auth_home/auth-output"
+(
+    set -euo pipefail
+    export HOME="$tmp_existing_auth_home"
+    export ENVPILOT_ROOT="$ROOT"
+    export OPENAI_API_KEY='replacement-key-must-not-be-used'
+    . "$ROOT/lib/common.sh"
+    . "$ROOT/lib/shell.sh"
+    . "$ROOT/components/codex.sh"
+    EP_ROLLBACK_LOG="$HOME/rollback.log"
+    mkdir -p "$HOME/.codex"
+    printf '{\n  "OPENAI_API_KEY": "existing-key"\n}\n' > "$HOME/.codex/auth.json"
+    chmod 600 "$HOME/.codex/auth.json"
+    ep_confirm() { printf 'unexpected auth prompt\n' >&2; return 1; }
+    ep_codex_configure_auth
+    cat "$HOME/.codex/auth.json" > "$existing_auth_output"
+)
+grep -q 'existing-key' "$existing_auth_output"
+! grep -q 'replacement-key-must-not-be-used' "$existing_auth_output"
+! find "$tmp_existing_auth_home/.codex" -maxdepth 1 -name 'auth.json.bak.*' -print -quit | grep -q .
+rm -rf "$tmp_existing_auth_home"
+
+echo "[TEST] new Codex auth imports current environment key"
+tmp_new_auth_home="$(mktemp -d)"
+(
+    set -euo pipefail
+    export HOME="$tmp_new_auth_home"
+    export ENVPILOT_ROOT="$ROOT"
+    export OPENAI_API_KEY='new-environment-key'
+    . "$ROOT/lib/common.sh"
+    . "$ROOT/lib/shell.sh"
+    . "$ROOT/components/codex.sh"
+    EP_ROLLBACK_LOG="$HOME/rollback.log"
+    ep_confirm() { return 0; }
+    ep_codex_configure_auth
+)
+grep -q 'new-environment-key' "$tmp_new_auth_home/.codex/auth.json"
+rm -rf "$tmp_new_auth_home"
+
 echo "[TEST] apply-shell creates the protected secrets scaffold"
 tmp_apply_home="$(mktemp -d)"
 (
