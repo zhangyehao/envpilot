@@ -202,8 +202,7 @@ ep_codex_write_auth()
 
 ep_codex_shell_quote()
 {
-    local value="${1//\'/\'\\\'\'}"
-    printf "'%s'" "$value"
+    printf '%q' "$1"
 }
 
 ep_codex_persist_api_key()
@@ -257,16 +256,16 @@ ep_codex_configure_auth()
     EP_CODEX_API_KEY=""
     if [ -n "$(printenv OPENAI_API_KEY 2>/dev/null || true)" ]; then
         EP_CODEX_API_KEY="$(printenv OPENAI_API_KEY)"
-        key_source=current-environment
+        key_source="current-environment"
         ep_log "Codex API key source: current OPENAI_API_KEY environment variable."
     elif ep_codex_key_from_secret_file "$secret_file"; then
-        key_source=secret-file
+        key_source="secret-file"
         ep_log "Codex API key source: protected $secret_file."
     elif [ -n "$(printenv env_key 2>/dev/null || true)" ]; then
         ep_warn "Found lowercase env_key in the environment. The correct variable name is OPENAI_API_KEY."
         if ep_confirm "Use the detected lowercase env_key value as OPENAI_API_KEY?" "yes"; then
             EP_CODEX_API_KEY="$(printenv env_key)"
-            key_source=corrected-environment
+            key_source="corrected-environment"
             ep_log "Codex API key source: corrected lowercase env_key environment variable."
         fi
     fi
@@ -276,7 +275,7 @@ ep_codex_configure_auth()
             ep_warn "Codex CLI was installed/configured, but no API key was saved and auth.json was not generated. Put a key in $secret_file, then run: with_secrets codex"
             return 0
         }
-        key_source=interactive
+        key_source="interactive"
         ep_log "Codex API key source: interactive input."
     fi
     ep_codex_offer_secret_persistence "$key_source"

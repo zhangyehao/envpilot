@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.10 - 2026-08-14
+
+### Fixed
+
+- Made API-key shell quoting portable across Linux, macOS, and Bash environments.
+- Fixed ShellCheck validation for Codex key-source markers.
+
 ## 0.2.9 - 2026-08-14
 
 ### Fixed
