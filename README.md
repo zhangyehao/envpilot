@@ -341,7 +341,7 @@ bash envpilot.sh update
 - Conda/Mamba：让当前 Conda 解析当前平台和 base 环境可兼容的新版本，不强行安装不兼容包。
 - Git：系统 Git 达到 2.30 时直接复用；低于 2.30 时构建 `$HOME/software/git/current`，不覆盖 `/usr/bin/git`。
 - Python：系统或 Conda Python 达到 3.9 时直接复用；低于 3.9 时选择匹配 OS、架构和 libc 的稳定用户态解释器。
-- Codex：通过 npm 更新 `@openai/codex`。
+- Codex：普通 `install codex` 复用已经可执行的 Codex；缺少 Codex 时在线优先使用官方独立安装器，只有失败后才回退 npm。
 - GitHub CLI：只更新 envpilot 管理的用户态副本；系统管理员提供的副本不强制覆盖。
 - tmux：比较 manifest 的 stable 目标；系统/module 版本过低时，在用户目录构建新版本并让 `~/.local/bin/tmux` 优先生效。
 
@@ -394,7 +394,19 @@ bash envpilot.sh update python
 bash envpilot.sh install codex
 ```
 
-安装器会先检查 Node.js。若未安装或低于 Node.js 22，会明确显示 nvm 下载地址、用户态安装目录和当前阶段，再询问是否安装最新 LTS；随后显示 npm 来源、全局 prefix 和 Codex 版本。下载过程中可能需要几分钟，但不会无提示退出。
+安装时会先真正执行 `codex --version` 检查现有 CLI。已有且可执行时，普通 `install codex` 只更新配置和密钥，不会重新安装 Codex，也不会安装 Node.js/npm；需要更新版本时使用：
+
+```bash
+bash envpilot.sh update codex
+# 等价于：bash envpilot.sh install codex --upgrade
+```
+
+缺少 Codex 时，在线模式先使用官方独立安装器：
+`https://chatgpt.com/codex/install.sh`。只有独立安装器下载或执行失败，才会进入 npm 回退路径。离线模式不会偷偷访问 npm；没有本地可执行 Codex 时会明确失败并给出恢复路径。
+
+如果确实进入 npm 回退，envpilot 会根据系统兼容性选择 Node.js：Linux amd64 且 glibc 2.17-2.27 时使用 Node.js 22 的 `x64-glibc-217` 用户态构建，安装到默认 `$HOME/software/node22`，并把它放在 nvm 路径前面。glibc >= 2.28 的 Linux 才使用兼容的官方 nvm Node.js；其他架构没有安全匹配资产时会停止，不会下载错误架构。不要为了 Codex 升级系统 glibc，也不要把无法执行的官方 Node.js 24 二进制强行加入 PATH。
+
+安装过程会显示 Node.js 来源、兼容性判断、目标目录和实际错误；例如旧系统会保留 `GLIBC_2.28 not found` 等诊断，而不是误报成“Node.js v22+ 未激活”。
 
 Codex 配置使用：
 

@@ -248,6 +248,135 @@ grep -q 'Node.js source: nvm' "$codex_output"
 grep -q 'Node.js target:' "$codex_output"
 grep -q 'Node.js 22+ is required for Codex' "$codex_output"
 grep -q 'Installing the latest compatible Codex CLI from the npm registry' "$ROOT/components/codex.sh"
+grep -q 'official standalone installer' "$ROOT/components/codex.sh"
+
+echo "[TEST] existing Codex bypasses Node setup"
+tmp_home="$(mktemp -d)"
+tmp_bin="$(mktemp -d)"
+cat > "$tmp_bin/codex" <<'EOF'
+#!/usr/bin/env bash
+printf 'codex-cli 0.147.0\n'
+EOF
+chmod +x "$tmp_bin/codex"
+codex_existing_output="$tmp_home/codex-existing.out"
+(
+    set -euo pipefail
+    export HOME="$tmp_home"
+    export PATH="$tmp_bin:/usr/bin:/bin"
+    export ENVPILOT_ROOT="$ROOT"
+    export EP_MODE=online EP_ASSUME_YES=1 EP_UPGRADE=0
+    # shellcheck source=/dev/null
+    . "$ROOT/lib/common.sh"
+    # shellcheck source=/dev/null
+    . "$ROOT/lib/platform.sh"
+    # shellcheck source=/dev/null
+    . "$ROOT/lib/shell.sh"
+    # shellcheck source=/dev/null
+    . "$ROOT/components/codex.sh"
+    export EP_OS=linux EP_ARCH=amd64 EP_LIBC=glibc EP_GLIBC_VERSION=2.17
+    ep_init
+    ep_report_start install codex
+    ep_ensure_node()
+    {
+        printf 'unexpected Node.js setup\n' >&2
+        return 99
+    }
+    ep_codex_configure_auth() { :; }
+    ep_install_codex
+    ep_report_finish
+) >"$codex_existing_output" 2>&1
+grep -q 'Node.js and npm are not required for configuration' "$codex_existing_output"
+! grep -q 'unexpected Node.js setup' "$codex_existing_output"
+grep -q '^codex=done:' "$tmp_home/.config/envpilot/state"
+rm -rf "$tmp_home" "$tmp_bin"
+
+echo "[TEST] legacy glibc selects the compatible Node.js 22 build"
+tmp_home="$(mktemp -d)"
+tmp_bin="$(mktemp -d)"
+cat > "$tmp_bin/curl" <<'EOF'
+#!/usr/bin/env bash
+output=""
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        -o) output="$2"; shift 2 ;;
+        *) shift ;;
+    esac
+done
+cat > "$output" <<'INSTALL'
+#!/usr/bin/env bash
+target=""
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --dir) target="$2"; shift 2 ;;
+        *) shift ;;
+    esac
+done
+mkdir -p "$target/bin"
+cat > "$target/bin/node" <<'NODE'
+#!/usr/bin/env bash
+printf 'v22.19.0\n'
+NODE
+chmod +x "$target/bin/node"
+INSTALL
+chmod +x "$output"
+EOF
+chmod +x "$tmp_bin/curl"
+legacy_node_output="$tmp_home/legacy-node.out"
+(
+    set -euo pipefail
+    export HOME="$tmp_home"
+    export PATH="$tmp_bin:/usr/bin:/bin"
+    export ENVPILOT_ROOT="$ROOT"
+    export EP_MODE=online EP_ASSUME_YES=1
+    # shellcheck source=/dev/null
+    . "$ROOT/lib/common.sh"
+    # shellcheck source=/dev/null
+    . "$ROOT/lib/platform.sh"
+    # shellcheck source=/dev/null
+    . "$ROOT/components/codex.sh"
+    export EP_OS=linux EP_ARCH=amd64 EP_LIBC=glibc EP_GLIBC_VERSION=2.17
+    ep_command_exists()
+    {
+        case "$1" in
+            node|nvm) return 1 ;;
+            curl) return 0 ;;
+            *) command -v "$1" >/dev/null 2>&1 ;;
+        esac
+    }
+    ep_ensure_node
+    printf 'node=%s\n' "$(command -v node)"
+) >"$legacy_node_output" 2>&1
+grep -q 'glibc-217' "$legacy_node_output"
+grep -q 'Node.js source: unofficial-builds x64-glibc-217' "$legacy_node_output"
+grep -q "node=$tmp_home/software/node22/bin/node" "$legacy_node_output"
+! grep -q 'Downloading nvm installer' "$legacy_node_output"
+rm -rf "$tmp_home" "$tmp_bin"
+
+echo "[TEST] failed Node.js probe preserves the GLIBC diagnostic"
+tmp_home="$(mktemp -d)"
+tmp_bin="$(mktemp -d)"
+cat > "$tmp_bin/node" <<'EOF'
+#!/usr/bin/env bash
+printf 'node: /lib64/libc.so.6: version GLIBC_2.28 not found\n' >&2
+exit 127
+EOF
+chmod +x "$tmp_bin/node"
+node_probe_output="$tmp_home/node-probe.out"
+(
+    set -euo pipefail
+    export HOME="$tmp_home"
+    export PATH="$tmp_bin:/usr/bin:/bin"
+    # shellcheck source=/dev/null
+    . "$ROOT/lib/common.sh"
+    # shellcheck source=/dev/null
+    . "$ROOT/components/codex.sh"
+    if ep_node_probe; then
+        exit 1
+    fi
+    printf '%s\n' "$EP_NODE_PROBE_ERROR"
+) >"$node_probe_output" 2>&1
+grep -q 'GLIBC_2.28 not found' "$node_probe_output"
+rm -rf "$tmp_home" "$tmp_bin"
 
 grep -q '^!downloads/mihomo-linux-amd64-compatible-\*\.gz$' "$ROOT/.gitignore"
 grep -q '^!downloads/mihomo-windows-amd64-compatible-\*\.zip$' "$ROOT/.gitignore"

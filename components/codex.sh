@@ -2,21 +2,120 @@
 
 EP_CODEX_BASE_URL="${EP_CODEX_BASE_URL:-https://yanhuoapi.com/v1}"
 EP_CODEX_PACKAGE="${EP_CODEX_PACKAGE:-@openai/codex}"
+EP_CODEX_INSTALL_URL="${EP_CODEX_INSTALL_URL:-https://chatgpt.com/codex/install.sh}"
 EP_MIN_NODE_MAJOR="${EP_MIN_NODE_MAJOR:-22}"
 EP_NVM_VERSION="${EP_NVM_VERSION:-v0.40.1}"
+EP_NODE_NVM_MIN_GLIBC="${EP_NODE_NVM_MIN_GLIBC:-2.28}"
+EP_NODE_LEGACY_LINE="${EP_NODE_LEGACY_LINE:-22}"
+EP_NODE_LEGACY_PLATFORM="${EP_NODE_LEGACY_PLATFORM:-x64-glibc-217}"
+EP_NODE_LEGACY_INSTALL_URL="${EP_NODE_LEGACY_INSTALL_URL:-https://unofficial-builds.nodejs.org/install-node.sh}"
+
+EP_NODE_VERSION=""
+EP_NODE_PROBE_ERROR=""
+EP_CODEX_BIN=""
+EP_CODEX_VERSION=""
+EP_CODEX_PROBE_ERROR=""
+
+ep_node_major_from_version()
+{
+    local version="${1:-}"
+    if [[ "$version" =~ ^v([0-9]+)\. ]]; then
+        printf '%s' "${BASH_REMATCH[1]}"
+        return 0
+    fi
+    return 1
+}
+
+ep_node_probe()
+{
+    local output status
+    EP_NODE_VERSION=""
+    EP_NODE_PROBE_ERROR=""
+    if output="$(node -v 2>&1)"; then
+        output="${output%%$'\n'*}"
+        if [[ "$output" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([[:space:]]|$) ]]; then
+            EP_NODE_VERSION="$output"
+            return 0
+        fi
+        EP_NODE_PROBE_ERROR="${output:-invalid version output}"
+        return 1
+    fi
+    status=$?
+    EP_NODE_PROBE_ERROR="${output:-node exited with status $status}"
+    return 1
+}
 
 ep_node_major()
 {
-    node -v 2>/dev/null | sed 's/^v//' | cut -d. -f1
+    local version
+    version="$(node -v 2>/dev/null)" || return 1
+    ep_node_major_from_version "$version"
+}
+
+ep_codex_command()
+{
+    local candidate
+    if ep_command_exists codex; then
+        command -v codex
+        return 0
+    fi
+    for candidate in \
+        "$HOME/.local/bin/codex" \
+        "$HOME/.local/bin/codex.exe" \
+        "$HOME/bin/codex" \
+        "$HOME/bin/codex.exe"; do
+        if [ -x "$candidate" ]; then
+            printf '%s' "$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
+ep_codex_probe()
+{
+    local output status
+    EP_CODEX_BIN="$(ep_codex_command 2>/dev/null || true)"
+    EP_CODEX_VERSION=""
+    EP_CODEX_PROBE_ERROR=""
+    [ -n "$EP_CODEX_BIN" ] || return 1
+    if output="$("$EP_CODEX_BIN" --version 2>&1)"; then
+        EP_CODEX_VERSION="$(printf '%s\n' "$output" | sed -n '1p')"
+        [ -n "$EP_CODEX_VERSION" ] || {
+            EP_CODEX_PROBE_ERROR="empty version output"
+            return 1
+        }
+        return 0
+    fi
+    status=$?
+    EP_CODEX_PROBE_ERROR="${output:-codex exited with status $status}"
+    return 1
 }
 
 ep_doctor_codex()
 {
-    local secret_file
+    local secret_file legacy_target
 
-    if ep_command_exists codex; then
-        ep_log "Codex: found at $(command -v codex)"
-        codex --version 2>/dev/null | sed 's/^/[INFO] Codex version: /' || true
+    if ep_node_probe; then
+        ep_log "Node.js: found at $(command -v node)"
+        ep_log "Node.js version: $EP_NODE_VERSION"
+    elif ep_command_exists node; then
+        ep_warn "Node.js found at $(command -v node) but could not execute: $(printf '%s\n' "$EP_NODE_PROBE_ERROR" | sed -n '1p')"
+        ep_node_nvm_compatibility_warning
+    else
+        legacy_target="$(ep_node_legacy_target_dir)"
+        if [ -x "$legacy_target/bin/node" ]; then
+            ep_log "Node.js legacy candidate: $legacy_target/bin/node"
+        else
+            ep_warn "Node.js: not found"
+        fi
+    fi
+
+    if ep_codex_probe; then
+        ep_log "Codex: found at $EP_CODEX_BIN"
+        ep_log "Codex version: $EP_CODEX_VERSION"
+    elif [ -n "$EP_CODEX_BIN" ]; then
+        ep_warn "Codex found at $EP_CODEX_BIN but could not execute: $(printf '%s\n' "$EP_CODEX_PROBE_ERROR" | sed -n '1p')"
     else
         ep_warn "Codex: not found"
     fi
@@ -52,19 +151,145 @@ ep_load_nvm()
     return 0
 }
 
+ep_node_nvm_is_compatible()
+{
+    case "${EP_OS:-unknown}:${EP_LIBC:-unknown}" in
+        linux:glibc)
+            [ "${EP_GLIBC_VERSION:-unknown}" != "unknown" ] || return 1
+            ep_version_at_least "$EP_GLIBC_VERSION" "$EP_NODE_NVM_MIN_GLIBC"
+            ;;
+        linux:*) return 1 ;;
+        darwin:*|windows-unix:*) return 0 ;;
+        *) return 0 ;;
+    esac
+}
+
+ep_node_nvm_compatibility_warning()
+{
+    if [ "${EP_OS:-unknown}" = "linux" ]; then
+        ep_warn "The current automatic Node.js path uses official nvm binaries, which require glibc >= $EP_NODE_NVM_MIN_GLIBC for Node.js $EP_MIN_NODE_MAJOR+ on Linux."
+        ep_warn "Detected libc=${EP_LIBC:-unknown}, glibc=${EP_GLIBC_VERSION:-unknown}; envpilot will not select an incompatible Node.js binary."
+        ep_warn "The standalone Codex installer does not require Node.js. Linux amd64 glibc 2.17-2.27 uses the unofficial glibc-217 Node.js fallback; otherwise provide a compatible Node.js module/Conda runtime and rerun."
+    fi
+}
+
+ep_node_legacy_is_supported()
+{
+    local glibc="${EP_GLIBC_VERSION:-unknown}"
+    case "${EP_OS:-unknown}:${EP_ARCH:-unknown}:${EP_LIBC:-unknown}" in
+        linux:amd64:glibc)
+            [ "$glibc" != "unknown" ] || return 1
+            ep_version_at_least "$glibc" "2.17" || return 1
+            if ep_version_at_least "$glibc" "$EP_NODE_NVM_MIN_GLIBC"; then
+                return 1
+            fi
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+ep_node_legacy_target_dir()
+{
+    printf '%s' "${EP_NODE_LEGACY_DIR:-${EP_PREFIX:-$HOME/software}/node${EP_NODE_LEGACY_LINE}}"
+}
+
+ep_node_activate_dir()
+{
+    local directory="$1/bin"
+    [ -d "$directory" ] || return 1
+    PATH="$directory${PATH:+:$PATH}"
+    export PATH
+    hash -r 2>/dev/null || true
+}
+
+ep_node_legacy_probe()
+{
+    local directory="$1"
+    local node_bin="$directory/bin/node"
+    local output status
+    [ -x "$node_bin" ] || return 1
+    if output="$("$node_bin" -v 2>&1)"; then
+        output="${output%%$'\n'*}"
+        if [[ "$output" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([[:space:]]|$) ]]; then
+            EP_NODE_VERSION="$output"
+            ep_node_activate_dir "$directory"
+            return 0
+        fi
+    else
+        status=$?
+        EP_NODE_PROBE_ERROR="${output:-node exited with status $status}"
+    fi
+    return 1
+}
+
+ep_install_node_legacy()
+{
+    local target installer platform
+    platform="$EP_NODE_LEGACY_PLATFORM"
+    target="$(ep_node_legacy_target_dir)"
+    if ep_node_legacy_probe "$target"; then
+        ep_log "Compatible Node.js already available: $EP_NODE_VERSION at $target/bin/node"
+        return 0
+    fi
+    ep_command_exists curl || ep_die "curl is required to install a compatible Node.js runtime"
+    ep_log "Node.js source: unofficial-builds $platform, Node.js line $EP_NODE_LEGACY_LINE"
+    ep_log "Node.js installer: $EP_NODE_LEGACY_INSTALL_URL"
+    ep_log "Node.js target: $target (user space; no root required)"
+    ep_confirm "Install Node.js $EP_NODE_LEGACY_LINE compatible with glibc $EP_GLIBC_VERSION under $target?" "yes" ||
+        ep_die "Node.js $EP_MIN_NODE_MAJOR+ is required for Codex"
+    mkdir -p "$target"
+    installer="$(mktemp "${TMPDIR:-/tmp}/envpilot-node-installer.XXXXXX")" ||
+        ep_die "Could not create a temporary Node.js installer file"
+    if ! curl -fsSL "$EP_NODE_LEGACY_INSTALL_URL" -o "$installer"; then
+        rm -f "$installer"
+        ep_die "Could not download the compatible Node.js installer: $EP_NODE_LEGACY_INSTALL_URL"
+    fi
+    if ! bash "$installer" \
+        --line "$EP_NODE_LEGACY_LINE" \
+        --platform "$platform" \
+        --dir "$target" \
+        --yes; then
+        rm -f "$installer"
+        ep_die "The compatible Node.js installer failed for platform $platform"
+    fi
+    rm -f "$installer"
+    if ! ep_node_legacy_probe "$target"; then
+        ep_die "Node.js was downloaded to $target, but it could not execute: $(printf '%s\n' "${EP_NODE_PROBE_ERROR:-unknown error}" | sed -n '1p')"
+    fi
+    ep_log "Node.js ready: $EP_NODE_VERSION at $target/bin/node"
+}
+
 ep_ensure_node()
 {
     local major nvm_installer_url
     ep_load_nvm
     if ep_command_exists node; then
-        major="$(ep_node_major || true)"
-        if [ -n "$major" ] && [ "$major" -ge "$EP_MIN_NODE_MAJOR" ]; then
-            ep_log "Node.js satisfies requirement: $(node -v)"
-            return 0
+        if ep_node_probe; then
+            major="$(ep_node_major_from_version "$EP_NODE_VERSION")"
+            if [ -n "$major" ] && [ "$major" -ge "$EP_MIN_NODE_MAJOR" ]; then
+                ep_log "Node.js satisfies requirement: $EP_NODE_VERSION"
+                return 0
+            fi
+            ep_warn "Node.js $EP_NODE_VERSION is lower than required v$EP_MIN_NODE_MAJOR"
+        else
+            ep_warn "Node.js command found at $(command -v node) but could not execute: $(printf '%s\n' "$EP_NODE_PROBE_ERROR" | sed -n '1p')"
         fi
-        ep_warn "Node.js $(node -v 2>/dev/null || true) is lower than required v$EP_MIN_NODE_MAJOR"
     else
         ep_warn "Node.js: not found"
+    fi
+
+    if ep_node_legacy_is_supported; then
+        ep_log "Detected Linux glibc $EP_GLIBC_VERSION below $EP_NODE_NVM_MIN_GLIBC; selecting a glibc-217 Node.js build instead of an incompatible official nvm binary."
+        ep_install_node_legacy
+        return 0
+    fi
+
+    if ! ep_node_nvm_is_compatible; then
+        ep_node_nvm_compatibility_warning
+        ep_die "No compatible automatic Node.js $EP_MIN_NODE_MAJOR+ runtime is available for this host. Use the official standalone Codex installer or provide a compatible Node.js runtime."
     fi
 
     ep_command_exists curl || ep_die "curl is required to install nvm/Node.js automatically"
@@ -85,11 +310,89 @@ ep_ensure_node()
     nvm install 'lts/*' || ep_die "nvm failed to install the latest Node.js LTS"
     nvm alias default 'lts/*' || ep_die "nvm failed to set the default Node.js LTS alias"
     nvm use default || ep_die "nvm failed to activate the default Node.js version"
-    major="$(ep_node_major || true)"
-    if [ -z "$major" ] || [ "$major" -lt "$EP_MIN_NODE_MAJOR" ]; then
-        ep_die "Node.js installation completed but v$EP_MIN_NODE_MAJOR+ is not active"
+    if ! ep_node_probe; then
+        ep_warn "nvm selected $(command -v node), but Node.js could not execute: $(printf '%s\n' "$EP_NODE_PROBE_ERROR" | sed -n '1p')"
+        ep_node_nvm_compatibility_warning
+        ep_die "Node.js installation completed, but the selected runtime is not executable. Check the compatibility error above."
     fi
-    ep_log "Node.js ready: $(node -v) at $(command -v node)"
+    major="$(ep_node_major_from_version "$EP_NODE_VERSION")"
+    if [ -z "$major" ] || [ "$major" -lt "$EP_MIN_NODE_MAJOR" ]; then
+        ep_die "Node.js installation completed, but $EP_NODE_VERSION is below the required v$EP_MIN_NODE_MAJOR"
+    fi
+    ep_log "Node.js ready: $EP_NODE_VERSION at $(command -v node)"
+}
+
+ep_npm_probe()
+{
+    local output status
+    EP_NPM_VERSION=""
+    EP_NPM_PROBE_ERROR=""
+    if output="$(npm --version 2>&1)"; then
+        EP_NPM_VERSION="$(printf '%s\n' "$output" | sed -n '1p')"
+        if [ -n "$EP_NPM_VERSION" ]; then
+            return 0
+        fi
+        EP_NPM_PROBE_ERROR="empty version output"
+        return 1
+    fi
+    status=$?
+    EP_NPM_PROBE_ERROR="${output:-npm exited with status $status}"
+    return 1
+}
+
+ep_install_codex_official()
+{
+    local installer
+    [ "$EP_MODE" = "online" ] || return 1
+    ep_command_exists curl || {
+        ep_warn "curl is unavailable; cannot use the official standalone Codex installer."
+        return 1
+    }
+    installer="$(mktemp "${TMPDIR:-/tmp}/envpilot-codex-installer.XXXXXX")" || return 1
+    ep_log "Codex source: official standalone installer $EP_CODEX_INSTALL_URL"
+    if ! curl -fsSL "$EP_CODEX_INSTALL_URL" -o "$installer"; then
+        rm -f "$installer"
+        ep_warn "Could not download the official Codex installer; falling back to npm if a compatible Node.js exists."
+        return 1
+    fi
+    if ! sh "$installer"; then
+        rm -f "$installer"
+        ep_warn "The official Codex installer failed; falling back to npm if a compatible Node.js exists."
+        return 1
+    fi
+    rm -f "$installer"
+    hash -r
+    if ep_codex_probe; then
+        ep_log "Codex CLI ready: $EP_CODEX_VERSION at $EP_CODEX_BIN"
+        return 0
+    fi
+    ep_warn "The official Codex installer completed, but no executable Codex CLI was found: $(printf '%s\n' "$EP_CODEX_PROBE_ERROR" | sed -n '1p')"
+    return 1
+}
+
+ep_install_codex_npm()
+{
+    local existing="$1"
+    ep_ensure_node
+    if ! ep_command_exists npm; then
+        ep_die "npm is required after Node.js installation"
+    fi
+    if ! ep_npm_probe; then
+        ep_die "npm was found at $(command -v npm) but could not execute: $(printf '%s\n' "$EP_NPM_PROBE_ERROR" | sed -n '1p')"
+    fi
+    ep_log "Installing the latest compatible Codex CLI from the npm registry: $EP_CODEX_PACKAGE"
+    ep_log "Node.js: $EP_NODE_VERSION"
+    ep_log "npm: $EP_NPM_VERSION at $(command -v npm)"
+    ep_log "npm global prefix: $(npm config get prefix 2>/dev/null || printf unknown)"
+    if [ "$existing" = "1" ]; then
+        ep_log "Updating the existing Codex CLI through npm."
+    fi
+    if ! npm install -g "$EP_CODEX_PACKAGE"; then
+        ep_die "npm failed to install/update $EP_CODEX_PACKAGE"
+    fi
+    hash -r
+    ep_codex_probe || ep_die "npm completed but the codex command is not executable: $(printf '%s\n' "$EP_CODEX_PROBE_ERROR" | sed -n '1p')"
+    ep_log "Codex CLI ready: $EP_CODEX_VERSION at $EP_CODEX_BIN"
 }
 
 ep_write_codex_config()
@@ -286,7 +589,7 @@ ep_codex_configure_auth()
 ep_install_codex()
 {
     ep_require_unix_runtime
-    local action
+    local action codex_ready
     action=configured
     ep_log "Component: codex"
     ep_log "Package: $EP_CODEX_PACKAGE"
@@ -296,33 +599,34 @@ ep_install_codex()
         return 0
     }
 
-    ep_ensure_node
-    ep_command_exists npm || ep_die "npm is required after Node.js installation"
-    if ! ep_command_exists codex; then
-        action=installed
-        ep_log "Installing the latest compatible Codex CLI from the npm registry: $EP_CODEX_PACKAGE"
-        ep_log "npm executable: $(command -v npm)"
-        ep_log "npm global prefix: $(npm config get prefix 2>/dev/null || printf unknown)"
-        if ! npm install -g "$EP_CODEX_PACKAGE"; then
-            ep_die "npm failed to install $EP_CODEX_PACKAGE"
+    codex_ready=0
+    if ep_codex_probe; then
+        codex_ready=1
+    fi
+    if [ "$codex_ready" = "1" ] && [ "$EP_UPGRADE" != "1" ]; then
+        ep_log "Existing Codex CLI is usable at $EP_CODEX_BIN; Node.js and npm are not required for configuration."
+    elif [ "$EP_MODE" = "online" ] && ep_install_codex_official; then
+        if [ "$codex_ready" = "1" ]; then
+            action=updated
+        else
+            action=installed
         fi
-        hash -r
-        ep_command_exists codex || ep_die "npm completed but the codex command is not available in PATH"
-        ep_log "Codex CLI installed: $(codex --version 2>/dev/null || printf 'version unavailable')"
-    elif [ "$EP_UPGRADE" = "1" ]; then
-        action=updated
-        ep_log "Updating Codex CLI from $(codex --version 2>/dev/null || printf unknown) using npm package $EP_CODEX_PACKAGE."
-        if ! npm install -g "$EP_CODEX_PACKAGE"; then
-            ep_die "npm failed to update $EP_CODEX_PACKAGE"
+    elif [ "$EP_MODE" = "offline" ]; then
+        if [ "$codex_ready" = "1" ]; then
+            ep_die "Codex update requires an online installer source; existing CLI was not changed. Use online mode or omit --upgrade."
         fi
-        hash -r
-        ep_command_exists codex || ep_die "npm completed but the codex command is not available in PATH"
-        ep_log "Codex CLI update complete: $(codex --version 2>/dev/null || printf 'version unavailable')"
+        ep_die "Codex is not available in offline mode. Use online mode for the official installer or provide a compatible local Node.js/npm runtime."
     else
-        ep_log "Codex CLI already exists at $(command -v codex); keeping the installed executable and updating config."
+        ep_install_codex_npm "$codex_ready"
+        if [ "$codex_ready" = "1" ]; then
+            action=updated
+        else
+            action=installed
+        fi
     fi
     ep_write_codex_config
     ep_codex_configure_auth
     ep_state_mark_done codex
-    ep_report_event codex "$action" "installed or updated Codex and configured env_key" "$(codex --version 2>/dev/null || true)" "npm:$EP_CODEX_PACKAGE" "$(command -v codex 2>/dev/null || true)"
+    ep_codex_probe || true
+    ep_report_event codex "$action" "installed or updated Codex and configured env_key" "$EP_CODEX_VERSION" "$EP_CODEX_INSTALL_URL; npm:$EP_CODEX_PACKAGE" "$EP_CODEX_BIN"
 }

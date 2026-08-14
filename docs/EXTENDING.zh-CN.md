@@ -122,7 +122,7 @@ Unix shell 模板必须把一段安静、尽力而为的准备逻辑放在非交
 - 更新 envpilot 已管理服务时保留用户配置，并恢复升级前的运行状态
 - 同时覆盖 Unix 和 PowerShell 入口的 install/update 测试
 
-Mihomo 升级必须保留已有 envpilot `config.yaml`，并且只在升级前本来就在运行时自动重启。`install all` 必须先准备 Mihomo，再处理 Git/Python/Conda/Mamba/Codex 等网络依赖，确保后续下载有机会使用代理。Conda 和 Mamba 由当前 Conda 求解器选择兼容版本。tmux 将当前命令与 `manifests/tmux.json` 比较，系统或 module 版本过低时构建用户态目标版本。Codex 通过 npm 更新；GitHub CLI 在 Unix 上只更新 envpilot 管理的副本，Windows 上优先交给 winget。
+Mihomo 升级必须保留已有 envpilot `config.yaml`，并且只在升级前本来就在运行时自动重启。`install all` 必须先准备 Mihomo，再处理 Git/Python/Conda/Mamba/Codex 等网络依赖，确保后续下载有机会使用代理。Conda 和 Mamba 由当前 Conda 求解器选择兼容版本。tmux 将当前命令与 `manifests/tmux.json` 比较，系统或 module 版本过低时构建用户态目标版本。Codex 优先使用官方独立安装器，失败后才回退 npm；GitHub CLI 在 Unix 上只更新 envpilot 管理的副本，Windows 上优先交给 winget。
 
 每次初始化都会把仓库实际位置记录到 `~/.config/envpilot/repo-root`。Shell 模板可以默认使用 `$HOME/envpilot`，但必须在该目录无效时读取记录路径，确保仓库 clone 到其他位置后仍可升级和管理。
 
@@ -178,3 +178,13 @@ Git 组件的最低版本是 2.30，Python 组件的最低版本是 3.9。doctor
 Git 的 Linux/macOS 兜底路径是用户态源码构建，因此 manifest 必须记录稳定源码版本、离线文件名和构建依赖检查。Python 优先使用系统或 Conda 解释器，兜底资产必须同时匹配 OS、架构和 libc。新增版本下限时，要同步修改组件、manifest、doctor 输出、README、PowerShell 实现和 fixture 测试。
 
 Codex 组件不得把密钥写入日志。`~/.codex/config.toml` 只保存 `env_key = "OPENAI_API_KEY"`；实际密钥放在权限为 600 的 `~/.config/secrets/api.env`。`apply-shell` 和 `install codex` 可以创建不含密钥的安全模板，获得密钥后必须单独确认是否持久化。`auth.json` 是可选的明文兼容副本，也必须单独确认。新增敏感配置文件时要加入 doctor baseline、备份、rollback/restore 和 gitignore 规则。
+
+### Codex 与 Node.js resolver
+
+Codex 组件必须实际执行 `codex --version` 检查可执行性，不能只依赖 `command -v`。普通 `install` 遇到已经可执行的 Codex 时必须复用它，不能因此安装 Node.js、npm 或 nvm；只有 `update codex` 或 `--upgrade` 才是替换 CLI 的明确路径。
+
+缺少 Codex 或显式升级时，在线模式先尝试官方独立安装器 `https://chatgpt.com/codex/install.sh`，只有下载安装器失败后才进入 npm 回退。离线模式没有可用本地 Codex 时必须明确失败，不能悄悄访问 npm registry。
+
+npm 回退 resolver 必须检查 OS、架构、libc 和真实的 Node.js 执行结果。Linux amd64 且 glibc 2.17-2.27 时选择 unofficial-builds 的 Node.js 22 `x64-glibc-217`，并把其 `bin` 放在 nvm 前面；glibc >= 2.28 才允许使用官方 nvm 二进制。架构不支持或 libc 无法确认时必须停止并说明如何提供兼容 runtime，不能错误下载 x64。`node -v` 失败时必须保留 stderr，让 `GLIBC_2.28 not found` 等动态链接器诊断可见。
+
+`manifests/codex.json` 中的独立安装器 URL、最低 Node 主版本和旧 glibc fallback 规则必须与 `components/codex.sh` 同步。resolver 改动至少要补充已有 Codex 复用、旧 glibc 选择、不支持平台停止和 Node 失败诊断 fixture。

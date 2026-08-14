@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.11 - 2026-08-14
+
+### Fixed
+
+- Reused an already executable Codex CLI during ordinary `install codex` instead of reinstalling Codex or forcing a Node.js/npm setup.
+- Preferred the official standalone Codex installer and kept npm as an explicit fallback path.
+- Added automatic Node.js 22 `x64-glibc-217` selection for Linux amd64 hosts with glibc 2.17-2.27.
+- Prevented incompatible official nvm Node.js binaries from being selected on legacy glibc systems.
+- Preserved real Node.js loader diagnostics such as `GLIBC_2.28 not found`.
+- Added regression fixtures for Codex reuse, legacy glibc resolution, and failed Node.js probes.
+
 ## 0.2.10 - 2026-08-14
 
 ### Fixed

@@ -3,9 +3,17 @@
   "package": "@openai/codex",
   "minimum_node_major": 22,
   "install_methods": [
+    "official-standalone",
     "npm",
     "nvm"
   ],
+  "official_installer": "https://chatgpt.com/codex/install.sh",
+  "legacy_node_fallback": {
+    "when": "linux amd64 glibc 2.17-2.27",
+    "line": 22,
+    "platform": "x64-glibc-217",
+    "installer": "https://unofficial-builds.nodejs.org/install-node.sh"
+  },
   "config": {
     "provider": "codex",
     "base_url_default": "https://yanhuoapi.com/v1",

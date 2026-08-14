@@ -238,6 +238,8 @@ path_prepend "$HOME/software/git/current/bin"
 path_prepend "$HOME/software/git/bin"
 path_prepend "$HOME/software/python/current/bin"
 path_prepend "$HOME/software/python/bin"
+# Legacy Linux hosts use a glibc-217 Node.js build; keep it ahead of nvm.
+path_prepend "$HOME/software/node22/bin"
 
 # Prepare node-local temporary state and a usable proxy before the non-
 # interactive guard. Everything in this block is quiet and best-effort.
