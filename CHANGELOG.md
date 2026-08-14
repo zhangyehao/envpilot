@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.8 - 2026-08-14
+
+### Fixed
+
+- Prevented Mihomo installation from hanging while executing `mihomo -v` directly from shared home storage by probing a temporary node-local copy under `/tmp` with a bounded timeout.
+- Reused the stable version parsed from the selected Mihomo asset after installation instead of executing the persistent binary a second time before runtime restoration.
+- Suppressed expected `curl: (7)` messages while the local Mihomo API is still warming up; real startup timeouts continue to print process and log diagnostics.
+
 ## 0.2.7 - 2026-08-13
 
 ### Fixed

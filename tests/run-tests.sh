@@ -378,6 +378,59 @@ assert report["after_stop_ports"]["proxy_listening"] is False
 assert report["selected_version"] == "v1.19.29"
 assert report["binary_action"] == "installed-or-updated"
 PY
+
+echo "[TEST] Mihomo version probe executes a node-local temporary copy"
+tmp_home="$(mktemp -d)"
+mkdir -p "$tmp_home/software/mihomo"
+cat > "$tmp_home/software/mihomo/mihomo" <<'EOF'
+#!/usr/bin/env bash
+case "$0" in
+    /tmp/envpilot-mihomo-version.*/mihomo) ;;
+    *) exit 97 ;;
+esac
+printf 'Mihomo Meta v9.9.9 linux amd64\n'
+EOF
+chmod +x "$tmp_home/software/mihomo/mihomo"
+(
+    HOME="$tmp_home"
+    EP_MIHOMO_VERSION_PROBE_FORCE_COPY=1
+    export EP_MIHOMO_VERSION_PROBE_FORCE_COPY
+    # shellcheck source=/dev/null
+    . "$ROOT/lib/common.sh"
+    # shellcheck source=/dev/null
+    . "$ROOT/components/mihomo.sh"
+    [ "$(ep_mihomo_binary_version "$tmp_home/software/mihomo/mihomo")" = "v9.9.9" ]
+)
+rm -rf "$tmp_home"
+
+echo "[TEST] Mihomo API warm-up polling remains quiet"
+tmp_bin="$(mktemp -d)"
+cat > "$tmp_bin/curl" <<'EOF'
+#!/usr/bin/env bash
+printf 'transient local API refusal\n' >&2
+exit 7
+EOF
+chmod +x "$tmp_bin/curl"
+health_output="$(
+    (
+        PATH="$tmp_bin:$PATH"
+        export PATH
+        # shellcheck source=/dev/null
+        . "$ROOT/lib/common.sh"
+        # shellcheck source=/dev/null
+        . "$ROOT/components/mihomo.sh"
+        # shellcheck source=/dev/null
+        . "$ROOT/templates/mihomo_common.sh"
+        ep_mihomo_api_healthy 60290 || true
+        mihomo_api_healthy || true
+    ) 2>&1
+)"
+if [ -n "$health_output" ]; then
+    printf 'Expected quiet Mihomo health polling, got: %s\n' "$health_output" >&2
+    exit 1
+fi
+rm -rf "$tmp_bin"
+
 echo "[TEST] non-interactive bashrc is quiet"
 tmp_home="$(mktemp -d)"
 mkdir -p "$tmp_home/.config/envpilot"

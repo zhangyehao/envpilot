@@ -308,7 +308,7 @@ ep_mihomo_api_healthy()
     local api_port="${1:-$(ep_mihomo_api_port)}"
     ep_command_exists curl || return 1
     curl --noproxy '*' --connect-timeout 1 --max-time 2 \
-        -fsS -o /dev/null "http://127.0.0.1:$api_port/version"
+        -fsS -o /dev/null "http://127.0.0.1:$api_port/version" 2>/dev/null
 }
 
 ep_mihomo_asset_version()
@@ -321,8 +321,49 @@ ep_mihomo_asset_version()
 ep_mihomo_binary_version()
 {
     local binary="$1"
+    local probe_binary="$binary"
+    local probe_dir=""
+    local output=""
+    local timeout_seconds="${EP_MIHOMO_VERSION_TIMEOUT:-5}"
+    local copy_probe=false
     [ -x "$binary" ] || return 1
-    "$binary" -v 2>/dev/null |
+
+    case "$timeout_seconds" in
+        ''|*[!0-9]*) timeout_seconds=5 ;;
+    esac
+    [ "$timeout_seconds" -ge 1 ] 2>/dev/null || timeout_seconds=5
+
+    case "$binary" in
+        /tmp/*) ;;
+        *) copy_probe=true ;;
+    esac
+    [ "${EP_MIHOMO_VERSION_PROBE_FORCE_COPY:-0}" = "1" ] && copy_probe=true
+    if [ "$copy_probe" = true ]; then
+        [ -d /tmp ] && [ -w /tmp ] || return 1
+        probe_dir="$(mktemp -d /tmp/envpilot-mihomo-version.XXXXXX 2>/dev/null || true)"
+        [ -n "$probe_dir" ] || return 1
+        probe_binary="$probe_dir/mihomo"
+        if ! cp "$binary" "$probe_binary" 2>/dev/null; then
+            rm -rf "$probe_dir"
+            return 1
+        fi
+        chmod 700 "$probe_binary" 2>/dev/null || {
+            rm -rf "$probe_dir"
+            return 1
+        }
+    fi
+
+    if ep_command_exists timeout; then
+        output="$(timeout -k 1 "$timeout_seconds" "$probe_binary" -v 2>/dev/null || true)"
+    elif ep_command_exists gtimeout; then
+        output="$(gtimeout -k 1 "$timeout_seconds" "$probe_binary" -v 2>/dev/null || true)"
+    else
+        [ -n "$probe_dir" ] && rm -rf "$probe_dir"
+        return 1
+    fi
+    [ -n "$probe_dir" ] && rm -rf "$probe_dir"
+
+    printf '%s\n' "$output" |
         head -n 1 |
         sed -nE 's/.*(v[0-9]+\.[0-9]+\.[0-9]+).*/\1/p'
 }
@@ -809,6 +850,9 @@ EOF
     fi
     EP_MIHOMO_TAKEOVER_BEFORE_PROXY_LISTENING="$(ep_mihomo_port_state "$proxy_port")"
     EP_MIHOMO_TAKEOVER_BEFORE_API_LISTENING="$(ep_mihomo_port_state "$api_port")"
+    if [ -x "$bin" ]; then
+        ep_log "Checking the existing target version from a bounded node-local probe."
+    fi
     binary_before_version="$(ep_mihomo_binary_version "$bin" 2>/dev/null || true)"
     EP_MIHOMO_TAKEOVER_BINARY_BEFORE_VERSION="$binary_before_version"
 
@@ -966,7 +1010,10 @@ EOF
     fi
 
     rm -f "$archive"
-    version="$(ep_mihomo_binary_version "$bin" 2>/dev/null || true)"
+    version="$source_version"
+    if [ -z "$version" ]; then
+        version="$(ep_mihomo_binary_version "$bin" 2>/dev/null || true)"
+    fi
     if [ "$EP_MIHOMO_TAKEOVER_MANAGED_RUNTIME_WAS_RUNNING" = true ]; then
         if [ -s "$config_dir/config.yaml" ]; then
             ep_log "Restoring the envpilot-managed Mihomo runtime that was running before the update."

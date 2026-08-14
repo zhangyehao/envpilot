@@ -159,7 +159,7 @@ mihomo_api_healthy()
         --max-time 2 \
         -sS \
         -o /dev/null \
-        "http://${MIHOMO_PROXY_HOST}:${MIHOMO_API_PORT}/version"
+        "http://${MIHOMO_PROXY_HOST}:${MIHOMO_API_PORT}/version" 2>/dev/null
 }
 
 mihomo_set_yaml_key()
