@@ -357,6 +357,13 @@ ep_mihomo_binary_version()
         output="$(timeout -k 1 "$timeout_seconds" "$probe_binary" -v 2>/dev/null || true)"
     elif ep_command_exists gtimeout; then
         output="$(gtimeout -k 1 "$timeout_seconds" "$probe_binary" -v 2>/dev/null || true)"
+    elif ep_command_exists perl; then
+        output="$(perl -e '
+            my $seconds = shift @ARGV;
+            alarm $seconds;
+            exec @ARGV;
+            exit 126;
+        ' "$timeout_seconds" "$probe_binary" -v 2>/dev/null || true)"
     else
         [ -n "$probe_dir" ] && rm -rf "$probe_dir"
         return 1

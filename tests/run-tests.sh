@@ -400,6 +400,14 @@ chmod +x "$tmp_home/software/mihomo/mihomo"
     # shellcheck source=/dev/null
     . "$ROOT/components/mihomo.sh"
     [ "$(ep_mihomo_binary_version "$tmp_home/software/mihomo/mihomo")" = "v9.9.9" ]
+    ep_command_exists()
+    {
+        case "$1" in
+            timeout|gtimeout) return 1 ;;
+            *) command -v "$1" >/dev/null 2>&1 ;;
+        esac
+    }
+    [ "$(ep_mihomo_binary_version "$tmp_home/software/mihomo/mihomo")" = "v9.9.9" ]
 )
 rm -rf "$tmp_home"
 

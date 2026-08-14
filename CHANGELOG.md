@@ -4,7 +4,7 @@
 
 ### Fixed
 
-- Prevented Mihomo installation from hanging while executing `mihomo -v` directly from shared home storage by probing a temporary node-local copy under `/tmp` with a bounded timeout.
+- Prevented Mihomo installation from hanging while executing `mihomo -v` directly from shared home storage by probing a temporary node-local copy under `/tmp` with a bounded GNU timeout or macOS Perl watchdog.
 - Reused the stable version parsed from the selected Mihomo asset after installation instead of executing the persistent binary a second time before runtime restoration.
 - Suppressed expected `curl: (7)` messages while the local Mihomo API is still warming up; real startup timeouts continue to print process and log diagnostics.
 
