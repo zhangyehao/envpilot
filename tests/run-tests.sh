@@ -431,6 +431,13 @@ chmod 700 "$tmp_slow_bin/codex"
     export EP_CODEX_PROBE_TIMEOUT=1
     . "$ROOT/lib/common.sh"
     . "$ROOT/components/codex.sh"
+    ep_command_exists()
+    {
+        case "$1" in
+            timeout|gtimeout|perl) return 1 ;;
+            *) command -v "$1" >/dev/null 2>&1 ;;
+        esac
+    }
     if ep_codex_probe; then
         exit 1
     fi

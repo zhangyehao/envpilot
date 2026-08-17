@@ -288,7 +288,7 @@ downloads/geoip.metadb
 | `mihomo start|stop|status` | 管理和检查 Mihomo。 |
 | `mihomo ports PROXY API` | 完整修改双端口并重启。 |
 | `mihomo update-subscription [URL]` | 备份、更新、修正并按需重启订阅配置。 |
-| `codex remote status|enable|ready|stop|repair|disable` | 管理共享文件系统上的 Codex 本地 runtime 与 app-server 预热。 |
+| `codex remote status|enable|stage|ready|warm|stop|repair|disable` | 管理共享文件系统上的 Codex 本地 runtime 与 app-server 预热。 |
 | `restore` | 恢复到最近一次 `doctor` 记录的 baseline。 |
 | `rollback` | 恢复最近一次 envpilot 单文件备份。 |
 | `resume` | 继续中断的安装流程。 |

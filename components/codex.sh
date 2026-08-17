@@ -75,16 +75,59 @@ ep_codex_command()
     return 1
 }
 
+ep_codex_kill_process_tree()
+{
+    local pid="${1:-}" child
+    case "$pid" in
+        ''|*[!0-9]*) return 0 ;;
+    esac
+    if ep_command_exists pgrep; then
+        while IFS= read -r child; do
+            [ -n "$child" ] || continue
+            ep_codex_kill_process_tree "$child"
+        done < <(pgrep -P "$pid" 2>/dev/null || true)
+    elif ep_command_exists pkill; then
+        pkill -TERM -P "$pid" 2>/dev/null || true
+    fi
+    kill -TERM "$pid" 2>/dev/null || true
+    sleep 0.1
+    kill -KILL "$pid" 2>/dev/null || true
+}
+
 ep_codex_run_bounded()
 {
     local seconds="${1:-$EP_CODEX_PROBE_TIMEOUT}"
     shift || true
     if ep_command_exists timeout; then
         timeout "$seconds" "$@"
+    elif ep_command_exists gtimeout; then
+        gtimeout "$seconds" "$@"
     elif ep_command_exists perl; then
         perl -e 'alarm shift; exec @ARGV' "$seconds" "$@"
     else
-        "$@"
+        local output_file pid elapsed=0 status
+        output_file="$(mktemp "${TMPDIR:-/tmp}/envpilot-codex-probe.XXXXXX")" || {
+            "$@"
+            return
+        }
+        ("$@" >"$output_file" 2>&1) &
+        pid=$!
+        while kill -0 "$pid" 2>/dev/null; do
+            if [ "$elapsed" -ge "$seconds" ]; then
+                ep_codex_kill_process_tree "$pid"
+                wait "$pid" 2>/dev/null || true
+                cat "$output_file"
+                rm -f "$output_file"
+                return 124
+            fi
+            sleep 1
+            elapsed=$((elapsed + 1))
+        done
+        status=0
+        wait "$pid" || status=$?
+        cat "$output_file"
+        rm -f "$output_file"
+        return "$status"
     fi
 }
 
@@ -671,7 +714,6 @@ ep_codex_remote_invoke()
     template="$(ep_codex_remote_template)"
     [ -f "$template" ] || ep_die "Codex remote template is missing: $template"
     ENVPILOT_CODEX_REMOTE_READY_TIMEOUT="$EP_CODEX_REMOTE_READY_TIMEOUT" \
-        ENVPILOT_CODEX_REMOTE_STATE_DIR="${EP_CONFIG_DIR:-$HOME/.config/envpilot}/codex-remote" \
         bash "$template" "$action" "$@"
 }
 
@@ -723,7 +765,14 @@ ep_codex_remote_disable()
     ep_codex_remote_invoke stop >/dev/null 2>&1 || true
     ep_codex_remote_invoke clean >/dev/null 2>&1 || true
     if ep_codex_remote_is_managed_wrapper "$wrapper"; then
-        backup="$(ls -dt "$wrapper".bak.* 2>/dev/null | head -n 1 || true)"
+        backup=""
+        local candidate
+        for candidate in "${wrapper}.bak."*; do
+            [ -e "$candidate" ] || continue
+            if [ -z "$backup" ] || [ "$candidate" -nt "$backup" ]; then
+                backup="$candidate"
+            fi
+        done
         if [ -n "$backup" ] && [ -e "$backup" ]; then
             rm -f "$wrapper"
             cp -a "$backup" "$wrapper"
@@ -751,9 +800,9 @@ ep_codex_remote_cli()
         remote:stop) ep_codex_remote_invoke stop ;;
         remote:repair) ep_codex_remote_invoke repair ;;
         remote:disable) ep_codex_remote_disable ;;
-        status|stage|prepare|ready|warm|stop|repair)
+        status:*|stage:*|prepare:*|ready:*|warm:*|stop:*|repair:*)
             ep_codex_remote_invoke "$action" ;;
-        disable) ep_codex_remote_disable ;;
+        disable:*) ep_codex_remote_disable ;;
         *) ep_die "Usage: bash envpilot.sh codex remote {status|enable|stage|ready|warm|stop|repair|disable}" ;;
     esac
 }

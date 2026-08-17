@@ -13,6 +13,8 @@
 ### Fixed
 
 - Bounded `codex --version` probes so doctor cannot hang indefinitely on a slow distributed filesystem.
+- Added a portable timeout fallback for macOS and minimal Unix hosts without `timeout` or Perl.
+- Cleaned ShellCheck diagnostics in the new remote runtime manager so the release test workflow passes.
 - Added regression coverage for Codex runtime staging and clean wrapper execution output.
 - Added explicit PowerShell guidance that Codex remote runtime management is currently Unix-only.
 
