@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position=0)]
-    [ValidateSet("doctor","install","update","upgrade","apply-shell","rollback","restore","mihomo","resume","reset","update-manifests","update-mihomo-cache","self-test","help")]
+    [ValidateSet("doctor","install","update","upgrade","apply-shell","rollback","restore","mihomo","codex","resume","reset","update-manifests","update-mihomo-cache","self-test","help")]
     [string]$Command = "help",
 
     [Parameter(Position=1)]
@@ -950,6 +950,10 @@ env_key = "OPENAI_API_KEY"
     Mark-StateDone "codex"
 }
 
+function Invoke-CodexCommand {
+    Stop-Envpilot "Codex remote runtime management is currently Unix-only. Use envpilot.sh from Linux, macOS, WSL, or Git Bash."
+}
+
 function Get-ToolMajorVersion {
     param([string]$CommandName, [string[]]$Arguments = @("--version"))
     $command = Get-Command $CommandName -ErrorAction SilentlyContinue
@@ -1150,6 +1154,8 @@ Usage:
       Restore envpilot-managed changes to the latest doctor baseline.
   .\envpilot.ps1 mihomo [start|stop|status|port PORT|ports PROXY_PORT API_PORT|update-subscription [URL]]
       Manage Mihomo, its two local ports, and subscription config.
+  .\envpilot.ps1 codex remote [status|enable|stage|ready|warm|stop|repair|disable]
+      Codex node-local runtime management is available through the Unix entrypoint.
   .\envpilot.ps1 resume
       Continue an interrupted install using saved state.
   .\envpilot.ps1 reset
@@ -1172,6 +1178,7 @@ try {
         "rollback" { Rollback-Latest }
         "restore" { Restore-Baseline }
         "mihomo" { Invoke-MihomoCommand }
+        "codex" { Invoke-CodexCommand }
         "resume" { if (Test-Path $Script:StateFile) { Get-Content $Script:StateFile }; $Component = "all"; Invoke-Install }
         "reset" { Remove-Item -LiteralPath $Script:StateFile -Force -ErrorAction SilentlyContinue; Write-Info "State reset." }
         "update-manifests" { Update-Manifests }

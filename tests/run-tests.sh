@@ -80,6 +80,14 @@ grep -q 'envpilot_restore()' "$ROOT/templates/bashrc"
 grep -q 'mihomo_ports()' "$ROOT/templates/zshrc"
 grep -q 'mihomo_update_subscription()' "$ROOT/templates/zshrc"
 grep -q 'envpilot_restore()' "$ROOT/templates/zshrc"
+grep -q 'codex_remote()' "$ROOT/templates/bashrc" "$ROOT/templates/zshrc"
+grep -q 'codex_ready()' "$ROOT/templates/bashrc" "$ROOT/templates/zshrc"
+grep -q 'codex remote' "$ROOT/envpilot.sh"
+grep -q 'ep_codex_remote_cli' "$ROOT/components/codex.sh"
+grep -q 'envpilot-managed-codex-wrapper' "$ROOT/templates/codex-wrapper.sh"
+grep -q 'Staging Codex runtime' "$ROOT/templates/codex-remote.sh"
+grep -q 'app-server --listen unix://' "$ROOT/templates/codex-remote.sh"
+grep -qi 'control directory must stay on persistent storage' "$ROOT/templates/codex-remote.sh"
 grep -q 'MIHOMO_RUNTIME_DIR="/tmp/' "$ROOT/templates/mihomo_common.sh"
 grep -q 'MIHOMO_START_LOCK_DIR="\${MIHOMO_RUNTIME_DIR}.start.lock"' "$ROOT/templates/mihomo_common.sh"
 ! grep -q 'MIHOMO_START_LOCK_DIR="\${MIHOMO_RUNTIME_DIR}/' "$ROOT/templates/mihomo_common.sh"
@@ -377,6 +385,58 @@ node_probe_output="$tmp_home/node-probe.out"
 ) >"$node_probe_output" 2>&1
 grep -q 'GLIBC_2.28 not found' "$node_probe_output"
 rm -rf "$tmp_home" "$tmp_bin"
+
+echo "[TEST] Codex remote runtime stages a persistent release and keeps exec output clean"
+tmp_remote_home="$(mktemp -d)"
+tmp_remote_source="$tmp_remote_home/.codex/packages/standalone/releases/0.147.0/bin"
+tmp_remote_runtime="/tmp/envpilot-codex-remote-test-$$"
+mkdir -p "$tmp_remote_source"
+cat > "$tmp_remote_source/codex" <<'EOF'
+#!/usr/bin/env bash
+if [ "${1:-}" = "--version" ]; then
+    printf 'codex-cli 0.147.0\n'
+    exit 0
+fi
+printf 'fake codex\n'
+EOF
+chmod 700 "$tmp_remote_source/codex"
+(
+    set -euo pipefail
+    export HOME="$tmp_remote_home"
+    export CODEX_HOME="$tmp_remote_home/.codex"
+    export ENVPILOT_CODEX_SOURCE_BIN="$tmp_remote_source"
+    export ENVPILOT_CODEX_RUNTIME_DIR="$tmp_remote_runtime"
+    bash "$ROOT/templates/codex-remote.sh" stage
+    test -x "$tmp_remote_runtime/current/bin/codex"
+    result="$(bash "$ROOT/templates/codex-remote.sh" exec --version)"
+    [ "$result" = "codex-cli 0.147.0" ]
+    bash "$ROOT/templates/codex-remote.sh" status >"$tmp_remote_home/remote-status.out"
+    grep -q 'Persistent source:' "$tmp_remote_home/remote-status.out"
+    grep -q 'Local runtime:' "$tmp_remote_home/remote-status.out"
+)
+rm -rf "$tmp_remote_home" "$tmp_remote_runtime"
+
+echo "[TEST] Codex probe is bounded on a slow shared-filesystem executable"
+tmp_slow_home="$(mktemp -d)"
+tmp_slow_bin="$(mktemp -d)"
+cat > "$tmp_slow_bin/codex" <<'EOF'
+#!/usr/bin/env bash
+sleep 10
+EOF
+chmod 700 "$tmp_slow_bin/codex"
+(
+    set -euo pipefail
+    export HOME="$tmp_slow_home"
+    export PATH="$tmp_slow_bin:/usr/bin:/bin"
+    export EP_CODEX_PROBE_TIMEOUT=1
+    . "$ROOT/lib/common.sh"
+    . "$ROOT/components/codex.sh"
+    if ep_codex_probe; then
+        exit 1
+    fi
+    printf '%s\n' "$EP_CODEX_PROBE_ERROR" | grep -q 'timed out after 1s'
+)
+rm -rf "$tmp_slow_home" "$tmp_slow_bin"
 
 grep -q '^!downloads/mihomo-linux-amd64-compatible-\*\.gz$' "$ROOT/.gitignore"
 grep -q '^!downloads/mihomo-windows-amd64-compatible-\*\.zip$' "$ROOT/.gitignore"

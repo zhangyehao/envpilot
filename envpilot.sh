@@ -41,6 +41,8 @@ Usage:
   bash envpilot.sh restore            Restore envpilot-managed changes to the latest doctor baseline.
   bash envpilot.sh mihomo [start|stop|status|port PORT|ports PROXY_PORT API_PORT|update-subscription [URL]]
                                       Manage Mihomo, its two local ports, and subscription config.
+  bash envpilot.sh codex remote [status|enable|stage|ready|warm|stop|repair|disable]
+                                      Stage Codex on node-local storage and manage app-server warmup.
   bash envpilot.sh resume             Continue an interrupted install using saved state.
   bash envpilot.sh reset              Clear saved state so install steps can run again.
   bash envpilot.sh update-manifests   Refresh manifest latest metadata from upstream.
@@ -93,6 +95,20 @@ parse_args()
         arg="${1%$'\r'}"
         if [ "${arg#-}" = "$arg" ]; then
             EP_MIHOMO_VALUE2="$arg"
+            shift
+        fi
+    fi
+    if [ "$EP_COMMAND" = "codex" ] && [ "${1:-}" != "" ]; then
+        arg="${1%$'\r'}"
+        if [ "${arg#-}" = "$arg" ]; then
+            EP_CODEX_ACTION="$arg"
+            shift
+        fi
+    fi
+    if [ "$EP_COMMAND" = "codex" ] && [ "${1:-}" != "" ]; then
+        arg="${1%$'\r'}"
+        if [ "${arg#-}" = "$arg" ]; then
+            EP_CODEX_VALUE="$arg"
             shift
         fi
     fi
@@ -318,6 +334,13 @@ run_mihomo()
     ep_mihomo_cli "$EP_MIHOMO_ACTION" "$EP_MIHOMO_PORT" "$EP_MIHOMO_VALUE2"
 }
 
+run_codex()
+{
+    ep_init
+    ep_platform_detect
+    ep_codex_remote_cli "$EP_CODEX_ACTION" "$EP_CODEX_VALUE"
+}
+
 run_reset()
 {
     ep_init
@@ -358,6 +381,7 @@ main()
         rollback) ep_init; ep_rollback_latest ;;
         restore) run_restore ;;
         mihomo) run_mihomo ;;
+        codex) run_codex ;;
         resume) run_resume ;;
         reset) run_reset ;;
         update-manifests) run_update_manifests ;;

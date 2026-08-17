@@ -11,6 +11,8 @@ EP_UPGRADE="${EP_UPGRADE:-0}"
 EP_MIHOMO_ACTION="${EP_MIHOMO_ACTION:-status}"
 EP_MIHOMO_PORT="${EP_MIHOMO_PORT:-}"
 EP_MIHOMO_VALUE2="${EP_MIHOMO_VALUE2:-}"
+EP_CODEX_ACTION="${EP_CODEX_ACTION:-status}"
+EP_CODEX_VALUE="${EP_CODEX_VALUE:-}"
 EP_RUN_ID=""
 EP_CONFIG_DIR=""
 EP_STATE_FILE=""
@@ -275,4 +277,3 @@ ep_symlink_or_copy()
     fi
     cp "$source" "$target"
 }
-

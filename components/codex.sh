@@ -9,6 +9,8 @@ EP_NODE_NVM_MIN_GLIBC="${EP_NODE_NVM_MIN_GLIBC:-2.28}"
 EP_NODE_LEGACY_LINE="${EP_NODE_LEGACY_LINE:-22}"
 EP_NODE_LEGACY_PLATFORM="${EP_NODE_LEGACY_PLATFORM:-x64-glibc-217}"
 EP_NODE_LEGACY_INSTALL_URL="${EP_NODE_LEGACY_INSTALL_URL:-https://unofficial-builds.nodejs.org/install-node.sh}"
+EP_CODEX_PROBE_TIMEOUT="${EP_CODEX_PROBE_TIMEOUT:-5}"
+EP_CODEX_REMOTE_READY_TIMEOUT="${EP_CODEX_REMOTE_READY_TIMEOUT:-60}"
 
 EP_NODE_VERSION=""
 EP_NODE_PROBE_ERROR=""
@@ -39,10 +41,11 @@ ep_node_probe()
         fi
         EP_NODE_PROBE_ERROR="${output:-invalid version output}"
         return 1
+    else
+        status=$?
+        EP_NODE_PROBE_ERROR="${output:-node exited with status $status}"
+        return 1
     fi
-    status=$?
-    EP_NODE_PROBE_ERROR="${output:-node exited with status $status}"
-    return 1
 }
 
 ep_node_major()
@@ -72,6 +75,19 @@ ep_codex_command()
     return 1
 }
 
+ep_codex_run_bounded()
+{
+    local seconds="${1:-$EP_CODEX_PROBE_TIMEOUT}"
+    shift || true
+    if ep_command_exists timeout; then
+        timeout "$seconds" "$@"
+    elif ep_command_exists perl; then
+        perl -e 'alarm shift; exec @ARGV' "$seconds" "$@"
+    else
+        "$@"
+    fi
+}
+
 ep_codex_probe()
 {
     local output status
@@ -79,17 +95,22 @@ ep_codex_probe()
     EP_CODEX_VERSION=""
     EP_CODEX_PROBE_ERROR=""
     [ -n "$EP_CODEX_BIN" ] || return 1
-    if output="$("$EP_CODEX_BIN" --version 2>&1)"; then
+    if output="$(ep_codex_run_bounded "$EP_CODEX_PROBE_TIMEOUT" "$EP_CODEX_BIN" --version 2>&1)"; then
         EP_CODEX_VERSION="$(printf '%s\n' "$output" | sed -n '1p')"
         [ -n "$EP_CODEX_VERSION" ] || {
             EP_CODEX_PROBE_ERROR="empty version output"
             return 1
         }
         return 0
+    else
+        status=$?
+        if [ "$status" = "124" ]; then
+            EP_CODEX_PROBE_ERROR="codex --version timed out after ${EP_CODEX_PROBE_TIMEOUT}s on the current filesystem"
+        else
+            EP_CODEX_PROBE_ERROR="${output:-codex exited with status $status}"
+        fi
+        return 1
     fi
-    status=$?
-    EP_CODEX_PROBE_ERROR="${output:-codex exited with status $status}"
-    return 1
 }
 
 ep_doctor_codex()
@@ -139,6 +160,7 @@ ep_doctor_codex()
     else
         ep_warn "Codex secrets: not found; install or apply-shell will create a protected scaffold"
     fi
+    ep_doctor_codex_remote
 }
 
 ep_load_nvm()
@@ -334,10 +356,11 @@ ep_npm_probe()
         fi
         EP_NPM_PROBE_ERROR="empty version output"
         return 1
+    else
+        status=$?
+        EP_NPM_PROBE_ERROR="${output:-npm exited with status $status}"
+        return 1
     fi
-    status=$?
-    EP_NPM_PROBE_ERROR="${output:-npm exited with status $status}"
-    return 1
 }
 
 ep_install_codex_official()
@@ -600,6 +623,157 @@ ep_codex_configure_auth()
     unset EP_CODEX_API_KEY
 }
 
+ep_codex_remote_template()
+{
+    printf '%s/templates/codex-remote.sh' "$ENVPILOT_ROOT"
+}
+
+ep_codex_remote_manager_path()
+{
+    printf '%s/.local/bin/codex-remote' "$HOME"
+}
+
+ep_codex_remote_wrapper_path()
+{
+    printf '%s/.local/bin/codex' "$HOME"
+}
+
+ep_codex_remote_is_managed_wrapper()
+{
+    local path="${1:-$(ep_codex_remote_wrapper_path)}"
+    [ -f "$path" ] && grep -q 'envpilot-managed-codex-wrapper' "$path" 2>/dev/null
+}
+
+ep_codex_remote_install_manager()
+{
+    local template manager tmp
+    template="$(ep_codex_remote_template)"
+    manager="$(ep_codex_remote_manager_path)"
+    [ -f "$template" ] || ep_die "Codex remote template is missing: $template"
+    mkdir -p "$(dirname "$manager")"
+    if [ -e "$manager" ] || [ -L "$manager" ]; then
+        if ! grep -q 'envpilot Codex remote runtime manager' "$manager" 2>/dev/null; then
+            ep_backup_file "$manager"
+        fi
+    fi
+    tmp="$manager.tmp.$$"
+    cp "$template" "$tmp"
+    chmod 700 "$tmp"
+    mv "$tmp" "$manager"
+    ep_log "Installed Codex remote manager: $manager"
+}
+
+ep_codex_remote_invoke()
+{
+    local action="${1:-status}"
+    shift || true
+    local template
+    template="$(ep_codex_remote_template)"
+    [ -f "$template" ] || ep_die "Codex remote template is missing: $template"
+    ENVPILOT_CODEX_REMOTE_READY_TIMEOUT="$EP_CODEX_REMOTE_READY_TIMEOUT" \
+        ENVPILOT_CODEX_REMOTE_STATE_DIR="${EP_CONFIG_DIR:-$HOME/.config/envpilot}/codex-remote" \
+        bash "$template" "$action" "$@"
+}
+
+ep_codex_remote_enable()
+{
+    ep_require_unix_runtime
+    local template manager wrapper source
+    template="$(ep_codex_remote_template)"
+    manager="$(ep_codex_remote_manager_path)"
+    wrapper="$(ep_codex_remote_wrapper_path)"
+    source="$(bash "$template" source 2>/dev/null || true)"
+    [ -n "$source" ] || ep_die "No persistent Codex source found. Install Codex first, then retry."
+
+    ep_log "Persistent Codex source: $source"
+    ep_log "Node-local runtime: ${ENVPILOT_CODEX_RUNTIME_DIR:-/tmp/${USER:-user}-envpilot-codex-${HOSTNAME:-host}}"
+    ep_log "Control directory (must remain persistent): ${CODEX_HOME:-$HOME/.codex}/app-server-control"
+    ep_log "Wrapper target: $wrapper"
+    ep_confirm "Enable the envpilot Codex node-local runtime and replace the wrapper target if needed?" "yes" || {
+        ep_warn "Codex remote runtime unchanged."
+        return 0
+    }
+
+    ep_codex_remote_install_manager
+    mkdir -p "$(dirname "$wrapper")"
+    if [ -e "$wrapper" ] || [ -L "$wrapper" ]; then
+        if ! ep_codex_remote_is_managed_wrapper "$wrapper"; then
+            ep_backup_file "$wrapper"
+        fi
+    fi
+    cp "$ENVPILOT_ROOT/templates/codex-wrapper.sh" "$wrapper.tmp.$$"
+    chmod 700 "$wrapper.tmp.$$"
+    mv "$wrapper.tmp.$$" "$wrapper"
+    ep_log "Enabled Codex wrapper: $wrapper"
+    ep_codex_remote_invoke ready
+    ep_log "Codex remote runtime is ready for Desktop."
+}
+
+ep_codex_remote_disable()
+{
+    ep_require_unix_runtime
+    local manager wrapper backup
+    manager="$(ep_codex_remote_manager_path)"
+    wrapper="$(ep_codex_remote_wrapper_path)"
+    ep_log "This stops only the envpilot-managed Codex app-server and restores the previous codex command when a backup exists."
+    ep_confirm "Disable the envpilot Codex remote wrapper?" "no" || {
+        ep_warn "Codex remote runtime unchanged."
+        return 0
+    }
+    ep_codex_remote_invoke stop >/dev/null 2>&1 || true
+    ep_codex_remote_invoke clean >/dev/null 2>&1 || true
+    if ep_codex_remote_is_managed_wrapper "$wrapper"; then
+        backup="$(ls -dt "$wrapper".bak.* 2>/dev/null | head -n 1 || true)"
+        if [ -n "$backup" ] && [ -e "$backup" ]; then
+            rm -f "$wrapper"
+            cp -a "$backup" "$wrapper"
+            ep_log "Restored previous Codex command: $wrapper"
+        else
+            rm -f "$wrapper"
+            ep_log "Removed envpilot Codex wrapper: $wrapper"
+        fi
+    fi
+    if [ -f "$manager" ] && grep -q 'envpilot Codex remote runtime manager' "$manager" 2>/dev/null; then
+        rm -f "$manager"
+        ep_log "Removed Codex remote manager: $manager"
+    fi
+}
+
+ep_codex_remote_cli()
+{
+    ep_require_unix_runtime
+    local action="${1:-status}" value="${2:-}"
+    case "$action:$value" in
+        remote:enable) ep_codex_remote_enable ;;
+        remote:status|remote:) ep_codex_remote_invoke status ;;
+        remote:stage|remote:prepare) ep_codex_remote_invoke stage ;;
+        remote:ready|remote:warm) ep_codex_remote_invoke ready ;;
+        remote:stop) ep_codex_remote_invoke stop ;;
+        remote:repair) ep_codex_remote_invoke repair ;;
+        remote:disable) ep_codex_remote_disable ;;
+        status|stage|prepare|ready|warm|stop|repair)
+            ep_codex_remote_invoke "$action" ;;
+        disable) ep_codex_remote_disable ;;
+        *) ep_die "Usage: bash envpilot.sh codex remote {status|enable|stage|ready|warm|stop|repair|disable}" ;;
+    esac
+}
+
+ep_doctor_codex_remote()
+{
+    local template wrapper
+    template="$(ep_codex_remote_template)"
+    wrapper="$(ep_codex_remote_wrapper_path)"
+    [ -f "$template" ] || return 0
+    if ep_codex_remote_is_managed_wrapper "$wrapper"; then
+        ep_log "Codex remote: wrapper enabled at $wrapper"
+    else
+        ep_log "Codex remote: wrapper not enabled; use: bash envpilot.sh codex remote enable"
+    fi
+    if [ -n "$EP_CODEX_PROBE_ERROR" ] && [[ "$EP_CODEX_PROBE_ERROR" == *"timed out"* ]]; then
+        ep_warn "Codex --version is slow on the current filesystem; use: bash envpilot.sh codex remote ready"
+    fi
+}
+
 ep_install_codex()
 {
     ep_require_unix_runtime
@@ -642,5 +816,8 @@ ep_install_codex()
     ep_codex_configure_auth
     ep_state_mark_done codex
     ep_codex_probe || true
+    if [ -f "$(ep_codex_remote_manager_path)" ] && grep -q 'envpilot Codex remote runtime manager' "$(ep_codex_remote_manager_path)" 2>/dev/null; then
+        ep_codex_remote_install_manager
+    fi
     ep_report_event codex "$action" "installed or updated Codex and configured env_key" "$EP_CODEX_VERSION" "$EP_CODEX_INSTALL_URL; npm:$EP_CODEX_PACKAGE" "$EP_CODEX_BIN"
 }

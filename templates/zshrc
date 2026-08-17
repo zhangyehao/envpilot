@@ -489,6 +489,21 @@ with_secrets()
     )
 }
 
+codex_remote()
+{
+    [ -x "$ENVPILOT_CODEX_REMOTE_SCRIPT" ] || {
+        printf 'Codex remote manager not found: %s\n' "$ENVPILOT_CODEX_REMOTE_SCRIPT" >&2
+        printf 'Run: bash envpilot.sh codex remote enable\n' >&2
+        return 1
+    }
+    "$ENVPILOT_CODEX_REMOTE_SCRIPT" "$@"
+}
+
+codex_ready()
+{
+    codex_remote ready
+}
+
 if [ -r "$ENVPILOT_CONFIG_DIR/shell.local" ]; then
     . "$ENVPILOT_CONFIG_DIR/shell.local"
 fi

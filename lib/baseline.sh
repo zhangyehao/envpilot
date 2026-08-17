@@ -103,6 +103,9 @@ ep_capture_doctor_baseline()
     ep_baseline_record_file codex-config "$HOME/.codex/config.toml"
     ep_baseline_record_file codex-auth "$HOME/.codex/auth.json"
     ep_baseline_record_file codex-secrets "$HOME/.config/secrets/api.env"
+    ep_baseline_record_file codex-remote-manager "$HOME/.local/bin/codex-remote"
+    ep_baseline_record_file codex-wrapper "$HOME/.local/bin/codex"
+    ep_baseline_record_file codex-remote-pid "$HOME/.codex/app-server-control/envpilot-app-server.pid"
     ep_baseline_record_file gh-link "$HOME/.local/bin/gh"
     ep_baseline_record_file tmux-link "$HOME/.local/bin/tmux"
 
@@ -197,6 +200,9 @@ ep_restore_doctor_baseline()
     ep_log "Restoring doctor baseline from $EP_BASELINE_FILE"
     ep_stop_mihomo
     ep_cleanup_mihomo_runtime
+    if declare -F ep_codex_remote_invoke >/dev/null 2>&1; then
+        ep_codex_remote_invoke stop >/dev/null 2>&1 || true
+    fi
 
     while IFS="$(printf '\t')" read -r kind name target present snapshot detail; do
         case "$kind" in

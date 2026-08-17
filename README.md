@@ -136,7 +136,7 @@ Linux/macOS/Unix-like 环境按以下方式运行：
 
 二进制和订阅配置保存在用户目录；实际运行时复制到节点本地 `/tmp`。这样可以减少 NFS、Lustre、GPFS、BeeGFS 等共享文件系统上的锁、元数据和缓存 I/O 问题。
 
-`BASHRC_USE_NODE_LOCAL_TMP=1` 时，模板还会创建 `/tmp/${USER}-codex-tmp` 并在可用时设置 `TMPDIR`。这只迁移临时文件、运行时副本和锁，不会把整个 `~/.codex`、SQLite 数据库、会话历史或长期配置搬到易失的 `/tmp`。节点重启或清理 `/tmp` 后，重新登录并执行 `mihomo start` 即可重建运行时副本。
+`BASHRC_USE_NODE_LOCAL_TMP=1` 时，模板还会创建 `/tmp/${USER}-codex-tmp` 并在可用时设置 `TMPDIR`。这只处理通用临时文件；启用下面的 Codex Remote Runtime 后，envpilot 还会把 Codex 的完整 `bin/` runtime 暂存到节点本地 `/tmp`。无论哪种模式，都不会把整个 `~/.codex`、SQLite 数据库、会话历史或长期配置搬到易失的 `/tmp`。节点重启或清理 `/tmp` 后，重新执行 `codex_ready` 即可重建 Codex runtime。
 
 切换登录节点后，`/tmp` 和 `127.0.0.1` 都会变化，需要在新节点重新执行：
 
@@ -288,6 +288,7 @@ downloads/geoip.metadb
 | `mihomo start|stop|status` | 管理和检查 Mihomo。 |
 | `mihomo ports PROXY API` | 完整修改双端口并重启。 |
 | `mihomo update-subscription [URL]` | 备份、更新、修正并按需重启订阅配置。 |
+| `codex remote status|enable|ready|stop|repair|disable` | 管理共享文件系统上的 Codex 本地 runtime 与 app-server 预热。 |
 | `restore` | 恢复到最近一次 `doctor` 记录的 baseline。 |
 | `rollback` | 恢复最近一次 envpilot 单文件备份。 |
 | `resume` | 继续中断的安装流程。 |
@@ -431,6 +432,58 @@ env_key = "OPENAI_API_KEY"
 chmod 600 ~/.config/secrets/api.env
 with_secrets codex
 ```
+
+### HPC / Remote SSH 的 Codex 本地 runtime
+
+如果 `codex --version` 在共享文件系统（例如 NFS、Lustre、GPFS、BeeGFS 或 ParaStor）上出现几十秒无响应，而同一二进制复制到节点本地 `/tmp` 后很快，启用 Codex Remote Runtime：
+
+```bash
+bash envpilot.sh codex remote status
+bash envpilot.sh codex remote enable
+```
+
+`enable` 不会重新安装 Codex。它会：
+
+1. 在 `~/.codex/packages/standalone/current/bin` 或 `releases/*/bin` 中寻找持久化 Codex release。
+2. 将完整 `bin/` 目录复制到 `/tmp/${USER}-envpilot-codex-${HOSTNAME}/current`，并依据路径、文件大小、mtime 和 inode 判断是否需要重新暂存。
+3. 把 `~/.local/bin/codex` 替换为受管 wrapper；原有命令会先备份。
+4. 保持 `~/.codex/config.toml`、`auth.json`、sessions 和 `app-server-control` 在持久化目录。
+5. 预启动 app-server，并等待 `app-server-control.sock` 就绪。
+
+日常登录或切换节点后只需要：
+
+```bash
+codex_ready
+# 或：
+bash envpilot.sh codex remote ready
+```
+
+检查状态：
+
+```bash
+codex_remote status
+bash envpilot.sh codex remote status
+```
+
+需要修复 stale runtime 或重新复制完整 release 时：
+
+```bash
+bash envpilot.sh codex remote repair
+```
+
+停止的是 envpilot 自己记录的 app-server，不会主动杀掉 Desktop 或其他工具启动的未知 Codex 服务：
+
+```bash
+bash envpilot.sh codex remote stop
+```
+
+`~/.codex/app-server-control` 不要软链接到 `/tmp`。该目录承载 Unix socket 和 app-server 的持久控制状态，迁移后可能出现 `socket hang up`。节点本地 `/tmp` 只保存可重建的 Codex `bin/` runtime。禁用功能不会删除持久化 Codex：
+
+```bash
+bash envpilot.sh codex remote disable
+```
+
+`doctor` 会对 `codex --version` 使用有界探测；如果检测到共享文件系统上的执行超时，会提示使用 `codex remote ready`，不会让整个诊断无限卡住。Windows 原生入口暂不提供此 Unix app-server 预热功能；Windows 用户应使用 WSL、Git Bash 或直接使用本地 Codex 安装。
 
 
 ## GitHub/Gitee 镜像与 tmux

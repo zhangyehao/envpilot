@@ -61,6 +61,10 @@ BASHRC_PROXY_ENABLE_SOCKS="${BASHRC_PROXY_ENABLE_SOCKS:-0}"
 BASHRC_PROXY_PRESTART_NONINTERACTIVE="${BASHRC_PROXY_PRESTART_NONINTERACTIVE:-1}"
 BASHRC_USE_NODE_LOCAL_TMP="${BASHRC_USE_NODE_LOCAL_TMP:-1}"
 BASHRC_CODEX_TMP_ROOT="${BASHRC_CODEX_TMP_ROOT:-/tmp/${USER:-$(id -un 2>/dev/null || printf unknown)}-codex-tmp}"
+ENVPILOT_CODEX_REMOTE_SCRIPT="${ENVPILOT_CODEX_REMOTE_SCRIPT:-$HOME/.local/bin/codex-remote}"
+ENVPILOT_CODEX_RUNTIME_DIR="${ENVPILOT_CODEX_RUNTIME_DIR:-}"
+ENVPILOT_CODEX_REMOTE_READY_TIMEOUT="${ENVPILOT_CODEX_REMOTE_READY_TIMEOUT:-60}"
+export ENVPILOT_CODEX_REMOTE_SCRIPT ENVPILOT_CODEX_RUNTIME_DIR ENVPILOT_CODEX_REMOTE_READY_TIMEOUT
 
 if [ ! -f "$BASHRC_ENVPILOT_ROOT/envpilot.sh" ] && [ -r "$BASHRC_REPO_ROOT_FILE" ]; then
     BASHRC_REPO_ROOT_CANDIDATE="$(sed -n '1p' "$BASHRC_REPO_ROOT_FILE" 2>/dev/null || true)"
@@ -533,6 +537,21 @@ with_secrets()
         set +a
         exec "$@"
     )
+}
+
+codex_remote()
+{
+    [ -x "$ENVPILOT_CODEX_REMOTE_SCRIPT" ] || {
+        printf 'Codex remote manager not found: %s\n' "$ENVPILOT_CODEX_REMOTE_SCRIPT" >&2
+        printf 'Run: bash envpilot.sh codex remote enable\n' >&2
+        return 1
+    }
+    "$ENVPILOT_CODEX_REMOTE_SCRIPT" "$@"
+}
+
+codex_ready()
+{
+    codex_remote ready
 }
 
 secrets_unload()

@@ -14,6 +14,8 @@
 # This does not move the whole ~/.codex directory or its session database.
 # BASHRC_USE_NODE_LOCAL_TMP="1"
 # BASHRC_CODEX_TMP_ROOT="/tmp/${USER}-codex-tmp"
+# ENVPILOT_CODEX_RUNTIME_DIR="/tmp/${USER}-envpilot-codex-${HOSTNAME}"
+# ENVPILOT_CODEX_REMOTE_READY_TIMEOUT="60"
 
 # HTTP/HTTPS are enabled by proxy_on when the port is ready. SOCKS is opt-in.
 # BASHRC_PROXY_ENABLE_SOCKS="1"

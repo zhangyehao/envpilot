@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.13 - 2026-08-17
+
+### Added
+
+- Added a self-contained Codex Remote Runtime manager for HPC and shared filesystems.
+- Added `bash envpilot.sh codex remote status|enable|stage|ready|warm|stop|repair|disable` and the `codex_remote` / `codex_ready` shell helpers.
+- Added node-local staging of the complete Codex `bin/` runtime with metadata-based refresh and an atomic `current/` replacement.
+- Added an envpilot-managed `~/.local/bin/codex` wrapper that restores the runtime after `/tmp` cleanup without moving `~/.codex` state.
+- Added app-server warmup, bounded readiness waits, managed PID tracking, stale-socket repair, and persistent-control-directory protection.
+
+### Fixed
+
+- Bounded `codex --version` probes so doctor cannot hang indefinitely on a slow distributed filesystem.
+- Added regression coverage for Codex runtime staging and clean wrapper execution output.
+- Added explicit PowerShell guidance that Codex remote runtime management is currently Unix-only.
+
 ## 0.2.12 - 2026-08-14
 
 ### Fixed
