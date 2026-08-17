@@ -4,6 +4,8 @@
 # BASHRC_INIT_CONDA="1"
 # BASHRC_AUTO_START_MIHOMO="1"
 # BASHRC_AUTO_ENABLE_PROXY="1"
+# api.env is loaded by default before the interactive/TTY guard.
+# Set this to 0 to disable automatic loading in managed shells.
 # BASHRC_AUTO_LOAD_SECRETS="0"
 
 # Non-interactive SSH/Codex shells may prepare the envpilot Mihomo proxy

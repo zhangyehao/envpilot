@@ -87,6 +87,7 @@ grep -q 'ep_codex_remote_cli' "$ROOT/components/codex.sh"
 grep -q 'envpilot-managed-codex-wrapper' "$ROOT/templates/codex-wrapper.sh"
 grep -q 'Staging Codex runtime' "$ROOT/templates/codex-remote.sh"
 grep -q 'app-server --listen unix://' "$ROOT/templates/codex-remote.sh"
+grep -q 'load_codex_environment' "$ROOT/templates/codex-remote.sh"
 grep -qi 'control directory must stay on persistent storage' "$ROOT/templates/codex-remote.sh"
 grep -q 'MIHOMO_RUNTIME_DIR="/tmp/' "$ROOT/templates/mihomo_common.sh"
 grep -q 'MIHOMO_START_LOCK_DIR="\${MIHOMO_RUNTIME_DIR}.start.lock"' "$ROOT/templates/mihomo_common.sh"
@@ -390,30 +391,66 @@ echo "[TEST] Codex remote runtime stages a persistent release and keeps exec out
 tmp_remote_home="$(mktemp -d)"
 tmp_remote_source="$tmp_remote_home/.codex/packages/standalone/releases/0.147.0/bin"
 tmp_remote_runtime="/tmp/envpilot-codex-remote-test-$$"
-mkdir -p "$tmp_remote_source"
+mkdir -p "$tmp_remote_source" "$tmp_remote_home/.config/secrets"
 cat > "$tmp_remote_source/codex" <<'EOF'
 #!/usr/bin/env bash
 if [ "${1:-}" = "--version" ]; then
+    [ "${ENVPILOT_TEST_CODEX_VERSION_WARNING:-0}" = "1" ] && printf 'WARNING: stale temp cleanup failed\n' >&2
     printf 'codex-cli 0.147.0\n'
+    exit 0
+fi
+if [ "${1:-}" = "env-check" ]; then
+    printf '%s|%s|%s\n' "${OPENAI_API_KEY-unset}" "${NCBI_API_KEY-unset}" "${BIOINFO_SERVICE_URL-unset}"
     exit 0
 fi
 printf 'fake codex\n'
 EOF
 chmod 700 "$tmp_remote_source/codex"
+cat > "$tmp_remote_home/.config/secrets/api.env" <<'EOF'
+OPENAI_API_KEY=remote-file-openai
+export NCBI_API_KEY=remote-file-ncbi
+BIOINFO_SERVICE_URL=https://bio.example.invalid/api
+EOF
+chmod 600 "$tmp_remote_home/.config/secrets/api.env"
 (
     set -euo pipefail
     export HOME="$tmp_remote_home"
     export CODEX_HOME="$tmp_remote_home/.codex"
     export ENVPILOT_CODEX_SOURCE_BIN="$tmp_remote_source"
     export ENVPILOT_CODEX_RUNTIME_DIR="$tmp_remote_runtime"
+    unset OPENAI_API_KEY NCBI_API_KEY BIOINFO_SERVICE_URL
     bash "$ROOT/templates/codex-remote.sh" stage
     test -x "$tmp_remote_runtime/current/bin/codex"
     result="$(bash "$ROOT/templates/codex-remote.sh" exec --version)"
     [ "$result" = "codex-cli 0.147.0" ]
-    bash "$ROOT/templates/codex-remote.sh" status >"$tmp_remote_home/remote-status.out"
+    result="$(bash "$ROOT/templates/codex-remote.sh" exec env-check)"
+    [ "$result" = "remote-file-openai|remote-file-ncbi|https://bio.example.invalid/api" ]
+    result="$(OPENAI_API_KEY=remote-current-openai bash "$ROOT/templates/codex-remote.sh" exec env-check)"
+    [ "$result" = "remote-current-openai|remote-file-ncbi|https://bio.example.invalid/api" ]
+    ENVPILOT_TEST_CODEX_VERSION_WARNING=1 \
+        bash "$ROOT/templates/codex-remote.sh" status >"$tmp_remote_home/remote-status.out"
     grep -q 'Persistent source:' "$tmp_remote_home/remote-status.out"
     grep -q 'Local runtime:' "$tmp_remote_home/remote-status.out"
+    grep -q 'codex-cli 0.147.0' "$tmp_remote_home/remote-status.out"
+    ! grep -q 'stale temp cleanup failed' "$tmp_remote_home/remote-status.out"
+    grep -q 'Protected environment injection:' "$tmp_remote_home/remote-status.out"
+    grep -q 'all variables' "$tmp_remote_home/remote-status.out"
 )
+case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*) ;;
+    *)
+        chmod 644 "$tmp_remote_home/.config/secrets/api.env"
+        unsafe_result="$(
+            env -u OPENAI_API_KEY -u NCBI_API_KEY -u BIOINFO_SERVICE_URL \
+            HOME="$tmp_remote_home" \
+            CODEX_HOME="$tmp_remote_home/.codex" \
+            ENVPILOT_CODEX_SOURCE_BIN="$tmp_remote_source" \
+            ENVPILOT_CODEX_RUNTIME_DIR="$tmp_remote_runtime" \
+            bash "$ROOT/templates/codex-remote.sh" exec env-check
+        )"
+        [ "$unsafe_result" = "unset|unset|unset" ]
+        ;;
+esac
 rm -rf "$tmp_remote_home" "$tmp_remote_runtime"
 
 echo "[TEST] Codex probe is bounded on a slow shared-filesystem executable"
@@ -646,6 +683,75 @@ if [ -n "$output" ]; then
     printf '%s\n' "$output" >&2
     exit 1
 fi
+rm -rf "$tmp_home"
+
+echo "[TEST] non-interactive bashrc loads every protected api.env variable"
+tmp_home="$(mktemp -d)"
+mkdir -p "$tmp_home/.config/envpilot" "$tmp_home/.config/secrets"
+cat > "$tmp_home/.config/secrets/api.env" <<'EOF'
+OPENAI_API_KEY=test-key
+export NCBI_API_KEY=noninteractive-ncbi
+BIOINFO_SERVICE_URL=https://bio.example.invalid/v1
+EOF
+chmod 600 "$tmp_home/.config/secrets/api.env"
+cat > "$tmp_home/.config/envpilot/shell.local" <<'EOF'
+BASHRC_AUTO_LOAD_SECRETS=1
+export SHELL_LOCAL_INTERACTIVE_ONLY=must-not-load
+printf 'shell.local must not execute in a non-interactive shell\n'
+EOF
+loaded_environment="$(
+    env -i \
+        HOME="$tmp_home" \
+        PATH="/usr/bin:/bin:$PATH" \
+        BASH_ENV=/dev/null \
+        bash --noprofile --norc -c '
+            source "$1"
+            printf "%s|%s|%s|%s|%s" \
+                "$OPENAI_API_KEY" \
+                "$NCBI_API_KEY" \
+                "$BIOINFO_SERVICE_URL" \
+                "$(printenv BIOINFO_SERVICE_URL)" \
+                "${SHELL_LOCAL_INTERACTIVE_ONLY-unset}"
+        ' bash "$ROOT/templates/bashrc" 2>&1
+)"
+api_env_mode="$(stat -c '%a' "$tmp_home/.config/secrets/api.env" 2>/dev/null || stat -f '%Lp' "$tmp_home/.config/secrets/api.env" 2>/dev/null || true)"
+case "$(uname -s):$api_env_mode" in
+    MINGW*:400|MINGW*:600|MSYS*:400|MSYS*:600|CYGWIN*:400|CYGWIN*:600)
+        [ "$loaded_environment" = "test-key|noninteractive-ncbi|https://bio.example.invalid/v1|https://bio.example.invalid/v1|unset" ]
+        ;;
+    MINGW*:*|MSYS*:*|CYGWIN*:*)
+        echo "[TEST] skip protected bashrc load fixture: MSYS permission mode is $api_env_mode"
+        ;;
+    *)
+        if [ "$loaded_environment" != "test-key|noninteractive-ncbi|https://bio.example.invalid/v1|https://bio.example.invalid/v1|unset" ]; then
+            printf 'Unexpected protected non-interactive environment: %s\n' "$loaded_environment" >&2
+            exit 1
+        fi
+        ;;
+esac
+
+case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*) ;;
+    *)
+        chmod 644 "$tmp_home/.config/secrets/api.env"
+        rejected_environment="$(
+            env -i \
+                HOME="$tmp_home" \
+                PATH="/usr/bin:/bin:$PATH" \
+                BASHRC_AUTO_LOAD_SECRETS=1 \
+                BASH_ENV=/dev/null \
+                bash --noprofile --norc -c '
+                    source "$1"
+                    printf "%s|%s" "${OPENAI_API_KEY-unset}" "${NCBI_API_KEY-unset}"
+                ' bash "$ROOT/templates/bashrc" 2>&1
+        )"
+        if [ "$rejected_environment" != "unset|unset" ]; then
+            printf 'Unsafe api.env should not load, got: %s\n' "$rejected_environment" >&2
+            exit 1
+        fi
+        ;;
+esac
+rm -rf "$tmp_home"
 
 echo "[TEST] non-interactive shell prepares a configured Mihomo proxy"
 tmp_home="$(mktemp -d)"

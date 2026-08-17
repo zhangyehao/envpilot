@@ -92,9 +92,9 @@ proxy_on
 bash envpilot.sh install
 ```
 
-`apply-shell` 会同时创建 `~/.config/secrets/api.env` 安全模板，目录权限为 700、文件权限为 600。模板只包含注释，不会写入假密钥；真正的 API key 只在 Codex 安装时检测到或交互输入后，经确认才会保存。
+`apply-shell` 会同时创建 `~/.config/secrets/api.env` 安全模板，目录权限为 700、文件权限为 600。模板只包含注释，不会写入假密钥；真正的 API key 只在 Codex 安装时检测到或交互输入后，经确认才会保存。受管 Bash/zsh 会在 TTY 判断之前安静地读取该文件，并通过 `set -a` 将其中的全部赋值导出给当前 shell 及其子进程；文件必须属于当前用户且权限为 600 或 400，否则会跳过。
 
-`~/.config/envpilot/shell.local` 是 `.bashrc`/`.zshrc` 的用户配置覆盖层：交互式 shell 会完整加载它；静默的非交互 shell 只读取其中经过白名单校验的 Mihomo 端口、代理模式和节点临时目录设置，不执行任意 `module load` 或自定义命令。`~/.config/secrets/api.env` 则是独立的受保护密钥源，默认不会注入所有静默 SSH 命令，避免 API key 扩散到无关子进程。Codex 可使用受保护的 `auth.json`，或通过 `with_secrets codex` 只把密钥提供给目标进程。
+`~/.config/envpilot/shell.local` 是 `.bashrc`/`.zshrc` 的用户配置覆盖层：交互式 shell 会完整加载它；静默的非交互 shell 只读取其中经过白名单校验的 Mihomo 端口、代理模式、密钥加载开关和节点临时目录设置，不执行任意 `module load` 或自定义命令。需要让 SSH、Codex、Git、Python 或其他子进程共同继承的简单环境变量应放在 `api.env`；该文件会整文件 source，因此只应包含安静的 shell 变量赋值，不要放命令或交互逻辑。若明确不希望自动注入，在 `shell.local` 中设置 `BASHRC_AUTO_LOAD_SECRETS=0`，之后仍可按需执行 `with_secrets command`。
 
 交互式 shell 默认不会自动启动 Mihomo，也不会自动设置代理环境变量；需要代理时执行 `proxy_on`，不用时执行 `proxy_off`。非交互 SSH/Codex shell 则会按下一节的规则，在配置存在且端口准备好后安静地预启动并继承 HTTP/HTTPS 代理。
 
@@ -110,14 +110,15 @@ envpilot 只向已有 `no_proxy/NO_PROXY` 追加 `localhost`、`127.0.0.1` 和 `
 
 `apply-shell` 生成的 Bash/zsh 模板会在非交互 TTY 判断之前执行一段安静的、尽力而为的准备逻辑：
 
-1. 从当前环境或 `~/.config/envpilot/shell.local` 读取 `MIHOMO_PROXY_PORT` 和 `MIHOMO_API_PORT`。
-2. 如果配置文件存在且目标端口尚未监听，尝试以 `MIHOMO_QUIET_START=1` 启动 envpilot 管理的 Mihomo。
-3. 只有确认 HTTP 代理端口真实监听后，才向当前 shell 导出 HTTP/HTTPS 代理；启动失败时不输出错误，也不设置错误代理变量。
-4. 默认只导出 HTTP/HTTPS；`all_proxy/ALL_PROXY` 只有 `BASHRC_PROXY_ENABLE_SOCKS=1` 时才启用。
+1. 校验并加载 `~/.config/secrets/api.env` 中的全部环境变量，不向 SSH 协议输出任何提示。
+2. 从当前环境或 `~/.config/envpilot/shell.local` 的白名单设置中读取 `MIHOMO_PROXY_PORT` 和 `MIHOMO_API_PORT`。
+3. 如果配置文件存在且目标端口尚未监听，尝试以 `MIHOMO_QUIET_START=1` 启动 envpilot 管理的 Mihomo。
+4. 只有确认 HTTP 代理端口真实监听后，才向当前 shell 导出 HTTP/HTTPS 代理；启动失败时不输出错误，也不设置错误代理变量。
+5. 默认只导出 HTTP/HTTPS；`all_proxy/ALL_PROXY` 只有 `BASHRC_PROXY_ENABLE_SOCKS=1` 时才启用。
 
 因此，多个 SSH 窗口在同一用户、同一节点上共享一个 Mihomo 进程；`proxy_on` 和 `proxy_off` 仍然只改变当前 shell 的代理变量。启动锁会让并发的非交互 shell 等待已有启动流程，不会反复删除和重建同一个 `/tmp/${USER}_mihomo_${HOSTNAME}/` 运行目录。
 
-这段逻辑不会在没有 `~/.config/mihomo/config.yaml` 时凭空启动服务；启动检查是有界的，代理不可用时不会无限阻塞，shell 最终仍会安静返回。若你的远程启动器不读取 `.bashrc`，请显式使用 `bash -lc 'command'`，或在受信任的启动环境中设置 `BASH_ENV` 指向一个只包含安全初始化逻辑的文件；`ssh host command`、某些 supervisor 和 app-server 启动器并不保证读取交互式 profile。
+这段逻辑不会在没有 `~/.config/mihomo/config.yaml` 时凭空启动服务；启动检查是有界的，代理不可用时不会无限阻塞，shell 最终仍会安静返回。若远程启动器完全不读取 `.bashrc`/`.zshrc`，普通程序仍需显式使用 `bash -lc 'command'`，或在受信任的启动环境中设置 `BASH_ENV`；`ssh host command`、某些 supervisor 和 app-server 启动器并不保证读取 profile。envpilot 的 Codex wrapper 是例外：它会在启动 CLI 或 app-server 前独立校验并加载完整 `api.env`，因此 Codex Desktop 的 `/bin/sh -c ... codex ...` 路径也能获得这些变量。
 
 ## Mihomo 运行模型
 
@@ -449,6 +450,18 @@ bash envpilot.sh codex remote enable
 3. 把 `~/.local/bin/codex` 替换为受管 wrapper；原有命令会先备份。
 4. 保持 `~/.codex/config.toml`、`auth.json`、sessions 和 `app-server-control` 在持久化目录。
 5. 预启动 app-server，并等待 `app-server-control.sock` 就绪。
+
+wrapper 和 remote manager 在每次启动 Codex CLI 或 app-server 前都会读取权限为 600/400 的 `~/.config/secrets/api.env`，并导出其中全部变量；当前进程已显式提供的 `OPENAI_API_KEY` 优先于文件中的同名值。可用 `ENVPILOT_CODEX_LOAD_SECRETS=0` 单独关闭 Codex 进程级注入。更新到包含此功能的版本后，需要刷新已安装的 manager 并重启旧 app-server：
+
+```bash
+cd ~/envpilot
+git pull --ff-only
+bash envpilot.sh codex remote enable
+bash envpilot.sh codex remote repair
+bash envpilot.sh codex remote status
+```
+
+状态中应出现 `Protected environment injection: ready from protected ... (all variables)`；该状态只报告可用性，不显示任何密钥值。
 
 日常登录或切换节点后只需要：
 

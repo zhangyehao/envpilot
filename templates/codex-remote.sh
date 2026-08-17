@@ -14,6 +14,8 @@ SERVER_LOG="$CONTROL_DIR/app-server.log"
 READY_TIMEOUT="${ENVPILOT_CODEX_REMOTE_READY_TIMEOUT:-60}"
 RUNTIME_ROOT="${ENVPILOT_CODEX_RUNTIME_DIR:-}"
 QUIET="${ENVPILOT_CODEX_REMOTE_QUIET:-0}"
+SECRETS_FILE="${ENVPILOT_CODEX_SECRETS_FILE:-$HOME/.config/secrets/api.env}"
+LOAD_SECRETS="${ENVPILOT_CODEX_LOAD_SECRETS:-${ENVPILOT_CODEX_LOAD_API_KEY:-1}}"
 
 safe_component()
 {
@@ -61,6 +63,45 @@ die()
 command_exists()
 {
     command -v "$1" >/dev/null 2>&1
+}
+
+secret_file_mode()
+{
+    stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1" 2>/dev/null || true
+}
+
+secret_file_is_safe()
+{
+    local secret_file="$1" mode owner current
+    [ -f "$secret_file" ] || return 1
+    current="$(id -u)"
+    owner="$(stat -c '%u' "$secret_file" 2>/dev/null || stat -f '%u' "$secret_file" 2>/dev/null || printf '%s' "$current")"
+    [ "$owner" = "$current" ] || return 1
+    mode="$(secret_file_mode "$secret_file")"
+    case "$mode" in
+        400|600) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+load_codex_environment()
+{
+    local allexport_was_set=0 status=0
+    local openai_was_set="${OPENAI_API_KEY+x}" openai_value="${OPENAI_API_KEY:-}"
+    [ "$LOAD_SECRETS" = "1" ] || return 0
+    secret_file_is_safe "$SECRETS_FILE" || return 0
+    case $- in
+        *a*) allexport_was_set=1 ;;
+        *) set -a ;;
+    esac
+    # The user-owned file is loaded only after ownership and mode checks.
+    # shellcheck disable=SC1090
+    . "$SECRETS_FILE" >/dev/null 2>&1 || status=$?
+    [ "$allexport_was_set" = "1" ] || set +a
+    if [ -n "$openai_was_set" ]; then
+        export OPENAI_API_KEY="$openai_value"
+    fi
+    return "$status"
 }
 
 validate_runtime_root()
@@ -230,9 +271,14 @@ run_bounded()
 
 local_version()
 {
-    local output
+    local output version
     output="$(run_bounded 5 "$(local_bin)" --version 2>&1 || true)"
-    printf '%s\n' "$output" | sed -n '1p'
+    version="$(printf '%s\n' "$output" | sed -n '/^codex-cli[[:space:]]/{p;q;}')"
+    if [ -n "$version" ]; then
+        printf '%s\n' "$version"
+    else
+        printf '%s\n' "$output" | sed -n '1p'
+    fi
 }
 
 ensure_control_dir()
@@ -435,6 +481,7 @@ start_server()
 
     rm -f "$CONTROL_DIR/envpilot-app-server.ready"
     log "Starting Codex app-server; cold start may take several seconds."
+    load_codex_environment || true
     nohup env CODEX_HOME="$CODEX_HOME_DIR" "$(local_bin)" \
         -c features.code_mode_host=true app-server --listen unix:// \
         >>"$SERVER_LOG" 2>&1 < /dev/null &
@@ -517,12 +564,28 @@ status_report()
     fi
     pid="$(read_server_pid 2>/dev/null || true)"
     if [ -n "$pid" ]; then printf 'App-server:\n  managed PID %s\n' "$pid"; else printf 'App-server:\n  not managed by envpilot\n'; fi
+    printf 'Protected environment injection:\n'
+    if [ "$LOAD_SECRETS" != "1" ]; then
+        printf '  disabled by ENVPILOT_CODEX_LOAD_SECRETS=%s\n' "$LOAD_SECRETS"
+    elif secret_file_is_safe "$SECRETS_FILE"; then
+        printf '  ready from protected %s (all variables)\n' "$SECRETS_FILE"
+    else
+        if [ -e "$SECRETS_FILE" ]; then
+            printf '  unavailable: file must belong to the current user and use mode 600 or 400: %s\n' "$SECRETS_FILE"
+        else
+            printf '  unavailable: %s not found\n' "$SECRETS_FILE"
+        fi
+    fi
+    if [ -n "${OPENAI_API_KEY:-}" ]; then
+        printf '  OPENAI_API_KEY: present in current environment\n'
+    fi
 }
 
 exec_codex()
 {
     QUIET=1
     stage_runtime 0
+    load_codex_environment || true
     exec "$(local_bin)" "$@"
 }
 
@@ -533,6 +596,7 @@ plan_report()
     printf 'Persistent source: %s\n' "${source:-not found}"
     printf 'Local runtime: %s\n' "$RUNTIME_ROOT"
     printf 'Control directory: %s\n' "$CONTROL_DIR"
+    printf 'Codex secret file: %s (load-all=%s)\n' "$SECRETS_FILE" "$LOAD_SECRETS"
 }
 
 action="${1:-status}"

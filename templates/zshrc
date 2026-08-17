@@ -37,6 +37,7 @@ BASHRC_EXTERNAL_TMP_ROOT_VALUE="${BASHRC_CODEX_TMP_ROOT:-}"
 
 export ENVPILOT_CONFIG_DIR="${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}"
 export BASHRC_SECRETS_FILE="${BASHRC_SECRETS_FILE:-$HOME/.config/secrets/api.env}"
+export BASHRC_AUTO_LOAD_SECRETS="${BASHRC_AUTO_LOAD_SECRETS:-1}"
 export MIHOMO_PROXY_HOST="${MIHOMO_PROXY_HOST:-${BASHRC_PROXY_HOST:-127.0.0.1}}"
 export MIHOMO_PROXY_PORT="${MIHOMO_PROXY_PORT:-${BASHRC_PROXY_PORT:-42290}}"
 export MIHOMO_API_PORT="${MIHOMO_API_PORT:-60290}"
@@ -63,6 +64,41 @@ fi
 command_exists()
 {
     command -v "$1" >/dev/null 2>&1
+}
+
+envpilot_secret_file_mode()
+{
+    stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1" 2>/dev/null || true
+}
+
+envpilot_secret_file_is_safe()
+{
+    local secret_file="$1" mode owner_uid current_uid
+    [ -f "$secret_file" ] || return 1
+    current_uid="$(id -u)"
+    owner_uid="$(stat -c '%u' "$secret_file" 2>/dev/null || stat -f '%u' "$secret_file" 2>/dev/null || printf '%s' "$current_uid")"
+    [ "$owner_uid" = "$current_uid" ] || return 1
+    mode="$(envpilot_secret_file_mode "$secret_file")"
+    case "$mode" in
+        400|600) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+envpilot_load_protected_environment()
+{
+    local secret_file="${1:-$BASHRC_SECRETS_FILE}"
+    local allexport_was_set=0 status=0
+    envpilot_secret_file_is_safe "$secret_file" || return 1
+    case $- in
+        *a*) allexport_was_set=1 ;;
+        *) set -a ;;
+    esac
+    # api.env is a user-owned shell environment file, protected by owner/mode checks.
+    # shellcheck disable=SC1090
+    . "$secret_file" >/dev/null 2>&1 || status=$?
+    [ "$allexport_was_set" = "1" ] || set +a
+    return "$status"
 }
 
 envpilot_shell_local_value()
@@ -114,6 +150,8 @@ envpilot_shell_local_value()
 envpilot_load_noninteractive_settings()
 {
     local value
+    value="$(envpilot_shell_local_value BASHRC_AUTO_LOAD_SECRETS || true)"
+    [ -n "$value" ] && BASHRC_AUTO_LOAD_SECRETS="$value"
     if [ -z "$BASHRC_EXTERNAL_PROXY_PORT_SET" ]; then
         value="$(envpilot_shell_local_value MIHOMO_PROXY_PORT || true)"
         [ -n "$value" ] || value="$(envpilot_shell_local_value BASHRC_PROXY_PORT || true)"
@@ -178,6 +216,9 @@ envpilot_record_managed_settings()
 }
 
 envpilot_load_noninteractive_settings
+if [ "$BASHRC_AUTO_LOAD_SECRETS" = "1" ]; then
+    envpilot_load_protected_environment "$BASHRC_SECRETS_FILE" || true
+fi
 envpilot_record_managed_settings
 export MIHOMO_PROXY_HOST MIHOMO_PROXY_PORT MIHOMO_API_PORT
 export BASHRC_PROXY_HOST="$MIHOMO_PROXY_HOST"
@@ -480,7 +521,10 @@ with_secrets()
         shift 2
     fi
     [ "$#" -gt 0 ] || { printf 'Usage: with_secrets [--file FILE] command [args...]\n' >&2; return 2; }
-    [ -f "$secret_file" ] || { printf 'Secret file not found: %s\n' "$secret_file" >&2; return 1; }
+    envpilot_secret_file_is_safe "$secret_file" || {
+        printf 'Refuse to load %s: file must belong to the current user and use mode 600 or 400.\n' "$secret_file" >&2
+        return 1
+    }
     (
         set -a
         . "$secret_file"

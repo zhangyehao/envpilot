@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.14 - 2026-08-17
+
+### Fixed
+
+- Loaded every assignment from protected `~/.config/secrets/api.env` before the Bash/zsh non-interactive TTY guard, so silent SSH children can inherit API keys and other service variables.
+- Kept non-interactive `shell.local` handling restricted to validated settings instead of executing arbitrary commands, modules, or output-producing profile fragments.
+- Added owner and mode 600/400 checks before automatic Bash, zsh, `with_secrets`, and Codex remote environment loading.
+- Made the Codex node-local wrapper inject the complete protected environment even when Codex Desktop starts it through `/bin/sh -c` without reading `.bashrc`.
+- Preserved an explicitly inherited `OPENAI_API_KEY` when the Codex wrapper also loads the protected environment file.
+- Parsed the real `codex-cli` version line when an unrelated stderr warning appears before `codex --version` output.
+- Added regression coverage for all-variable export, unsafe-file rejection, current-key precedence, and the non-interactive `shell.local` boundary.
+
 ## 0.2.13 - 2026-08-17
 
 ### Added

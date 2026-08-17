@@ -40,7 +40,7 @@ BASHRC_INIT_CONDA="${BASHRC_INIT_CONDA:-0}"
 BASHRC_AUTO_LOAD_MODULES="${BASHRC_AUTO_LOAD_MODULES:-0}"
 BASHRC_AUTO_START_MIHOMO="${BASHRC_AUTO_START_MIHOMO:-0}"
 BASHRC_AUTO_ENABLE_PROXY="${BASHRC_AUTO_ENABLE_PROXY:-0}"
-BASHRC_AUTO_LOAD_SECRETS="${BASHRC_AUTO_LOAD_SECRETS:-0}"
+BASHRC_AUTO_LOAD_SECRETS="${BASHRC_AUTO_LOAD_SECRETS:-1}"
 BASHRC_ENABLE_HISTORY_SYNC="${BASHRC_ENABLE_HISTORY_SYNC:-1}"
 
 BASHRC_SECRETS_FILE="${BASHRC_SECRETS_FILE:-$HOME/.config/secrets/api.env}"
@@ -77,6 +77,41 @@ fi
 command_exists()
 {
     command -v "$1" >/dev/null 2>&1
+}
+
+envpilot_secret_file_mode()
+{
+    stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1" 2>/dev/null || true
+}
+
+envpilot_secret_file_is_safe()
+{
+    local secret_file="$1" mode owner_uid current_uid
+    [ -f "$secret_file" ] || return 1
+    current_uid="$(id -u)"
+    owner_uid="$(stat -c '%u' "$secret_file" 2>/dev/null || stat -f '%u' "$secret_file" 2>/dev/null || printf '%s' "$current_uid")"
+    [ "$owner_uid" = "$current_uid" ] || return 1
+    mode="$(envpilot_secret_file_mode "$secret_file")"
+    case "$mode" in
+        400|600) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+envpilot_load_protected_environment()
+{
+    local secret_file="${1:-$BASHRC_SECRETS_FILE}"
+    local allexport_was_set=0 status=0
+    envpilot_secret_file_is_safe "$secret_file" || return 1
+    case $- in
+        *a*) allexport_was_set=1 ;;
+        *) set -a ;;
+    esac
+    # api.env is a user-owned shell environment file, protected by owner/mode checks.
+    # shellcheck disable=SC1090
+    . "$secret_file" >/dev/null 2>&1 || status=$?
+    [ "$allexport_was_set" = "1" ] || set +a
+    return "$status"
 }
 
 envpilot_shell_local_value()
@@ -128,6 +163,8 @@ envpilot_shell_local_value()
 envpilot_load_noninteractive_settings()
 {
     local value
+    value="$(envpilot_shell_local_value BASHRC_AUTO_LOAD_SECRETS || true)"
+    [ -n "$value" ] && BASHRC_AUTO_LOAD_SECRETS="$value"
     if [ -z "$BASHRC_EXTERNAL_PROXY_PORT_SET" ]; then
         value="$(envpilot_shell_local_value MIHOMO_PROXY_PORT || true)"
         [ -n "$value" ] || value="$(envpilot_shell_local_value BASHRC_PROXY_PORT || true)"
@@ -202,6 +239,9 @@ envpilot_record_managed_settings()
 }
 
 envpilot_load_noninteractive_settings
+if [ "$BASHRC_AUTO_LOAD_SECRETS" = "1" ]; then
+    envpilot_load_protected_environment "$BASHRC_SECRETS_FILE" || true
+fi
 if [ -z "$BASHRC_EXTERNAL_SOCKS_SET" ]; then
     value="$(envpilot_shell_local_value BASHRC_PROXY_ENABLE_SOCKS || true)"
     [ -n "$value" ] && BASHRC_PROXY_ENABLE_SOCKS="$value"
@@ -491,13 +531,7 @@ fi
 
 file_mode()
 {
-    if stat -c '%a' "$1" >/dev/null 2>&1; then
-        stat -c '%a' "$1"
-    elif stat -f '%Lp' "$1" >/dev/null 2>&1; then
-        stat -f '%Lp' "$1"
-    else
-        return 1
-    fi
+    envpilot_secret_file_mode "$1"
 }
 
 secrets_check()
@@ -518,7 +552,7 @@ secrets_load()
 {
     local secret_file="${1:-$BASHRC_SECRETS_FILE}"
     secrets_check "$secret_file" || return 1
-    . "$secret_file"
+    envpilot_load_protected_environment "$secret_file" || return 1
     printf 'Loaded secret file: %s\n' "$secret_file"
 }
 
@@ -577,10 +611,6 @@ secret_read()
     export "$variable_name"
     unset secret_value
 }
-
-if [ "$BASHRC_AUTO_LOAD_SECRETS" = "1" ] && [ -f "$BASHRC_SECRETS_FILE" ]; then
-    secrets_load "$BASHRC_SECRETS_FILE"
-fi
 
 process_is_running()
 {
