@@ -96,6 +96,8 @@ bash envpilot.sh install
 
 `~/.config/envpilot/shell.local` 是 `.bashrc`/`.zshrc` 的用户配置覆盖层：交互式 shell 会完整加载它；静默的非交互 shell 只读取其中经过白名单校验的 Mihomo 端口、代理模式、密钥加载开关和节点临时目录设置，不执行任意 `module load` 或自定义命令。需要让 SSH、Codex、Git、Python 或其他子进程共同继承的简单环境变量应放在 `api.env`；该文件会整文件 source，因此只应包含安静的 shell 变量赋值，不要放命令或交互逻辑。若明确不希望自动注入，在 `shell.local` 中设置 `BASHRC_AUTO_LOAD_SECRETS=0`，之后仍可按需执行 `with_secrets command`。
 
+`apply-shell` 可以重复执行。若检测到现有 `.bashrc` 已带有 `managed by envpilot` 标记，envpilot 会保留已有的 `shell.local` 和 `api.env`，不会把模板内部的 `EDITOR`、`TMPDIR`、`module load` 等实现细节再次迁移；检测到旧版本已经误迁移的模板片段时，会先备份 `shell.local`，再只清除能与旧受管 profile 精确匹配的片段。首次接管未受管 `.bashrc` 且不存在 `shell.local` 时，才会执行安全变量迁移。
+
 交互式 shell 默认不会自动启动 Mihomo，也不会自动设置代理环境变量；需要代理时执行 `proxy_on`，不用时执行 `proxy_off`。非交互 SSH/Codex shell 则会按下一节的规则，在配置存在且端口准备好后安静地预启动并继承 HTTP/HTTPS 代理。
 
 `proxy_on` 会先确认 `${MIHOMO_PROXY_HOST}:${MIHOMO_PROXY_PORT}` 确实正在监听；检查失败时直接返回，不会留下导致 `Connection refused` 的错误代理变量。默认只设置 HTTP/HTTPS 代理，这对 Conda、Git、curl 和 Codex 通常更稳。确实需要 SOCKS 时，在 `~/.config/envpilot/shell.local` 中设置：

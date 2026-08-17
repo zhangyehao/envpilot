@@ -23,17 +23,99 @@ ep_shell_template()
     esac
 }
 
+ep_shell_profile_is_managed()
+{
+    local profile="$1"
+    [ -f "$profile" ] || return 1
+    grep -Eq '^#[[:space:]]+~/\.(bashrc|zshrc)[[:space:]]+managed by envpilot$' "$profile"
+}
+
+ep_shell_local_has_managed_fragment()
+{
+    local local_file="$1"
+    [ -f "$local_file" ] || return 1
+    grep -Fq "module load \"\$module_name\" || return 1" "$local_file" ||
+        grep -Fq "export VISUAL=\"\${VISUAL:-\${EDITOR:-vi}}\"" "$local_file"
+}
+
+ep_shell_profile_has_line()
+{
+    local candidate="$1"
+    local profile="$2"
+    local line normalized
+    while IFS= read -r line || [ -n "$line" ]; do
+        normalized="$line"
+        normalized="${normalized#"${normalized%%[![:space:]]*}"}"
+        normalized="${normalized%"${normalized##*[![:space:]]}"}"
+        [ "$normalized" = "$candidate" ] && return 0
+    done < "$profile"
+    return 1
+}
+
+ep_shell_local_cleanup_managed_fragments()
+{
+    local local_file="$1"
+    local managed_template="$2"
+    local tmp line normalized changed=0
+    tmp="$(mktemp "${local_file}.tmp.XXXXXX")"
+    while IFS= read -r line || [ -n "$line" ]; do
+        normalized="$line"
+        normalized="${normalized#"${normalized%%[![:space:]]*}"}"
+        normalized="${normalized%"${normalized##*[![:space:]]}"}"
+        if [ -n "$normalized" ] && ep_shell_profile_has_line "$normalized" "$managed_template"; then
+            changed=1
+            continue
+        fi
+        printf '%s\n' "$line" >> "$tmp"
+    done < "$local_file"
+
+    if [ "$changed" = "1" ]; then
+        ep_backup_file "$local_file"
+        mv "$tmp" "$local_file"
+        chmod 600 "$local_file" 2>/dev/null || true
+        ep_log "Removed stale envpilot profile fragments from: $local_file"
+    else
+        rm -f "$tmp"
+        chmod 600 "$local_file" 2>/dev/null || true
+        ep_log "Preserved existing shell.local: $local_file"
+    fi
+}
+
 ep_migrate_shell_local()
 {
     local old_profile="$1"
     local local_file="$EP_CONFIG_DIR/shell.local"
+    local managed_template=""
+    local profile_is_managed=0
+    EP_ROLLBACK_LOG="${EP_ROLLBACK_LOG:-$EP_CONFIG_DIR/rollback.log}"
     mkdir -p "$EP_CONFIG_DIR"
+
+    if ep_shell_profile_is_managed "$old_profile"; then
+        profile_is_managed=1
+        managed_template="$(ep_shell_template)"
+        [ -f "$managed_template" ] || managed_template="$old_profile"
+    fi
+
+    if [ -f "$local_file" ]; then
+        if [ "$profile_is_managed" = "1" ] && ep_shell_local_has_managed_fragment "$local_file"; then
+            ep_shell_local_cleanup_managed_fragments "$local_file" "$managed_template"
+        else
+            chmod 600 "$local_file" 2>/dev/null || true
+            if [ "$profile_is_managed" = "1" ]; then
+                ep_log "Preserved existing envpilot shell.local: $local_file"
+            else
+                ep_log "Preserved existing shell.local and skipped profile migration: $local_file"
+            fi
+        fi
+        return 0
+    fi
+
     {
         printf '%s\n' '# envpilot shell.local'
         printf '%s\n' '# Safe exported variables migrated from the previous profile.'
         printf '%s\n' '# Proxy, Mihomo, secret, and API-key variables are intentionally excluded.'
         printf 'BASHRC_ENVPILOT_ROOT=%q\n' "$ENVPILOT_ROOT"
-        if [ -f "$old_profile" ]; then
+        if [ "$profile_is_managed" = "0" ] && [ -f "$old_profile" ]; then
             grep -E '^[[:space:]]*export[[:space:]]+[A-Za-z_][A-Za-z0-9_]*=' "$old_profile" 2>/dev/null |
                 grep -Evi 'KEY|TOKEN|SECRET|PASSWORD|PASSWD|AUTH|MIHOMO|PROXY|ENVPILOT_ROOT' |
                 grep -Ev '\$\(' || true
@@ -43,8 +125,12 @@ ep_migrate_shell_local()
     } > "$local_file.tmp"
     mv "$local_file.tmp" "$local_file"
     chmod 600 "$local_file" 2>/dev/null || true
-    ep_log "Wrote migrated shell hints: $local_file"
-    ep_log "Migrated safe exported variables; excluded old proxy/Mihomo functions and secret-like variables."
+    if [ "$profile_is_managed" = "1" ]; then
+        ep_log "Created new envpilot shell.local: $local_file"
+    else
+        ep_log "Wrote migrated shell hints: $local_file"
+        ep_log "Migrated safe exported variables; excluded old proxy/Mihomo functions and secret-like variables."
+    fi
 }
 
 ep_secrets_file()

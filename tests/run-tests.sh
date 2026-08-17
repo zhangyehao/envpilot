@@ -85,6 +85,8 @@ grep -q 'codex_ready()' "$ROOT/templates/bashrc" "$ROOT/templates/zshrc"
 grep -q 'codex remote' "$ROOT/envpilot.sh"
 grep -q 'ep_codex_remote_cli' "$ROOT/components/codex.sh"
 grep -q 'envpilot-managed-codex-wrapper' "$ROOT/templates/codex-wrapper.sh"
+grep -q 'ep_shell_profile_is_managed' "$ROOT/lib/shell.sh"
+grep -q 'ep_shell_local_cleanup_managed_fragments' "$ROOT/lib/shell.sh"
 grep -q 'Staging Codex runtime' "$ROOT/templates/codex-remote.sh"
 grep -q 'app-server --listen unix://' "$ROOT/templates/codex-remote.sh"
 grep -q 'load_codex_environment' "$ROOT/templates/codex-remote.sh"
@@ -558,6 +560,64 @@ grep -q 'export GOPATH=' "$shell_local"
 grep -q 'export SINGULARITY_CACHEDIR=' "$shell_local"
 ! grep -qE '(^|[[:space:]])(http_proxy|OPENAI_API_KEY|MIHOMO_PROXY_PORT)=' "$shell_local"
 bash --noprofile --norc -c '. "'"$shell_local"'"'
+
+echo "[TEST] repeated apply-shell preserves shell.local and removes stale template fragments"
+tmp_apply_shell_home="$(mktemp -d)"
+mkdir -p "$tmp_apply_shell_home/.config/envpilot"
+cp "$ROOT/templates/bashrc" "$tmp_apply_shell_home/.bashrc"
+printf '%s\n' 'export NVM_DIR="$HOME/.nvm"' >> "$tmp_apply_shell_home/.bashrc"
+cat > "$tmp_apply_shell_home/.config/envpilot/shell.local" <<'EOF'
+# envpilot shell.local
+BASHRC_ENVPILOT_ROOT=/old/repo
+export PATH="$HOME/custom/bin:$PATH"
+export CUSTOM_TOOL_HOME="$HOME/tool"
+export NVM_DIR="$HOME/.nvm"
+export VISUAL="${VISUAL:-${EDITOR:-vi}}"
+module load "$module_name" || return 1
+EOF
+cat > "$tmp_apply_shell_home/.config/secrets-before" <<'EOF'
+export NCBI_API_KEY=keep-this-file
+EOF
+mkdir -p "$tmp_apply_shell_home/.config/secrets"
+cp "$tmp_apply_shell_home/.config/secrets-before" "$tmp_apply_shell_home/.config/secrets/api.env"
+apply_shell_local="$tmp_apply_shell_home/.config/envpilot/shell.local"
+apply_shell_api_before="$tmp_apply_shell_home/api.env.before"
+cp "$tmp_apply_shell_home/.config/secrets/api.env" "$apply_shell_api_before"
+(
+    HOME="$tmp_apply_shell_home"
+    ENVPILOT_ROOT="$ROOT"
+    . "$ROOT/lib/common.sh"
+    . "$ROOT/lib/shell.sh"
+    EP_CONFIG_DIR="$tmp_apply_shell_home/.config/envpilot"
+    EP_SHELL_NAME=bash
+    EP_ROLLBACK_LOG="$tmp_apply_shell_home/.config/envpilot/rollback.log"
+    ep_require_unix_runtime() { return 0; }
+    ep_confirm() { return 0; }
+    ep_apply_shell_profile >/dev/null
+)
+grep -q 'export PATH="\$HOME/custom/bin:\$PATH"' "$apply_shell_local"
+grep -q 'export CUSTOM_TOOL_HOME=' "$apply_shell_local"
+grep -q 'export NVM_DIR="\$HOME/.nvm"' "$apply_shell_local"
+grep -q 'BASHRC_ENVPILOT_ROOT=/old/repo' "$apply_shell_local"
+! grep -q 'module load "\$module_name"' "$apply_shell_local"
+! grep -q 'export VISUAL="\${VISUAL:-\${EDITOR:-vi}}"' "$apply_shell_local"
+cmp -s "$apply_shell_api_before" "$tmp_apply_shell_home/.config/secrets/api.env"
+cp "$apply_shell_local" "$tmp_apply_shell_home/shell.local.after-first"
+(
+    HOME="$tmp_apply_shell_home"
+    ENVPILOT_ROOT="$ROOT"
+    . "$ROOT/lib/common.sh"
+    . "$ROOT/lib/shell.sh"
+    EP_CONFIG_DIR="$tmp_apply_shell_home/.config/envpilot"
+    EP_SHELL_NAME=bash
+    EP_ROLLBACK_LOG="$tmp_apply_shell_home/.config/envpilot/rollback.log"
+    ep_require_unix_runtime() { return 0; }
+    ep_confirm() { return 0; }
+    ep_apply_shell_profile >/dev/null
+)
+cmp -s "$tmp_apply_shell_home/shell.local.after-first" "$apply_shell_local"
+cmp -s "$apply_shell_api_before" "$tmp_apply_shell_home/.config/secrets/api.env"
+rm -rf "$tmp_apply_shell_home"
 
 echo "[TEST] Mihomo takeover report"
 tmp_home="$(mktemp -d)"

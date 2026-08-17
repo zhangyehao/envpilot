@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.15 - 2026-08-17
+
+### Fixed
+
+- Made `apply-shell` idempotent for users who already have an envpilot-managed `.bashrc` or `.zshrc`.
+- Preserved existing `shell.local` and `api.env` instead of rebuilding them from the generated profile on every apply.
+- Added recovery for the previous migration bug: stale template lines are backed up and removed only when they exactly match the prior managed profile, preserving user-defined environment settings.
+- Added regression coverage for repeated `apply-shell`, existing user variables, stale `module load` fragments, and protected environment-file preservation.
+
 ## 0.2.14 - 2026-08-17
 
 ### Fixed
