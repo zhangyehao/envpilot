@@ -53,7 +53,9 @@ grep -q 'ep_requested_conda_bin' "$ROOT/components/conda.sh"
 grep -q 'requested .* target is missing' "$ROOT/components/conda.sh"
 grep -q 'ep_conda_libmamba_solver_available' "$ROOT/components/conda.sh"
 grep -q 'ep_conda_preferred_solver' "$ROOT/components/conda.sh"
-grep -q 'override inherited Conda channels' "$ROOT/components/mamba.sh"
+grep -q 'ep_conda_needs_mamba_base_upgrade' "$ROOT/components/conda.sh"
+grep -q 'ep_upgrade_miniconda_for_mamba' "$ROOT/components/conda.sh"
+grep -q 'Inherited Conda channels are overridden' "$ROOT/components/mamba.sh"
 grep -q 'action=updated' "$ROOT/components/mamba.sh" "$ROOT/components/codex.sh"
 grep -q '"update","upgrade"' "$ROOT/envpilot.ps1"
 grep -q '$Script:Upgrade' "$ROOT/envpilot.ps1"
@@ -1493,6 +1495,10 @@ channels:
 EOF
 cat > "$tmp_mamba/software/miniconda3/bin/conda" <<'EOF'
 #!/usr/bin/env bash
+if [ "$1" = "--version" ]; then
+    printf 'conda %s\n' "$(cat "$HOME/conda-version")"
+    exit 0
+fi
 {
     printf 'LD_LIBRARY_PATH=%s\n' "${LD_LIBRARY_PATH-unset}"
     printf 'PYTHONHOME=%s\n' "${PYTHONHOME-unset}"
@@ -1510,6 +1516,7 @@ chmod +x "$(dirname "$0")/mamba"
 exit 39
 EOF
 chmod +x "$tmp_mamba/software/miniconda3/bin/conda"
+printf '23.5.2\n' > "$tmp_mamba/conda-version"
 (
     HOME="$tmp_mamba"
     PATH="/usr/bin:/bin"
@@ -1523,6 +1530,11 @@ PYTHONPATH="/cluster/site-packages"
     . "$ROOT/lib/platform.sh"
     . "$ROOT/components/conda.sh"
     . "$ROOT/components/mamba.sh"
+    ep_upgrade_miniconda_for_mamba()
+    {
+        printf '24.11.1\n' > "$HOME/conda-version"
+        : > "$HOME/miniconda-upgrade-called"
+    }
     ep_command_exists()
     {
         case "$1" in
@@ -1549,8 +1561,10 @@ grep -q '^PYTHONPATH=unset$' "$tmp_mamba/conda-invocation.txt"
 grep -q '^CONDA_CHANNELS=unset$' "$tmp_mamba/conda-invocation.txt"
 grep -q '^CONDA_SOLVER=unset$' "$tmp_mamba/conda-invocation.txt"
 grep -q "^CONDARC=$tmp_mamba/.condarc$" "$tmp_mamba/conda-invocation.txt"
-grep -q '^args=install -n base -y --override-channels -c https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge -c https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/bioconda --solver classic mamba$' "$tmp_mamba/conda-invocation.txt"
-grep -q 'Bootstrap channels:' "$tmp_mamba/mamba-install.out"
+grep -q '^args=install -n base -y --override-channels -c https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge --solver classic mamba$' "$tmp_mamba/conda-invocation.txt"
+test -f "$tmp_mamba/miniconda-upgrade-called"
+grep -q 'below the tested Mamba bootstrap floor' "$tmp_mamba/mamba-install.out"
+grep -q 'Bootstrap channel: TUNA conda-forge only' "$tmp_mamba/mamba-install.out"
 grep -q 'Conda bootstrap solver: classic' "$tmp_mamba/mamba-install.out"
 grep -q 'Preserving existing Conda config:' "$tmp_mamba/mamba-install.out"
 grep -q 'installed mamba executable passed verification' "$tmp_mamba/mamba-install.out"

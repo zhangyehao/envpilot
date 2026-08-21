@@ -1,6 +1,6 @@
 {
   "name": "mamba",
-  "install_method": "conda install -n base -y mamba using the envpilot-managed mirror-only condarc",
+  "install_method": "upgrade old Miniconda in place when needed, then install Mamba into base from TUNA conda-forge with libmamba",
   "purpose": "Fast Conda solver for Conda environments only.",
   "not_for": [
     "tmux direct command installation"

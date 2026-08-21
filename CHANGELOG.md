@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.21 - 2026-08-22
+
+### Fixed
+
+- Made Mamba bootstrap use only the TUNA conda-forge channel; bioconda is no longer indexed for a package it does not provide.
+- Detects Miniconda bases older than Conda 24.11.1 and offers an in-place upgrade with the official platform-compatible Miniconda installer before Mamba installation.
+- Verifies an existing Mamba executable before treating the component as installed, so a broken base is repaired instead of silently skipped.
+
+### Changed
+
+- Preserves existing Miniconda environment directories and `~/.condarc` during the compatibility upgrade and Mamba transaction.
+- Documented the tested fast path: glibc 2.17-compatible Miniconda 24.11.1 plus the libmamba solver installed Mamba 2.8.1 from the TUNA conda-forge mirror without full classic solving.
+
 ## 0.2.20 - 2026-08-21
 
 ### Fixed

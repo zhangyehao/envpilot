@@ -2,11 +2,10 @@
 
 EP_LEGACY_MINICONDA_VERSION="${EP_LEGACY_MINICONDA_VERSION:-py312_24.11.1-0}"
 EP_LEGACY_ANACONDA_VERSION="${EP_LEGACY_ANACONDA_VERSION:-2025.06-1}"
-# These channel constants are consumed by the separately checked mamba component.
+EP_MAMBA_MIN_CONDA_VERSION="${EP_MAMBA_MIN_CONDA_VERSION:-24.11.1}"
+# This channel constant is consumed by the separately checked mamba component.
 # shellcheck disable=SC2034
 EP_CONDA_FORGE_CHANNEL="https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge"
-# shellcheck disable=SC2034
-EP_BIOCONDA_CHANNEL="https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/bioconda"
 
 ep_conda_bin()
 {
@@ -71,6 +70,77 @@ ep_run_conda_clean()
         export CONDARC
         "$@"
     )
+}
+
+ep_conda_version()
+{
+    ep_run_conda_clean "$1" --version 2>/dev/null | awk '
+        NR == 1 {
+            for (i = 1; i <= NF; i++) {
+                if ($i ~ /^[0-9]/) {
+                    print $i
+                    exit
+                }
+            }
+        }
+    '
+}
+
+ep_conda_prefix_is_miniconda()
+{
+    local prefix
+    prefix="$(ep_conda_prefix_from_bin "$1" 2>/dev/null || true)"
+    [ -n "$prefix" ] || return 1
+    case "$(basename "$prefix")" in
+        miniconda|miniconda3|Miniconda*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+ep_conda_needs_mamba_base_upgrade()
+{
+    local conda_path="$1"
+    local version
+    ep_conda_prefix_is_miniconda "$conda_path" || return 1
+    version="$(ep_conda_version "$conda_path")"
+    [ -n "$version" ] || return 1
+    ! ep_version_at_least "$version" "$EP_MAMBA_MIN_CONDA_VERSION"
+}
+
+ep_upgrade_miniconda_for_mamba()
+{
+    local conda_path="$1"
+    local prefix installer url source pattern before_version after_version
+    prefix="$(ep_conda_prefix_from_bin "$conda_path" 2>/dev/null || true)"
+    [ -n "$prefix" ] || ep_die "Cannot determine the Miniconda prefix from: $conda_path"
+    before_version="$(ep_conda_version "$conda_path")"
+    installer="$(mktemp "${TMPDIR:-/tmp}/envpilot-miniconda-upgrade.XXXXXX.sh")"
+    url="$(EP_CONDA_DISTRIBUTION=miniconda ep_conda_installer_url)"
+    pattern="$(EP_CONDA_DISTRIBUTION=miniconda ep_conda_offline_pattern)"
+    if [ "$EP_MODE" = "offline" ]; then
+        source="$(ep_find_offline_asset "$pattern")"
+        cp "$source" "$installer"
+    else
+        source="$url"
+        ep_fetch_url "$source" "$installer"
+    fi
+
+    ep_log "Upgrading Miniconda in place before Mamba bootstrap."
+    ep_log "Current Conda: ${before_version:-unknown}"
+    ep_log "Source: $source"
+    ep_log "Target: $prefix"
+    ep_log "The official installer update mode preserves existing envs directories."
+    if ! bash "$installer" -u -b -p "$prefix"; then
+        rm -f "$installer"
+        ep_die "Miniconda compatibility upgrade failed. The existing prefix remains at $prefix."
+    fi
+    rm -f "$installer"
+    ep_prune_conda_default_seed_config "$prefix/bin/conda"
+    after_version="$(ep_conda_version "$prefix/bin/conda")"
+    if [ -z "$after_version" ] || ! ep_version_at_least "$after_version" "$EP_MAMBA_MIN_CONDA_VERSION"; then
+        ep_die "Miniconda upgrade completed but Conda ${after_version:-unknown} is still below the Mamba bootstrap floor $EP_MAMBA_MIN_CONDA_VERSION."
+    fi
+    ep_log "Miniconda compatibility upgrade complete: ${before_version:-unknown} -> $after_version"
 }
 
 ep_conda_libmamba_solver_available()

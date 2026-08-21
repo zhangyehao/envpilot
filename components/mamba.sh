@@ -39,32 +39,50 @@ ep_doctor_mamba()
 ep_install_mamba()
 {
     ep_require_unix_runtime
-    local conda_path mamba_path install_status version action prompt solver_note
+    local conda_path conda_version mamba_path mamba_version install_status version action prompt solver_note
     local -a conda_install_args
     action=installed
     if mamba_path="$(ep_mamba_bin 2>/dev/null)"; then
-        if [ "$EP_UPGRADE" != "1" ]; then
+        mamba_version="$(ep_mamba_version "$mamba_path")"
+        if [ -n "$mamba_version" ] && [ "$EP_UPGRADE" != "1" ]; then
             ep_log "Mamba already available: $mamba_path"
             ep_state_mark_done mamba
-            ep_report_event mamba skipped "already installed; use update mamba to refresh" "$(ep_mamba_version "$mamba_path")" "" "$mamba_path"
+            ep_report_event mamba skipped "already installed; use update mamba to refresh" "$mamba_version" "" "$mamba_path"
             return 0
         fi
         action=updated
-        ep_log "Current Mamba: $(ep_mamba_version "$mamba_path") at $mamba_path"
+        if [ -n "$mamba_version" ]; then
+            ep_log "Current Mamba: $mamba_version at $mamba_path"
+        else
+            ep_warn "Mamba exists at $mamba_path but cannot run; the Miniconda/Mamba base will be repaired."
+        fi
     fi
 
     conda_path="$(ep_conda_bin 2>/dev/null || true)"
     [ -n "$conda_path" ] || ep_die "Conda is required before installing mamba. Run: bash envpilot.sh install conda"
+    conda_version="$(ep_conda_version "$conda_path")"
+    if ep_conda_needs_mamba_base_upgrade "$conda_path"; then
+        ep_warn "Miniconda Conda $conda_version is below the tested Mamba bootstrap floor $EP_MAMBA_MIN_CONDA_VERSION."
+        ep_log "A compatible official Miniconda installer will update the base in place before installing Mamba."
+        ep_confirm "Upgrade Miniconda at $(ep_conda_prefix_from_bin "$conda_path") before installing Mamba?" "yes" || {
+            ep_report_event mamba skipped "Miniconda compatibility upgrade declined" "$conda_version" "" "$conda_path"
+            return 0
+        }
+        ep_upgrade_miniconda_for_mamba "$conda_path"
+        conda_path="$(ep_conda_bin 2>/dev/null || true)"
+        conda_version="$(ep_conda_version "$conda_path")"
+    fi
 
     ep_log "Component: mamba"
     ep_log "Mamba will be installed into Conda base, not used for tmux."
-    ep_log "Channels: TUNA conda-forge and bioconda mirrors only; inherited defaults are disabled."
+    ep_log "Selected Conda: $conda_path (${conda_version:-unknown})"
+    ep_log "Bootstrap channel: TUNA conda-forge only; bioconda is not needed for Mamba."
     ep_log "Conda will resolve the newest Mamba package compatible with the current base environment."
     ep_log "Conda command environment: LD_LIBRARY_PATH, PYTHONHOME, and PYTHONPATH will be isolated."
-    ep_log "Bootstrap channels: $EP_CONDA_FORGE_CHANNEL and $EP_BIOCONDA_CHANNEL (override inherited Conda channels)."
+    ep_log "Inherited Conda channels are overridden only for this transaction; $HOME/.condarc is preserved."
     prompt=Install
     [ "$action" = updated ] && prompt=Update
-    ep_confirm "$prompt mamba using the configured mirror channels?" "yes" || {
+    ep_confirm "$prompt mamba using the TUNA conda-forge mirror?" "yes" || {
         ep_report_event mamba skipped "user declined" "" "" ""
         return 0
     }
@@ -78,7 +96,6 @@ ep_install_mamba()
         install -n base -y
         --override-channels
         -c "$EP_CONDA_FORGE_CHANNEL"
-        -c "$EP_BIOCONDA_CHANNEL"
     )
     solver_note="$(ep_conda_preferred_solver "$conda_path")"
     conda_install_args+=(--solver "$solver_note")

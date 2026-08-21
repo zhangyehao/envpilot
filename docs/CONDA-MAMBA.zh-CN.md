@@ -10,7 +10,7 @@ bash envpilot.sh install mamba
 bash envpilot.sh update mamba
 ~~~
 
-默认选择官方 Miniconda，不使用 Miniforge。Linux 会根据架构、libc 和 glibc 版本选择仍可运行的官方安装器；CentOS 7 等 glibc 2.17 主机不会下载要求 glibc 2.28 的最新版安装器。
+默认选择官方 Miniconda，不使用 Miniforge。Linux 会根据架构、libc 和 glibc 版本选择仍可运行的官方安装器；CentOS 7 等 glibc 2.17 主机使用官方归档的 Miniconda 24.11.1，而不是要求 glibc 2.28 的最新版安装器。
 
 Windows 原生入口安装 Conda，但 mamba 目前应在已初始化的 WSL、Git Bash 或其他 Unix-like Conda 环境中执行；PowerShell 入口会明确提示这一点。
 
@@ -55,6 +55,7 @@ conda config --show channels default_channels channel_priority auto_activate_bas
 
 Mamba 安装会把镜像和 solver 作为本次 Conda 事务的命令行参数传入，不依赖重写 `~/.condarc`：
 
+- bootstrap 只使用清华 conda-forge 镜像；bioconda 不提供 Mamba，因此不参与这次索引和求解；
 - 如果 Conda base 中检测到 `conda_libmamba_solver` 插件，使用 `--solver libmamba`；
 - 如果插件不存在，使用 `--solver classic`，避免旧配置中的 `solver: libmamba` 在不支持时直接失败；
 - 现有 `~/.condarc`、包括用户写入的 `solver: libmamba` 和其他设置，都会原样保留；
@@ -62,15 +63,45 @@ Mamba 安装会把镜像和 solver 作为本次 Conda 事务的命令行参数�
 
 因此，envpilot 会在支持时尽可能使用 libmamba，但不会为了安装 Mamba 覆盖用户的 Conda 配置。
 
-## 为什么首次安装 Mamba 可能很慢
+## 旧 Miniconda 的处理
 
-bash envpilot.sh install mamba 的第一次事务本身必须由 Conda 执行，因为此时 Mamba 还没有安装。即使下载 metadata 使用了清华镜像，求解阶段仍可能使用 Conda classic solver，尤其是在旧 Conda、旧 Python、HPC 登录节点或共享文件系统上会较慢。
+Miniconda 23.5.x 自带的旧 libmamba 在强制 conda-forge 事务中可能反复输出：
+
+~~~text
+Selected channel specific (or force-reinstall) job,
+but package is not available from channel.
+~~~
+
+它也可能退出 139。单纯把 `~/.condarc` 改成 conda-forge/bioconda 并不能解决，因为 Miniconda 安装器已经用官方 base 包完成了 bootstrap。
+
+当 `install mamba` 发现标准 Miniconda prefix 的 Conda 版本低于 24.11.1 时，会先显示升级计划并询问确认。确认后使用官方、架构和 glibc 兼容的 Miniconda 安装器执行原地更新：
+
+- base 更新到可可靠使用新 libmamba 的版本；
+- `envs/` 中已有环境不移动、不删除；
+- `~/.condarc` 不被 Mamba 流程重写；
+- 更新完成后只用清华 conda-forge 安装 Mamba。
+
+实际执行的 Mamba 事务等价于：
+
+~~~bash
+conda install -n base -y \
+  --override-channels \
+  -c https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge \
+  --solver libmamba \
+  mamba
+~~~
+
+在 glibc 2.17 节点上的临时全新 Miniconda 24.11.1 验证中，该事务在一分钟内完成并安装 Mamba 2.8.1；具体时间仍取决于节点和网络。
+
+## 为什么不在安装器里直接迁移频道
+
+envpilot 会在 Miniconda 安装完成后立即写入受管 `~/.condarc`，因此后续用户环境默认使用清华 conda-forge/bioconda。但是 Miniconda 安装器自己的 base 仍来自官方 bootstrap 包。强行把整个 base 迁移到另一套底层库既慢又容易产生 ABI 混用，因此这里采用“更新到兼容 Miniconda + 单一 conda-forge Mamba 事务”，不手工拼装底层包。
 
 当前实现会：
 
-- 用 --override-channels 显式指定清华 conda-forge 和 bioconda，避免继承 defaults 或登录环境的 channel 设置；
+- 用 --override-channels 只指定清华 conda-forge，避免继承 defaults、bioconda 或登录环境的 channel 设置；
 - 如果 base 中已有 conda-libmamba-solver，使用 libmamba；
-- 否则显式使用 classic solver，并提示首次求解可能较慢，避免把“求解慢”误判成“镜像没有生效”。
+- 否则显式使用 classic solver，并提示首次求解可能较慢。
 
 日志中出现：
 
@@ -85,8 +116,7 @@ Solving environment: ...
 
 ~~~bash
 conda search --override-channels \
-  -c https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge \
-  -c https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/bioconda mamba
+  -c https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge mamba
 ~~~
 
 ## 双安装策略

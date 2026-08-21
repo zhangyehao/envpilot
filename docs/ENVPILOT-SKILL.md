@@ -44,7 +44,8 @@ For an existing installation, prefer `git pull --ff-only`, `doctor`, `apply-shel
 - Default to Miniconda. On old glibc, select the newest compatible official archive rather than an unusable latest installer.
 - When Anaconda and Miniconda coexist, the managed interactive profile selects Miniconda, clears inherited Conda state, and adds Anaconda environment directories to `CONDA_ENVS_PATH`.
 - `templates/condarc` is the repository source of truth for Conda install/update. Back up and rewrite user `~/.condarc` through those Conda operations, then verify with `conda config --show-sources`.
-- Mamba install/update must preserve the existing `~/.condarc`; use explicit `--override-channels` and `--solver libmamba` when the plugin is present, otherwise `--solver classic`.
+- Before Mamba bootstrap, upgrade a standard Miniconda base below Conda 24.11.1 in place with the compatible official installer; preserve existing env directories.
+- Mamba install/update must preserve the existing `~/.condarc`; bootstrap from TUNA conda-forge only with explicit `--override-channels` and `--solver libmamba` when the plugin is present, otherwise `--solver classic`.
 - Do not auto-activate base. Non-interactive shells must not load `conda.sh`.
 
 ## Codex and secrets
