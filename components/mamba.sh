@@ -39,8 +39,7 @@ ep_doctor_mamba()
 ep_install_mamba()
 {
     ep_require_unix_runtime
-    local conda_path mamba_path install_status version action prompt
-    local solver_note
+    local conda_path mamba_path install_status version action prompt solver_note
     local -a conda_install_args
     action=installed
     if mamba_path="$(ep_mamba_bin 2>/dev/null)"; then
@@ -70,19 +69,23 @@ ep_install_mamba()
         return 0
     }
 
-    ep_write_condarc "$conda_path"
+    if [ -f "$HOME/.condarc" ]; then
+        ep_log "Preserving existing Conda config: $HOME/.condarc"
+    else
+        ep_log "No $HOME/.condarc; explicit mirror channels will be used for this transaction."
+    fi
     conda_install_args=(
         install -n base -y
         --override-channels
         -c "$EP_CONDA_FORGE_CHANNEL"
         -c "$EP_BIOCONDA_CHANNEL"
     )
-    if ep_conda_libmamba_solver_available "$conda_path"; then
-        conda_install_args+=(--solver libmamba)
-        solver_note="libmamba"
+    solver_note="$(ep_conda_preferred_solver "$conda_path")"
+    conda_install_args+=(--solver "$solver_note")
+    if [ "$solver_note" = "libmamba" ]; then
+        ep_log "Conda libmamba solver is available; using it for the Mamba transaction."
     else
-        solver_note="classic"
-        ep_log "Mamba is not available yet; bootstrapping with Conda classic solver. The first solve may take several minutes."
+        ep_log "Mamba is not available yet; using Conda classic solver for bootstrap. The first solve may take several minutes."
     fi
     conda_install_args+=(mamba)
     ep_log "Conda bootstrap solver: $solver_note"

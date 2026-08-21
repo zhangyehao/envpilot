@@ -22,7 +22,7 @@ envpilot 的唯一受控模板是仓库内：
 templates/condarc
 ~~~
 
-安装或更新 Conda/Mamba 时，envpilot 会：
+安装或更新 Conda 时，envpilot 会：
 
 1. 备份已有 ~/.condarc；
 2. 写入模板内容；
@@ -40,7 +40,7 @@ channel_priority: strict
 auto_activate_base: false
 ~~~
 
-doctor 会报告 ~/.condarc 是否存在以及是否与模板一致。配置不一致时，执行 install conda、install mamba 或对应 update 会再次备份并统一配置。
+doctor 会报告 ~/.condarc 是否存在以及是否与模板一致。配置不一致时，执行 install conda 或 update conda 会再次备份并统一配置。`install mamba` 和 `update mamba` 不会重写或备份现有 `~/.condarc`。
 
 检查实际来源：
 
@@ -49,7 +49,18 @@ conda config --show-sources
 conda config --show channels default_channels channel_priority auto_activate_base
 ~~~
 
-如果希望保留自定义频道，不要直接修改模板后继续运行 envpilot；应先确认这是否属于项目的统一策略，否则下一次安装/更新会按模板恢复。
+如果希望保留自定义频道，Mamba 安装不会覆盖现有配置；但执行 Conda install/update 时，envpilot 仍会按模板恢复受管频道。需要长期使用自定义频道时，应先确认这是否属于项目的统一策略。
+
+## Mamba 的 solver 和配置行为
+
+Mamba 安装会把镜像和 solver 作为本次 Conda 事务的命令行参数传入，不依赖重写 `~/.condarc`：
+
+- 如果 Conda base 中检测到 `conda_libmamba_solver` 插件，使用 `--solver libmamba`；
+- 如果插件不存在，使用 `--solver classic`，避免旧配置中的 `solver: libmamba` 在不支持时直接失败；
+- 现有 `~/.condarc`、包括用户写入的 `solver: libmamba` 和其他设置，都会原样保留；
+- `conda config --set solver libmamba` 可以由用户在确认插件可用后持久设置，envpilot 后续不会在安装 Mamba 时抹掉它。
+
+因此，envpilot 会在支持时尽可能使用 libmamba，但不会为了安装 Mamba 覆盖用户的 Conda 配置。
 
 ## 为什么首次安装 Mamba 可能很慢
 
@@ -59,7 +70,7 @@ bash envpilot.sh install mamba 的第一次事务本身必须由 Conda 执行，
 
 - 用 --override-channels 显式指定清华 conda-forge 和 bioconda，避免继承 defaults 或登录环境的 channel 设置；
 - 如果 base 中已有 conda-libmamba-solver，使用 libmamba；
-- 否则明确提示正在用 classic solver，避免把“求解慢”误判成“镜像没有生效”。
+- 否则显式使用 classic solver，并提示首次求解可能较慢，避免把“求解慢”误判成“镜像没有生效”。
 
 日志中出现：
 

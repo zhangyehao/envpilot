@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.20 - 2026-08-21
+
+### Fixed
+
+- Preserved the existing `~/.condarc` during Mamba install/update instead of rewriting it with the Conda template.
+- Selected `--solver libmamba` whenever the Conda base provides `conda_libmamba_solver`, with an explicit `--solver classic` fallback for older bases.
+- Applied the same compatible solver selection to envpilot-managed Conda base updates and added regression coverage for solver detection and configuration preservation.
+
 ## 0.2.19 - 2026-08-21
 
 ### Fixed

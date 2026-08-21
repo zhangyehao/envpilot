@@ -52,6 +52,7 @@ grep -q 'ep_update_conda' "$ROOT/components/conda.sh"
 grep -q 'ep_requested_conda_bin' "$ROOT/components/conda.sh"
 grep -q 'requested .* target is missing' "$ROOT/components/conda.sh"
 grep -q 'ep_conda_libmamba_solver_available' "$ROOT/components/conda.sh"
+grep -q 'ep_conda_preferred_solver' "$ROOT/components/conda.sh"
 grep -q 'override inherited Conda channels' "$ROOT/components/mamba.sh"
 grep -q 'action=updated' "$ROOT/components/mamba.sh" "$ROOT/components/codex.sh"
 grep -q '"update","upgrade"' "$ROOT/envpilot.ps1"
@@ -1479,6 +1480,13 @@ grep -q 'unset LD_LIBRARY_PATH PYTHONHOME PYTHONPATH' "$ROOT/components/conda.sh
 
 tmp_mamba="$(mktemp -d)"
 mkdir -p "$tmp_mamba/software/miniconda3/bin"
+cat > "$tmp_mamba/.condarc" <<'EOF'
+channels:
+  - https://example.invalid/custom
+solver: libmamba
+envpilot_test_marker: preserve
+EOF
+cp "$tmp_mamba/.condarc" "$tmp_mamba/.condarc.before"
 cat > "$tmp_mamba/software/miniconda3/.condarc" <<'EOF'
 channels:
   - defaults
@@ -1541,13 +1549,32 @@ grep -q '^PYTHONPATH=unset$' "$tmp_mamba/conda-invocation.txt"
 grep -q '^CONDA_CHANNELS=unset$' "$tmp_mamba/conda-invocation.txt"
 grep -q '^CONDA_SOLVER=unset$' "$tmp_mamba/conda-invocation.txt"
 grep -q "^CONDARC=$tmp_mamba/.condarc$" "$tmp_mamba/conda-invocation.txt"
-grep -q '^args=install -n base -y --override-channels -c https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge -c https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/bioconda mamba$' "$tmp_mamba/conda-invocation.txt"
+grep -q '^args=install -n base -y --override-channels -c https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge -c https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/bioconda --solver classic mamba$' "$tmp_mamba/conda-invocation.txt"
 grep -q 'Bootstrap channels:' "$tmp_mamba/mamba-install.out"
 grep -q 'Conda bootstrap solver: classic' "$tmp_mamba/mamba-install.out"
+grep -q 'Preserving existing Conda config:' "$tmp_mamba/mamba-install.out"
 grep -q 'installed mamba executable passed verification' "$tmp_mamba/mamba-install.out"
 grep -q '^mamba=done:' "$tmp_mamba/.config/envpilot/state"
-cmp -s "$ROOT/templates/condarc" "$tmp_mamba/.condarc"
-test ! -e "$tmp_mamba/software/miniconda3/.condarc"
+cmp -s "$tmp_mamba/.condarc.before" "$tmp_mamba/.condarc"
+if compgen -G "$tmp_mamba/.condarc.bak.*" >/dev/null; then
+    exit 1
+fi
+grep -q 'defaults' "$tmp_mamba/software/miniconda3/.condarc"
+
+tmp_solver_prefix="$(mktemp -d)"
+mkdir -p "$tmp_solver_prefix/bin" "$tmp_solver_prefix/lib/python3.11/site-packages/conda_libmamba_solver"
+touch "$tmp_solver_prefix/bin/conda"
+(
+    HOME="$tmp_solver_prefix/home"
+    ENVPILOT_ROOT="$ROOT"
+    . "$ROOT/lib/common.sh"
+    . "$ROOT/lib/platform.sh"
+    . "$ROOT/components/conda.sh"
+    [ "$(ep_conda_preferred_solver "$tmp_solver_prefix/bin/conda")" = "libmamba" ]
+    rm -rf "$tmp_solver_prefix/lib/python3.11/site-packages/conda_libmamba_solver"
+    [ "$(ep_conda_preferred_solver "$tmp_solver_prefix/bin/conda")" = "classic" ]
+)
+rm -rf "$tmp_solver_prefix"
 rm -rf "$tmp_mamba"
 
 echo "[TEST] tmux manifest target and managed Mihomo detection"

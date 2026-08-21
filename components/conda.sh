@@ -87,6 +87,16 @@ ep_conda_libmamba_solver_available()
     return 1
 }
 
+ep_conda_preferred_solver()
+{
+    local conda_path="$1"
+    if ep_conda_libmamba_solver_available "$conda_path"; then
+        printf 'libmamba'
+    else
+        printf 'classic'
+    fi
+}
+
 ep_prune_conda_default_seed_config()
 {
     local conda_path="$1"
@@ -223,7 +233,7 @@ ep_doctor_conda()
     elif cmp -s "$ENVPILOT_ROOT/templates/condarc" "$HOME/.condarc"; then
         ep_log "Conda config: envpilot-managed mirror configuration at $HOME/.condarc"
     else
-        ep_warn "Conda config: differs from envpilot template at $HOME/.condarc; install/update conda or mamba will back it up and replace it."
+        ep_warn "Conda config: differs from envpilot template at $HOME/.condarc; install/update conda may back it up and replace it. Mamba preserves this file."
     fi
 }
 
@@ -245,12 +255,14 @@ ep_write_condarc()
 ep_update_conda()
 {
     local conda_path="$1"
-    local before_version after_version
+    local before_version after_version solver
     before_version="$(ep_run_conda_clean "$conda_path" --version 2>/dev/null || true)"
     ep_log "Component: conda"
     ep_log "Current Conda: ${before_version:-unknown} at $conda_path"
     ep_log "Update strategy: let Conda resolve the newest compatible base conda package for this platform."
     ep_write_condarc "$conda_path"
+    solver="$(ep_conda_preferred_solver "$conda_path")"
+    ep_log "Conda update solver: $solver"
 
     if [ "$EP_MODE" = "offline" ]; then
         ep_warn "Offline mode cannot resolve a newer Conda package; keeping ${before_version:-the current version}."
@@ -263,7 +275,7 @@ ep_update_conda()
         ep_report_event conda skipped "user declined update" "$before_version" "" "$conda_path"
         return 0
     }
-    if ! ep_run_conda_clean "$conda_path" update -n base -y conda; then
+    if ! ep_run_conda_clean "$conda_path" update -n base -y --solver "$solver" conda; then
         ep_report_event conda failed "conda self-update failed" "$before_version" "$HOME/.condarc" "$conda_path"
         ep_die "Conda update failed. The existing installation remains at $conda_path."
     fi

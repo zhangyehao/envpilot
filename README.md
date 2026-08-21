@@ -148,7 +148,7 @@ bash envpilot.sh update mamba
 
 默认选择官方 Miniconda；Linux 根据架构和 glibc 选择可运行的官方版本。Anaconda 与 Miniconda 并存时，交互式 profile 优先 Miniconda，并把标准 Anaconda envs 加入 CONDA_ENVS_PATH。只有 Anaconda 时，默认 install conda 仍会按需并存安装 Miniconda。
 
-envpilot 管理仓库模板 templates/condarc，并在安装或更新时备份和写入 ~/.condarc。默认频道只有清华镜像的 conda-forge 和 bioconda，default_channels 为空，base 不自动激活。首次安装 Mamba 必须先由 Conda 求解，因此即使 metadata 使用镜像，Solving environment 仍可能较慢；envpilot 会显式覆盖 channel，并在可用时使用 libmamba。
+envpilot 管理仓库模板 templates/condarc，并在安装或更新 Conda 时备份和写入 ~/.condarc。Mamba 安装不会重写现有 ~/.condarc，而是通过命令行显式使用清华镜像和可用的 solver；检测到 libmamba 插件时使用 libmamba，否则显式回退 classic。默认频道只有清华镜像的 conda-forge 和 bioconda，default_channels 为空，base 不自动激活。首次安装 Mamba 即使 metadata 使用镜像，Solving environment 仍可能较慢；已有 `solver: libmamba` 配置会被保留。
 
 常用检查：
 
