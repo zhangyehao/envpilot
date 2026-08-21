@@ -2,7 +2,10 @@
 
 EP_LEGACY_MINICONDA_VERSION="${EP_LEGACY_MINICONDA_VERSION:-py312_24.11.1-0}"
 EP_LEGACY_ANACONDA_VERSION="${EP_LEGACY_ANACONDA_VERSION:-2025.06-1}"
+# These channel constants are consumed by the separately checked mamba component.
+# shellcheck disable=SC2034
 EP_CONDA_FORGE_CHANNEL="https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge"
+# shellcheck disable=SC2034
 EP_BIOCONDA_CHANNEL="https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/bioconda"
 
 ep_conda_bin()

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.19 - 2026-08-21
+
+### Fixed
+
+- Made the Conda opt-out regression assertion portable to macOS BSD grep.
+- Suppressed only the ShellCheck cross-file false positive for mirror constants consumed by the Mamba component.
+
 ## 0.2.18 - 2026-08-21
 
 ### Changed

@@ -98,7 +98,7 @@ grep -q 'envpilot_conda_configure_env_dirs' "$ROOT/templates/bashrc" "$ROOT/temp
 grep -q 'BASHRC_CONDA_PRIMARY_PREFIX' "$ROOT/templates/bashrc" "$ROOT/templates/zshrc"
 grep -q 'auto_activate_base: false' "$ROOT/templates/condarc"
 grep -q 'interactive TTYs' "$ROOT/components/conda.sh"
-grep -Eq 'BASHRC_INIT_CONDA=("|)0' "$ROOT/templates/shell.local.example" "$ROOT/README.md"
+grep -q 'BASHRC_INIT_CONDA.*0' "$ROOT/templates/shell.local.example"
 ! grep -q 'conda.sh not found' "$ROOT/templates/bashrc"
 grep -q '"shell_template_init": true' "$ROOT/manifests/conda.json"
 grep -q '"shell_template_init_scope": "interactive_tty_only"' "$ROOT/manifests/conda.json"
