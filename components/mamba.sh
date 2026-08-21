@@ -40,6 +40,8 @@ ep_install_mamba()
 {
     ep_require_unix_runtime
     local conda_path mamba_path install_status version action prompt
+    local solver_note
+    local -a conda_install_args
     action=installed
     if mamba_path="$(ep_mamba_bin 2>/dev/null)"; then
         if [ "$EP_UPGRADE" != "1" ]; then
@@ -60,6 +62,7 @@ ep_install_mamba()
     ep_log "Channels: TUNA conda-forge and bioconda mirrors only; inherited defaults are disabled."
     ep_log "Conda will resolve the newest Mamba package compatible with the current base environment."
     ep_log "Conda command environment: LD_LIBRARY_PATH, PYTHONHOME, and PYTHONPATH will be isolated."
+    ep_log "Bootstrap channels: $EP_CONDA_FORGE_CHANNEL and $EP_BIOCONDA_CHANNEL (override inherited Conda channels)."
     prompt=Install
     [ "$action" = updated ] && prompt=Update
     ep_confirm "$prompt mamba using the configured mirror channels?" "yes" || {
@@ -68,7 +71,22 @@ ep_install_mamba()
     }
 
     ep_write_condarc "$conda_path"
-    if ep_run_conda_clean "$conda_path" install -n base -y mamba; then
+    conda_install_args=(
+        install -n base -y
+        --override-channels
+        -c "$EP_CONDA_FORGE_CHANNEL"
+        -c "$EP_BIOCONDA_CHANNEL"
+    )
+    if ep_conda_libmamba_solver_available "$conda_path"; then
+        conda_install_args+=(--solver libmamba)
+        solver_note="libmamba"
+    else
+        solver_note="classic"
+        ep_log "Mamba is not available yet; bootstrapping with Conda classic solver. The first solve may take several minutes."
+    fi
+    conda_install_args+=(mamba)
+    ep_log "Conda bootstrap solver: $solver_note"
+    if ep_run_conda_clean "$conda_path" "${conda_install_args[@]}"; then
         install_status=0
     else
         install_status=$?

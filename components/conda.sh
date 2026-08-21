@@ -2,6 +2,8 @@
 
 EP_LEGACY_MINICONDA_VERSION="${EP_LEGACY_MINICONDA_VERSION:-py312_24.11.1-0}"
 EP_LEGACY_ANACONDA_VERSION="${EP_LEGACY_ANACONDA_VERSION:-2025.06-1}"
+EP_CONDA_FORGE_CHANNEL="https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge"
+EP_BIOCONDA_CHANNEL="https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/bioconda"
 
 ep_conda_bin()
 {
@@ -60,11 +62,26 @@ ep_conda_prefix_from_bin()
 ep_run_conda_clean()
 {
     (
-        unset LD_LIBRARY_PATH PYTHONHOME PYTHONPATH
+        unset LD_LIBRARY_PATH PYTHONHOME PYTHONPATH \
+            CONDA_CHANNELS CONDA_DEFAULT_CHANNELS CONDA_CUSTOM_CHANNELS CONDA_SOLVER
         CONDARC="$HOME/.condarc"
         export CONDARC
         "$@"
     )
+}
+
+ep_conda_libmamba_solver_available()
+{
+    local conda_path="$1"
+    local prefix candidate
+    prefix="$(ep_conda_prefix_from_bin "$conda_path" 2>/dev/null || true)"
+    [ -n "$prefix" ] || return 1
+    for candidate in \
+        "$prefix"/lib/python*/site-packages/conda_libmamba_solver \
+        "$prefix"/Lib/site-packages/conda_libmamba_solver; do
+        [ -d "$candidate" ] && return 0
+    done
+    return 1
 }
 
 ep_prune_conda_default_seed_config()
@@ -192,10 +209,18 @@ ep_conda_installer_url()
 }
 ep_doctor_conda()
 {
+    local conda_path
     if conda_path="$(ep_conda_bin 2>/dev/null)"; then
         ep_log "Conda: found at $conda_path"
     else
         ep_warn "Conda: not found"
+    fi
+    if [ ! -f "$HOME/.condarc" ]; then
+        ep_warn "Conda config: not found at $HOME/.condarc"
+    elif cmp -s "$ENVPILOT_ROOT/templates/condarc" "$HOME/.condarc"; then
+        ep_log "Conda config: envpilot-managed mirror configuration at $HOME/.condarc"
+    else
+        ep_warn "Conda config: differs from envpilot template at $HOME/.condarc; install/update conda or mamba will back it up and replace it."
     fi
 }
 

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.18 - 2026-08-21
+
+### Changed
+
+- Made first-time Mamba bootstrap use the managed TUNA conda-forge and bioconda mirrors with `--override-channels`, while selecting libmamba only when the existing Conda base already provides its solver plugin.
+- Isolated inherited Conda channel and solver environment variables during envpilot-managed Conda commands, and added `.condarc` consistency reporting to `doctor`.
+- Reorganized the README into a command-oriented component guide and added detailed Chinese documentation for each supported component, operations, and shell configuration.
+- Added the reusable `envpilot-hpc-ops` Codex skill source and documented the local/server synchronization boundary.
+
 ## 0.2.17 - 2026-08-21
 
 ### Fixed
