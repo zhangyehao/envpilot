@@ -179,16 +179,20 @@ ep_prune_conda_default_seed_config()
     if awk '
         /^[[:space:]]*(#.*)?$/ { next }
         /^[[:space:]]*channels:[[:space:]]*$/ { channels = 1; next }
-        /^[[:space:]]*-[[:space:]]*defaults[[:space:]]*$/ { defaults = 1; next }
+        /^[[:space:]]*-[[:space:]]*defaults[[:space:]]*$/ { seeded = 1; next }
+        /^[[:space:]]*-[[:space:]]*https?:\/\/repo\.anaconda\.com\/pkgs\/(main|r|msys2)\/?[[:space:]]*$/ {
+            seeded = 1
+            next
+        }
         { other = 1 }
-        END { exit !(channels && defaults && !other) }
+        END { exit !(channels && seeded && !other) }
     ' "$prefix_condarc"; then
         if [ -w "$prefix_condarc" ] && [ -w "$prefix" ]; then
             ep_backup_file "$prefix_condarc"
             rm -f "$prefix_condarc"
-            ep_log "Removed installer-seeded defaults config: $prefix_condarc"
+            ep_log "Removed installer-seeded channel config: $prefix_condarc"
         else
-            ep_warn "Cannot remove installer-seeded defaults config: $prefix_condarc"
+            ep_warn "Cannot remove installer-seeded channel config: $prefix_condarc"
         fi
     fi
 }

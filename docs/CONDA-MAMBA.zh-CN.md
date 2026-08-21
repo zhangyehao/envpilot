@@ -95,7 +95,7 @@ conda install -n base -y \
 
 ## 为什么不在安装器里直接迁移频道
 
-envpilot 会在 Miniconda 安装完成后立即写入受管 `~/.condarc`，因此后续用户环境默认使用清华 conda-forge/bioconda。但是 Miniconda 安装器自己的 base 仍来自官方 bootstrap 包。强行把整个 base 迁移到另一套底层库既慢又容易产生 ABI 混用，因此这里采用“更新到兼容 Miniconda + 单一 conda-forge Mamba 事务”，不手工拼装底层包。
+envpilot 会在 Miniconda 安装完成后立即写入受管 `~/.condarc`，并清除安装器在 Miniconda prefix 内留下的纯官方 `pkgs/main`/`pkgs/r` 频道种子；如果 prefix 配置还包含用户自定义项，则保留不动。因此后续用户环境默认使用清华 conda-forge/bioconda。Miniconda 安装器自己的 base 仍来自官方 bootstrap 包，安装器没有把嵌入 base 改成 conda-forge 的受支持参数。强行把整个 base 迁移到另一套底层库既慢又容易产生 ABI 混用，因此这里采用“更新到兼容 Miniconda + 单一 conda-forge Mamba 事务”，不手工拼装底层包。
 
 当前实现会：
 

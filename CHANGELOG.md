@@ -7,6 +7,7 @@
 - Made Mamba bootstrap use only the TUNA conda-forge channel; bioconda is no longer indexed for a package it does not provide.
 - Detects Miniconda bases older than Conda 24.11.1 and offers an in-place upgrade with the official platform-compatible Miniconda installer before Mamba installation.
 - Verifies an existing Mamba executable before treating the component as installed, so a broken base is repaired instead of silently skipped.
+- Removes Miniconda's installer-seeded `pkgs/main`/`pkgs/r` prefix channel file after installation while preserving any prefix config with user-defined settings.
 
 ### Changed
 

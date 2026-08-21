@@ -540,6 +540,44 @@ grep -q '^!downloads/geoip\.metadb$' "$ROOT/.gitignore"
     esac
 )
 
+echo "[TEST] Miniconda installer channel seed is removed without touching custom prefix config"
+tmp_conda_seed="$(mktemp -d)"
+mkdir -p "$tmp_conda_seed/miniconda3/bin"
+touch "$tmp_conda_seed/miniconda3/bin/conda"
+chmod +x "$tmp_conda_seed/miniconda3/bin/conda"
+cat > "$tmp_conda_seed/miniconda3/.condarc" <<'EOF'
+channels:
+  - https://repo.anaconda.com/pkgs/main
+  - https://repo.anaconda.com/pkgs/r
+EOF
+(
+    HOME="$tmp_conda_seed"
+    ENVPILOT_ROOT="$ROOT"
+    . "$ROOT/lib/common.sh"
+    . "$ROOT/lib/platform.sh"
+    . "$ROOT/components/conda.sh"
+    ep_init
+    ep_prune_conda_default_seed_config "$tmp_conda_seed/miniconda3/bin/conda" >/dev/null
+)
+test ! -e "$tmp_conda_seed/miniconda3/.condarc"
+compgen -G "$tmp_conda_seed/miniconda3/.condarc.bak.*" >/dev/null
+cat > "$tmp_conda_seed/miniconda3/.condarc" <<'EOF'
+channels:
+  - https://repo.anaconda.com/pkgs/main
+solver: libmamba
+EOF
+(
+    HOME="$tmp_conda_seed"
+    ENVPILOT_ROOT="$ROOT"
+    . "$ROOT/lib/common.sh"
+    . "$ROOT/lib/platform.sh"
+    . "$ROOT/components/conda.sh"
+    ep_init
+    ep_prune_conda_default_seed_config "$tmp_conda_seed/miniconda3/bin/conda" >/dev/null
+)
+grep -q '^solver: libmamba$' "$tmp_conda_seed/miniconda3/.condarc"
+rm -rf "$tmp_conda_seed"
+
 echo "[TEST] Conda discovery prefers Miniconda and distinguishes distributions"
 tmp_conda_resolver_home="$(mktemp -d)"
 mkdir -p \
