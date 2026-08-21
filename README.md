@@ -81,6 +81,7 @@ bash envpilot.sh install mihomo
 bash envpilot.sh apply-shell
 # apply-shell 会在交互式真实 TTY 中自动初始化 Conda，但不会自动进入 base。
 # 如需关闭 Conda 初始化，在 ~/.config/envpilot/shell.local 写入：BASHRC_INIT_CONDA=0
+# 同时安装 Anaconda 和 Miniconda 时，模板默认使用 Miniconda，并自动发现标准 Anaconda 环境目录。
 # 修改之后，进行source后，mihomo start, mihomo status, proxy_on这些都会自动加载，可以不运行了
 source ~/.bashrc
 
@@ -362,6 +363,9 @@ Windows 对应命令为 `.\envpilot.ps1 update`，也可使用 `.\envpilot.ps1 i
 - `apply-shell` 默认只在交互式真实 TTY 中加载已安装 Conda 的 `conda.sh`；不会向 `.bashrc`/`.zshrc` 追加 Conda 自己的初始化代码块，非交互 shell 会在 TTY 守卫处返回。
 - `~/.condarc` 默认写入 `auto_activate_base: false`，因此新终端可以使用 `conda` 和 `conda activate`，但不会自动进入 `base`。
 - 如需关闭交互式 Conda 初始化，在 `~/.config/envpilot/shell.local` 设置 `BASHRC_INIT_CONDA=0`。
+- 同时存在 Miniconda 和 Anaconda 时，交互式 profile 会优先选择 Miniconda，即使登录环境已经继承了 Anaconda 的 `conda` 函数和变量。
+- profile 会把标准的 Miniconda、Anaconda 和 `$HOME/.conda/envs` 目录加入 `CONDA_ENVS_PATH`，因此原 Anaconda 环境仍可通过 `conda env list` 和 `conda activate` 发现；自定义 Miniconda 路径可在 `shell.local` 设置 `BASHRC_CONDA_PRIMARY_PREFIX`。
+- 默认 `install conda` 只把同发行版的已有安装视为完成；只有 Anaconda 时仍会按需并存安装 Miniconda，反之亦然，不会因登录环境中的任意 `conda` 命令而误跳过。
 - `~/.condarc` 只保留清华 `conda-forge` 和 `bioconda` 两个镜像，并通过 `default_channels: []` 禁用继承的 `defaults`。
 - Mamba 安装命令不再追加官方 `-c conda-forge`，而是直接使用上述受控频道。
 - 在共享服务器执行 Conda/Mamba 时会临时清除 `LD_LIBRARY_PATH`、`PYTHONHOME` 和 `PYTHONPATH`，避免 module 或集群环境污染 Conda。

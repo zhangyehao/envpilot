@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.17 - 2026-08-21
+
+### Fixed
+
+- Made the managed Bash/zsh profile prefer Miniconda when Anaconda and Miniconda are installed together, even when Anaconda's Conda function is inherited from the login environment.
+- Added automatic discovery of standard Anaconda and user Conda environment directories through `CONDA_ENVS_PATH`.
+- Added an explicit `BASHRC_CONDA_PRIMARY_PREFIX` override for non-standard Miniconda locations and regression coverage for the dual-install case.
+- Prevented an unrelated existing Anaconda installation from suppressing a requested Miniconda installation; Conda discovery and mamba setup now use the managed Miniconda first.
+
 ## 0.2.16 - 2026-08-21
 
 ### Changed

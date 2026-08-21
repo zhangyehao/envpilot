@@ -38,6 +38,7 @@ BASHRC_EXTERNAL_TMP_ROOT_VALUE="${BASHRC_CODEX_TMP_ROOT:-}"
 export ENVPILOT_CONFIG_DIR="${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}"
 export BASHRC_SECRETS_FILE="${BASHRC_SECRETS_FILE:-$HOME/.config/secrets/api.env}"
 export BASHRC_INIT_CONDA="${BASHRC_INIT_CONDA:-1}"
+export BASHRC_CONDA_PRIMARY_PREFIX="${BASHRC_CONDA_PRIMARY_PREFIX:-}"
 export BASHRC_AUTO_LOAD_SECRETS="${BASHRC_AUTO_LOAD_SECRETS:-1}"
 export MIHOMO_PROXY_HOST="${MIHOMO_PROXY_HOST:-${BASHRC_PROXY_HOST:-127.0.0.1}}"
 export MIHOMO_PROXY_PORT="${MIHOMO_PROXY_PORT:-${BASHRC_PROXY_PORT:-42290}}"
@@ -153,6 +154,8 @@ envpilot_load_noninteractive_settings()
     local value
     value="$(envpilot_shell_local_value BASHRC_INIT_CONDA || true)"
     [ -n "$value" ] && BASHRC_INIT_CONDA="$value"
+    value="$(envpilot_shell_local_value BASHRC_CONDA_PRIMARY_PREFIX || true)"
+    [ -n "$value" ] && BASHRC_CONDA_PRIMARY_PREFIX="$value"
     value="$(envpilot_shell_local_value BASHRC_AUTO_LOAD_SECRETS || true)"
     [ -n "$value" ] && BASHRC_AUTO_LOAD_SECRETS="$value"
     if [ -z "$BASHRC_EXTERNAL_PROXY_PORT_SET" ]; then
@@ -367,17 +370,89 @@ if [ -z "${EDITOR:-}" ]; then
 fi
 export VISUAL="${VISUAL:-${EDITOR:-vi}}"
 
-init_conda()
+envpilot_conda_env_dir_add()
 {
-    local conda_sh
-    for conda_sh in \
-        "$HOME/software/miniconda3/etc/profile.d/conda.sh" \
-        "$HOME/software/anaconda3/etc/profile.d/conda.sh" \
-        "$HOME/miniconda3/etc/profile.d/conda.sh" \
-        "$HOME/anaconda3/etc/profile.d/conda.sh"; do
-        [ -r "$conda_sh" ] && . "$conda_sh" && return 0
+    local dir="${1:-}"
+    [ -n "$dir" ] || return 0
+    case ":${CONDA_ENVS_PATH:-}:" in
+        *":$dir:"*) ;;
+        *) CONDA_ENVS_PATH="${CONDA_ENVS_PATH:+$CONDA_ENVS_PATH:}$dir" ;;
+    esac
+}
+
+envpilot_conda_configure_env_dirs()
+{
+    local primary="${1:-}"
+    local candidate inherited item
+    inherited="${CONDA_ENVS_PATH:-}"
+    unset CONDA_ENVS_PATH
+
+    for candidate in \
+        "$primary/envs" \
+        "$HOME/software/miniconda3/envs" \
+        "$HOME/miniconda3/envs" \
+        "$HOME/software/anaconda3/envs" \
+        "$HOME/anaconda3/envs" \
+        "$HOME/.conda/envs"; do
+        [ -n "$candidate" ] || continue
+        [ -d "$candidate" ] || continue
+        envpilot_conda_env_dir_add "$candidate"
+    done
+
+    while [ -n "$inherited" ]; do
+        case "$inherited" in
+            *:*) item="${inherited%%:*}"; inherited="${inherited#*:}" ;;
+            *) item="$inherited"; inherited="" ;;
+        esac
+        envpilot_conda_env_dir_add "$item"
+    done
+
+    if [ -n "${CONDA_ENVS_PATH:-}" ]; then
+        export CONDA_ENVS_PATH
+    fi
+}
+
+envpilot_conda_prefix()
+{
+    local candidate
+    for candidate in \
+        "${BASHRC_CONDA_PRIMARY_PREFIX:-}" \
+        "$HOME/software/miniconda3" \
+        "$HOME/miniconda3" \
+        "$HOME/software/anaconda3" \
+        "$HOME/anaconda3" \
+        /opt/conda; do
+        [ -n "$candidate" ] || continue
+        [ -r "$candidate/etc/profile.d/conda.sh" ] || continue
+        printf '%s' "$candidate"
+        return 0
     done
     return 1
+}
+
+envpilot_prepare_conda_prefix()
+{
+    local prefix="$1"
+    unset -f conda 2>/dev/null || true
+    unfunction conda 2>/dev/null || true
+    unset CONDA_EXE CONDA_PYTHON_EXE CONDA_PREFIX CONDA_DEFAULT_ENV \
+        CONDA_PROMPT_MODIFIER CONDA_SHLVL
+    path_prepend "$prefix/condabin"
+    path_prepend "$prefix/bin"
+    hash -r 2>/dev/null || rehash 2>/dev/null || true
+    envpilot_conda_configure_env_dirs "$prefix"
+    # shellcheck disable=SC1090,SC1091
+    . "$prefix/etc/profile.d/conda.sh"
+}
+
+init_conda()
+{
+    local prefix
+    if prefix="$(envpilot_conda_prefix 2>/dev/null)"; then
+        envpilot_prepare_conda_prefix "$prefix"
+        return $?
+    fi
+    type conda >/dev/null 2>&1
 }
 
 if [ "$BASHRC_INIT_CONDA" = "1" ]; then

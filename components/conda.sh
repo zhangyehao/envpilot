@@ -5,17 +5,44 @@ EP_LEGACY_ANACONDA_VERSION="${EP_LEGACY_ANACONDA_VERSION:-2025.06-1}"
 
 ep_conda_bin()
 {
+    local candidate
+    for candidate in \
+        "$EP_PREFIX/miniconda3/bin/conda" \
+        "$HOME/miniconda3/bin/conda" \
+        "$HOME/software/miniconda3/bin/conda" \
+        "$EP_PREFIX/anaconda3/bin/conda" \
+        "$HOME/anaconda3/bin/conda" \
+        "$HOME/software/anaconda3/bin/conda"; do
+        [ -x "$candidate" ] && { printf '%s' "$candidate"; return 0; }
+    done
     if ep_command_exists conda; then
         command -v conda
         return 0
     fi
-    for candidate in \
-        "$EP_PREFIX/miniconda3/bin/conda" \
-        "$EP_PREFIX/anaconda3/bin/conda" \
-        "$HOME/miniconda3/bin/conda" \
-        "$HOME/anaconda3/bin/conda"; do
-        [ -x "$candidate" ] && { printf '%s' "$candidate"; return 0; }
-    done
+    return 1
+}
+
+ep_requested_conda_bin()
+{
+    local candidate
+    case "$(ep_conda_distribution)" in
+        miniconda)
+            for candidate in \
+                "$EP_PREFIX/miniconda3/bin/conda" \
+                "$HOME/miniconda3/bin/conda" \
+                "$HOME/software/miniconda3/bin/conda"; do
+                [ -x "$candidate" ] && { printf '%s' "$candidate"; return 0; }
+            done
+            ;;
+        anaconda)
+            for candidate in \
+                "$EP_PREFIX/anaconda3/bin/conda" \
+                "$HOME/anaconda3/bin/conda" \
+                "$HOME/software/anaconda3/bin/conda"; do
+                [ -x "$candidate" ] && { printf '%s' "$candidate"; return 0; }
+            done
+            ;;
+    esac
     return 1
 }
 
@@ -242,20 +269,20 @@ ep_install_conda()
         ep_die "Conda target exists but does not contain bin/conda: $target. Move it aside or rerun with --prefix."
     fi
 
-    if [ "$(ep_conda_distribution)" = "miniconda" ] && existing_conda="$(ep_conda_bin 2>/dev/null)"; then
+    if existing_conda="$(ep_requested_conda_bin 2>/dev/null)"; then
         if [ "$EP_UPGRADE" = "1" ]; then
             ep_update_conda "$existing_conda"
             return 0
         fi
-        ep_log "Conda already available: $existing_conda"
+        ep_log "$(ep_conda_distribution_label) already available: $existing_conda"
         ep_write_condarc "$existing_conda"
         ep_state_mark_done conda
         ep_report_event conda skipped "already installed" "$(ep_run_conda_clean "$existing_conda" --version 2>/dev/null || true)" "" "$existing_conda"
         return 0
     fi
 
-    if [ "$(ep_conda_distribution)" = "anaconda" ] && existing_conda="$(ep_conda_bin 2>/dev/null)"; then
-        ep_log "Conda already available at $existing_conda, but requested Anaconda target is missing; installing Anaconda side by side."
+    if existing_conda="$(ep_conda_bin 2>/dev/null)"; then
+        ep_log "Conda already available at $existing_conda; requested $(ep_conda_distribution_label) target is missing, so installation will continue side by side."
     fi
     installer="$(mktemp "${TMPDIR:-/tmp}/envpilot-conda.XXXXXX.sh")"
     url="$(ep_conda_installer_url)"
@@ -282,7 +309,7 @@ ep_install_conda()
     ep_log "Source: $source"
     ep_log "Target: $target"
     ep_log "Will write: $HOME/.condarc"
-    ep_log "Conda shell integration is enabled by the managed profile for interactive TTYs; base auto-activation is disabled."
+    ep_log "Conda shell integration will be enabled by the managed profile for interactive TTYs; base auto-activation is disabled."
     ep_confirm "Install $label from $source to $target?" "yes" || {
         ep_report_event conda skipped "user declined" "" "$source" "$target"
         return 0

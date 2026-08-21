@@ -53,6 +53,7 @@
     "conda_init": false,
     "shell_template_init": true,
     "shell_template_init_scope": "interactive_tty_only",
+    "dual_install_policy": "prefer_miniconda_and_discover_anaconda_envs",
     "activate_base": false,
     "condarc_template": "templates/condarc"
   },

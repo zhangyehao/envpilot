@@ -49,6 +49,8 @@ grep -q 'proxy_no_proxy_add()' "$ROOT/templates/bashrc"
 grep -q 'Proxy is not listening at %s:%s' "$ROOT/templates/bashrc"
 grep -q 'ep_tmux_target_version' "$ROOT/components/tmux.sh"
 grep -q 'ep_update_conda' "$ROOT/components/conda.sh"
+grep -q 'ep_requested_conda_bin' "$ROOT/components/conda.sh"
+grep -q 'requested .* target is missing' "$ROOT/components/conda.sh"
 grep -q 'action=updated' "$ROOT/components/mamba.sh" "$ROOT/components/codex.sh"
 grep -q '"update","upgrade"' "$ROOT/envpilot.ps1"
 grep -q '$Script:Upgrade' "$ROOT/envpilot.ps1"
@@ -89,6 +91,9 @@ grep -q 'ep_shell_profile_is_managed' "$ROOT/lib/shell.sh"
 grep -q 'ep_shell_local_cleanup_managed_fragments' "$ROOT/lib/shell.sh"
 grep -q 'BASHRC_INIT_CONDA="${BASHRC_INIT_CONDA:-1}"' "$ROOT/templates/bashrc"
 grep -q 'BASHRC_INIT_CONDA="${BASHRC_INIT_CONDA:-1}"' "$ROOT/templates/zshrc"
+grep -q 'envpilot_conda_prefix' "$ROOT/templates/bashrc" "$ROOT/templates/zshrc"
+grep -q 'envpilot_conda_configure_env_dirs' "$ROOT/templates/bashrc" "$ROOT/templates/zshrc"
+grep -q 'BASHRC_CONDA_PRIMARY_PREFIX' "$ROOT/templates/bashrc" "$ROOT/templates/zshrc"
 grep -q 'auto_activate_base: false' "$ROOT/templates/condarc"
 grep -q 'interactive TTYs' "$ROOT/components/conda.sh"
 grep -q 'BASHRC_INIT_CONDA=0' "$ROOT/templates/shell.local.example" "$ROOT/README.md"
@@ -530,6 +535,35 @@ grep -q '^!downloads/geoip\.metadb$' "$ROOT/.gitignore"
     esac
 )
 
+echo "[TEST] Conda discovery prefers Miniconda and distinguishes distributions"
+tmp_conda_resolver_home="$(mktemp -d)"
+mkdir -p \
+    "$tmp_conda_resolver_home/software/miniconda3/bin" \
+    "$tmp_conda_resolver_home/software/anaconda3/bin"
+printf '#!/usr/bin/env bash\n' > "$tmp_conda_resolver_home/software/miniconda3/bin/conda"
+printf '#!/usr/bin/env bash\n' > "$tmp_conda_resolver_home/software/anaconda3/bin/conda"
+chmod +x \
+    "$tmp_conda_resolver_home/software/miniconda3/bin/conda" \
+    "$tmp_conda_resolver_home/software/anaconda3/bin/conda"
+(
+    export HOME="$tmp_conda_resolver_home"
+    export PATH="/usr/bin:/bin"
+    export ENVPILOT_ROOT="$ROOT" EP_PREFIX="$tmp_conda_resolver_home/software"
+    # shellcheck source=/dev/null
+    . "$ROOT/lib/common.sh"
+    # shellcheck source=/dev/null
+    . "$ROOT/lib/platform.sh"
+    # shellcheck source=/dev/null
+    . "$ROOT/components/conda.sh"
+    EP_CONDA_DISTRIBUTION=miniconda
+    [ "$(ep_conda_bin)" = "$tmp_conda_resolver_home/software/miniconda3/bin/conda" ]
+    [ "$(ep_requested_conda_bin)" = "$tmp_conda_resolver_home/software/miniconda3/bin/conda" ]
+    rm -f "$tmp_conda_resolver_home/software/miniconda3/bin/conda"
+    ! ep_requested_conda_bin
+    [ "$(ep_conda_bin)" = "$tmp_conda_resolver_home/software/anaconda3/bin/conda" ]
+)
+rm -rf "$tmp_conda_resolver_home"
+
 echo "[TEST] shell.local migration keeps safe environment and excludes old proxy"
 tmp_home="$(mktemp -d)"
 mkdir -p "$tmp_home/.config/envpilot"
@@ -589,6 +623,56 @@ noninteractive_conda_init="$(
 [ "$noninteractive_conda_init" = "unset" ]
 test ! -e "$tmp_conda_shell_home/conda-init-marker"
 rm -rf "$tmp_conda_shell_home"
+
+echo "[TEST] Miniconda wins over inherited Anaconda and discovers env dirs"
+tmp_dual_conda_home="$(mktemp -d)"
+tmp_dual_conda_fixture="$tmp_dual_conda_home/bashrc-fixture"
+mkdir -p \
+    "$tmp_dual_conda_home/software/miniconda3/etc/profile.d" \
+    "$tmp_dual_conda_home/software/miniconda3/envs" \
+    "$tmp_dual_conda_home/software/anaconda3/etc/profile.d" \
+    "$tmp_dual_conda_home/software/anaconda3/envs" \
+    "$tmp_dual_conda_home/.conda/envs"
+cat > "$tmp_dual_conda_home/software/miniconda3/etc/profile.d/conda.sh" <<'EOF'
+ENVPILOT_CONDA_SOURCE=miniconda
+conda() { :; }
+EOF
+cat > "$tmp_dual_conda_home/software/anaconda3/etc/profile.d/conda.sh" <<'EOF'
+ENVPILOT_CONDA_SOURCE=anaconda
+conda() { :; }
+EOF
+awk 'BEGIN { skip = 0 } /^# No real TTY:/ { skip = 1; next } skip && /^fi$/ { skip = 0; next } !skip { print }' \
+    "$ROOT/templates/bashrc" > "$tmp_dual_conda_fixture"
+dual_conda_result="$(
+    env -i \
+        HOME="$tmp_dual_conda_home" \
+        PATH="/usr/bin:/bin:$PATH" \
+        BASH_ENV=/dev/null \
+        BASHRC_LOCAL_FILE="$tmp_dual_conda_home/missing-shell.local" \
+        BASHRC_AUTO_LOAD_SECRETS=0 \
+        BASHRC_AUTO_START_MIHOMO=0 \
+        BASHRC_AUTO_ENABLE_PROXY=0 \
+        BASHRC_AUTO_LOAD_MODULES=0 \
+        CONDA_PREFIX="$tmp_dual_conda_home/software/anaconda3" \
+        CONDA_DEFAULT_ENV=base \
+        bash --noprofile --norc -c '
+            conda() { :; }
+            export -f conda
+            source "$1"
+            printf "%s|%s|%s" \
+                "$ENVPILOT_CONDA_SOURCE" \
+                "${CONDA_PREFIX-unset}" \
+                "$CONDA_ENVS_PATH"
+        ' bash "$tmp_dual_conda_fixture" 2>/dev/null
+)"
+case "$dual_conda_result" in
+    miniconda\|unset\|*"$tmp_dual_conda_home/software/miniconda3/envs"*"$tmp_dual_conda_home/software/anaconda3/envs"*"$tmp_dual_conda_home/.conda/envs"*) ;;
+    *)
+        printf 'Unexpected dual Conda selection: %s\n' "$dual_conda_result" >&2
+        exit 1
+        ;;
+esac
+rm -rf "$tmp_dual_conda_home"
 
 echo "[TEST] repeated apply-shell preserves shell.local and removes stale template fragments"
 tmp_apply_shell_home="$(mktemp -d)"
