@@ -37,6 +37,7 @@ BASHRC_EXTERNAL_TMP_ROOT_VALUE="${BASHRC_CODEX_TMP_ROOT:-}"
 
 export ENVPILOT_CONFIG_DIR="${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}"
 export BASHRC_SECRETS_FILE="${BASHRC_SECRETS_FILE:-$HOME/.config/secrets/api.env}"
+export BASHRC_INIT_CONDA="${BASHRC_INIT_CONDA:-1}"
 export BASHRC_AUTO_LOAD_SECRETS="${BASHRC_AUTO_LOAD_SECRETS:-1}"
 export MIHOMO_PROXY_HOST="${MIHOMO_PROXY_HOST:-${BASHRC_PROXY_HOST:-127.0.0.1}}"
 export MIHOMO_PROXY_PORT="${MIHOMO_PROXY_PORT:-${BASHRC_PROXY_PORT:-42290}}"
@@ -150,6 +151,8 @@ envpilot_shell_local_value()
 envpilot_load_noninteractive_settings()
 {
     local value
+    value="$(envpilot_shell_local_value BASHRC_INIT_CONDA || true)"
+    [ -n "$value" ] && BASHRC_INIT_CONDA="$value"
     value="$(envpilot_shell_local_value BASHRC_AUTO_LOAD_SECRETS || true)"
     [ -n "$value" ] && BASHRC_AUTO_LOAD_SECRETS="$value"
     if [ -z "$BASHRC_EXTERNAL_PROXY_PORT_SET" ]; then
@@ -376,6 +379,10 @@ init_conda()
     done
     return 1
 }
+
+if [ "$BASHRC_INIT_CONDA" = "1" ]; then
+    init_conda
+fi
 
 proxy_on()
 {

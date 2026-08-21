@@ -79,7 +79,8 @@ export MIHOMO_API_PORT=60290
 
 bash envpilot.sh install mihomo
 bash envpilot.sh apply-shell
-# 可选：vim ~/.bashrc，将需要自动启用的 BASHRC_INIT_CONDA / BASHRC_AUTO_* 默认值改为 1
+# apply-shell 会在交互式真实 TTY 中自动初始化 Conda，但不会自动进入 base。
+# 如需关闭 Conda 初始化，在 ~/.config/envpilot/shell.local 写入：BASHRC_INIT_CONDA=0
 # 修改之后，进行source后，mihomo start, mihomo status, proxy_on这些都会自动加载，可以不运行了
 source ~/.bashrc
 
@@ -358,7 +359,9 @@ Windows 对应命令为 `.\envpilot.ps1 update`，也可使用 `.\envpilot.ps1 i
 - 默认安装官方 Miniconda，也可显式选择 Anaconda。
 - 不使用 Miniforge。
 - Linux 根据 glibc 和架构选择最新可安装的官方版本。
-- 不默认执行 `conda init`。
+- `apply-shell` 默认只在交互式真实 TTY 中加载已安装 Conda 的 `conda.sh`；不会向 `.bashrc`/`.zshrc` 追加 Conda 自己的初始化代码块，非交互 shell 会在 TTY 守卫处返回。
+- `~/.condarc` 默认写入 `auto_activate_base: false`，因此新终端可以使用 `conda` 和 `conda activate`，但不会自动进入 `base`。
+- 如需关闭交互式 Conda 初始化，在 `~/.config/envpilot/shell.local` 设置 `BASHRC_INIT_CONDA=0`。
 - `~/.condarc` 只保留清华 `conda-forge` 和 `bioconda` 两个镜像，并通过 `default_channels: []` 禁用继承的 `defaults`。
 - Mamba 安装命令不再追加官方 `-c conda-forge`，而是直接使用上述受控频道。
 - 在共享服务器执行 Conda/Mamba 时会临时清除 `LD_LIBRARY_PATH`、`PYTHONHOME` 和 `PYTHONPATH`，避免 module 或集群环境污染 Conda。

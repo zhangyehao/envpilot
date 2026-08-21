@@ -1,7 +1,8 @@
 # envpilot shell.local
 # User-specific additions live here so envpilot can update the main shell profile safely.
 
-# BASHRC_INIT_CONDA="1"
+# Conda integration is enabled by default for interactive real TTYs.
+# BASHRC_INIT_CONDA="0"
 # BASHRC_AUTO_START_MIHOMO="1"
 # BASHRC_AUTO_ENABLE_PROXY="1"
 # api.env is loaded by default before the interactive/TTY guard.

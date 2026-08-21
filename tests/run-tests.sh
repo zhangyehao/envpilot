@@ -87,6 +87,14 @@ grep -q 'ep_codex_remote_cli' "$ROOT/components/codex.sh"
 grep -q 'envpilot-managed-codex-wrapper' "$ROOT/templates/codex-wrapper.sh"
 grep -q 'ep_shell_profile_is_managed' "$ROOT/lib/shell.sh"
 grep -q 'ep_shell_local_cleanup_managed_fragments' "$ROOT/lib/shell.sh"
+grep -q 'BASHRC_INIT_CONDA="${BASHRC_INIT_CONDA:-1}"' "$ROOT/templates/bashrc"
+grep -q 'BASHRC_INIT_CONDA="${BASHRC_INIT_CONDA:-1}"' "$ROOT/templates/zshrc"
+grep -q 'auto_activate_base: false' "$ROOT/templates/condarc"
+grep -q 'interactive TTYs' "$ROOT/components/conda.sh"
+grep -q 'BASHRC_INIT_CONDA=0' "$ROOT/templates/shell.local.example" "$ROOT/README.md"
+! grep -q 'conda.sh not found' "$ROOT/templates/bashrc"
+grep -q '"shell_template_init": true' "$ROOT/manifests/conda.json"
+grep -q '"shell_template_init_scope": "interactive_tty_only"' "$ROOT/manifests/conda.json"
 grep -q 'Staging Codex runtime' "$ROOT/templates/codex-remote.sh"
 grep -q 'app-server --listen unix://' "$ROOT/templates/codex-remote.sh"
 grep -q 'load_codex_environment' "$ROOT/templates/codex-remote.sh"
@@ -560,6 +568,27 @@ grep -q 'export GOPATH=' "$shell_local"
 grep -q 'export SINGULARITY_CACHEDIR=' "$shell_local"
 ! grep -qE '(^|[[:space:]])(http_proxy|OPENAI_API_KEY|MIHOMO_PROXY_PORT)=' "$shell_local"
 bash --noprofile --norc -c '. "'"$shell_local"'"'
+
+echo "[TEST] Conda initialization stays out of non-interactive shells"
+tmp_conda_shell_home="$(mktemp -d)"
+mkdir -p "$tmp_conda_shell_home/software/miniconda3/etc/profile.d"
+cat > "$tmp_conda_shell_home/software/miniconda3/etc/profile.d/conda.sh" <<'EOF'
+printf '%s\n' initialized > "$HOME/conda-init-marker"
+export ENVPILOT_CONDA_INIT_MARKER=loaded
+EOF
+noninteractive_conda_init="$(
+    env -i \
+        HOME="$tmp_conda_shell_home" \
+        PATH="/usr/bin:/bin:$PATH" \
+        BASH_ENV=/dev/null \
+        bash --noprofile --norc -c '
+            source "$1"
+            printf "%s" "${ENVPILOT_CONDA_INIT_MARKER-unset}"
+        ' bash "$ROOT/templates/bashrc" 2>/dev/null
+)"
+[ "$noninteractive_conda_init" = "unset" ]
+test ! -e "$tmp_conda_shell_home/conda-init-marker"
+rm -rf "$tmp_conda_shell_home"
 
 echo "[TEST] repeated apply-shell preserves shell.local and removes stale template fragments"
 tmp_apply_shell_home="$(mktemp -d)"

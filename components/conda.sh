@@ -282,7 +282,7 @@ ep_install_conda()
     ep_log "Source: $source"
     ep_log "Target: $target"
     ep_log "Will write: $HOME/.condarc"
-    ep_log "Conda init will not be run; shell templates source conda.sh only when requested."
+    ep_log "Conda shell integration is enabled by the managed profile for interactive TTYs; base auto-activation is disabled."
     ep_confirm "Install $label from $source to $target?" "yes" || {
         ep_report_event conda skipped "user declined" "" "$source" "$target"
         return 0

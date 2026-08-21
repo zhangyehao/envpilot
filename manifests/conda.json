@@ -51,6 +51,8 @@
   "compatibility_note": "Third-party Conda distributions are no longer selected automatically. On Linux glibc 2.17-2.27, envpilot selects the newest archived Miniconda or Anaconda installer that remains compatible with the detected platform. If a platform-specific archive still fails, rerun with --mode offline --asset-path using a known-compatible installer.",
   "post_install": {
     "conda_init": false,
+    "shell_template_init": true,
+    "shell_template_init_scope": "interactive_tty_only",
     "activate_base": false,
     "condarc_template": "templates/condarc"
   },

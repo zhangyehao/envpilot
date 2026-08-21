@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.16 - 2026-08-21
+
+### Changed
+
+- Enabled envpilot's Conda shell integration by default only for interactive shells with a real TTY.
+- Set `auto_activate_base: false` in the managed Conda configuration so Miniconda remains available without entering `base` automatically.
+- Added `BASHRC_INIT_CONDA=0` as the opt-out in `shell.local`; non-interactive SSH, Codex, scp, and rsync shells still skip `conda.sh` initialization.
+
 ## 0.2.15 - 2026-08-17
 
 ### Fixed

@@ -36,7 +36,7 @@ BASHRC_EXTERNAL_TMP_VALUE="${BASHRC_USE_NODE_LOCAL_TMP:-}"
 BASHRC_EXTERNAL_TMP_ROOT_VALUE="${BASHRC_CODEX_TMP_ROOT:-}"
 
 BASHRC_UMASK="${BASHRC_UMASK:-027}"
-BASHRC_INIT_CONDA="${BASHRC_INIT_CONDA:-0}"
+BASHRC_INIT_CONDA="${BASHRC_INIT_CONDA:-1}"
 BASHRC_AUTO_LOAD_MODULES="${BASHRC_AUTO_LOAD_MODULES:-0}"
 BASHRC_AUTO_START_MIHOMO="${BASHRC_AUTO_START_MIHOMO:-0}"
 BASHRC_AUTO_ENABLE_PROXY="${BASHRC_AUTO_ENABLE_PROXY:-0}"
@@ -163,6 +163,8 @@ envpilot_shell_local_value()
 envpilot_load_noninteractive_settings()
 {
     local value
+    value="$(envpilot_shell_local_value BASHRC_INIT_CONDA || true)"
+    [ -n "$value" ] && BASHRC_INIT_CONDA="$value"
     value="$(envpilot_shell_local_value BASHRC_AUTO_LOAD_SECRETS || true)"
     [ -n "$value" ] && BASHRC_AUTO_LOAD_SECRETS="$value"
     if [ -z "$BASHRC_EXTERNAL_PROXY_PORT_SET" ]; then
@@ -492,7 +494,6 @@ init_conda()
             return 0
         fi
     done
-    printf 'conda.sh not found. Update envpilot shell.local or Conda path.\n' >&2
     return 1
 }
 
