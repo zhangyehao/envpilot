@@ -28,8 +28,45 @@
     }
   ],
   "latest": {
-    "checked_at": "2026-08-06T00:00:00Z",
-    "status": "resolver queries the stable upstream release"
+    "version": "20260825",
+    "name": "20260825",
+    "published_at": "2026-08-25T15:28:46Z",
+    "html_url": "https://github.com/astral-sh/python-build-standalone/releases/tag/20260825",
+    "checked_at": "2026-08-31T09:44:48Z",
+    "assets": {
+      "linux-amd64": {
+        "name": "cpython-3.10.21+20260825-x86_64-unknown-linux-gnu-install_only.tar.gz",
+        "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20260825/cpython-3.10.21%2B20260825-x86_64-unknown-linux-gnu-install_only.tar.gz",
+        "size": 43905934,
+        "digest": "sha256:b3cfb164a81b8fb16125cc7703689a6181e06983db3220a1765da68ebe430aff",
+        "content_type": "application/octet-stream",
+        "updated_at": "2026-08-25T15:25:31Z"
+      },
+      "linux-arm64": {
+        "name": "cpython-3.10.21+20260825-aarch64-unknown-linux-gnu-install_only.tar.gz",
+        "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20260825/cpython-3.10.21%2B20260825-aarch64-unknown-linux-gnu-install_only.tar.gz",
+        "size": 44062325,
+        "digest": "sha256:93e1d3150a3b50d2e801e0f87867ff35cc12b7a52142af5341404e1957526dba",
+        "content_type": "application/octet-stream",
+        "updated_at": "2026-08-25T15:25:23Z"
+      },
+      "darwin-amd64": {
+        "name": "cpython-3.10.21+20260825-x86_64-apple-darwin-install_only.tar.gz",
+        "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20260825/cpython-3.10.21%2B20260825-x86_64-apple-darwin-install_only.tar.gz",
+        "size": 25694722,
+        "digest": "sha256:a5bb20b27657eec91859713b2dd3cac9290706ad5db07c7dd41569e87bb36b78",
+        "content_type": "application/octet-stream",
+        "updated_at": "2026-08-25T15:25:28Z"
+      },
+      "darwin-arm64": {
+        "name": "cpython-3.10.21+20260825-aarch64-apple-darwin-install_only.tar.gz",
+        "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20260825/cpython-3.10.21%2B20260825-aarch64-apple-darwin-install_only.tar.gz",
+        "size": 25990318,
+        "digest": "sha256:7fedf2035ce497b0ce01643cc5e8ed2aabfb8cfa730440e97af0330b56ce0608",
+        "content_type": "application/octet-stream",
+        "updated_at": "2026-08-25T15:25:23Z"
+      }
+    }
   },
   "post_install": {
     "prefix": "$HOME/software/python/current",

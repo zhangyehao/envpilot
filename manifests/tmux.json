@@ -22,11 +22,11 @@
     ]
   },
   "latest": {
-    "version": "3.7b",
-    "name": "tmux 3.7b",
-    "published_at": "2026-07-01T18:58:22Z",
-    "html_url": "https://github.com/tmux/tmux/releases/tag/3.7b",
-    "checked_at": "2026-08-03T08:23:54Z",
+    "version": "3.7c",
+    "name": "tmux 3.7c",
+    "published_at": "2026-08-17T12:53:48Z",
+    "html_url": "https://github.com/tmux/tmux/releases/tag/3.7c",
+    "checked_at": "2026-08-31T09:44:48Z",
     "note": "source_versions remain pinned until maintainer review"
   }
 }
