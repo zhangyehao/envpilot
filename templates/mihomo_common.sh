@@ -119,28 +119,44 @@ mihomo_port_socket_listening()
         line="$(ss -lntH "sport = :$port" 2>/dev/null | head -n 1 || true)"
         [ -n "$line" ] && return 0
     fi
-    if mihomo_command_exists lsof; then
-        line="$(lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | awk 'NR == 2 { print; exit }' || true)"
-        [ -n "$line" ] && return 0
-    fi
-    if mihomo_command_exists netstat; then
-        line="$(netstat -an 2>/dev/null | grep -E "[.:]${port}[[:space:]].*LISTEN" | head -n 1 || true)"
-        [ -n "$line" ] && return 0
-    fi
     return 1
+}
+
+mihomo_run_bounded_port_probe()
+{
+    local seconds="$1"
+    shift
+    if mihomo_command_exists timeout; then
+        timeout -k 1 "$seconds" "$@"
+    elif mihomo_command_exists gtimeout; then
+        gtimeout -k 1 "$seconds" "$@"
+    elif mihomo_command_exists perl; then
+        perl -e 'alarm shift; exec @ARGV' "$seconds" "$@"
+    else
+        return 125
+    fi
 }
 
 mihomo_port_reachable()
 {
     local port="$1"
+    local line
     if mihomo_port_socket_listening "$port"; then
         return 0
     fi
     if mihomo_command_exists nc && nc -z -w 1 "$MIHOMO_PROXY_HOST" "$port" >/dev/null 2>&1; then
         return 0
     fi
-    if mihomo_command_exists timeout && timeout 1 bash -c ": </dev/tcp/$MIHOMO_PROXY_HOST/$port" >/dev/null 2>&1; then
+    if mihomo_run_bounded_port_probe 1 bash -c ": </dev/tcp/$MIHOMO_PROXY_HOST/$port" >/dev/null 2>&1; then
         return 0
+    fi
+    if mihomo_command_exists lsof; then
+        line="$(
+            mihomo_run_bounded_port_probe 2 \
+                lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null |
+                awk 'NR == 2 { print; exit }' || true
+        )"
+        [ -n "$line" ] && return 0
     fi
     return 1
 }

@@ -237,9 +237,9 @@ run_bounded()
     local seconds="$1"
     shift
     if command_exists timeout; then
-        timeout "$seconds" "$@"
+        timeout -k 1 "$seconds" "$@"
     elif command_exists gtimeout; then
-        gtimeout "$seconds" "$@"
+        gtimeout -k 1 "$seconds" "$@"
     elif command_exists perl; then
         perl -e 'alarm shift; exec @ARGV' "$seconds" "$@"
     else
@@ -300,7 +300,7 @@ socket_listener_state()
         return 0
     fi
     if command_exists lsof; then
-        line="$(lsof -nP -U 2>/dev/null | grep -F "$SOCKET" | head -n 1 || true)"
+        line="$(run_bounded 2 lsof -nP -U 2>/dev/null | grep -F "$SOCKET" | head -n 1 || true)"
         [ -n "$line" ] && return 1
         return 0
     fi

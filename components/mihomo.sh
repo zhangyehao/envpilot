@@ -276,29 +276,45 @@ ep_proxy_port_socket_listening()
         line="$(ss -lntH "sport = :$port" 2>/dev/null | head -n 1 || true)"
         [ -n "$line" ] && return 0
     fi
-    if ep_command_exists lsof; then
-        line="$(lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | awk 'NR == 2 { print; exit }' || true)"
-        [ -n "$line" ] && return 0
-    fi
-    if ep_command_exists netstat; then
-        line="$(netstat -an 2>/dev/null | grep -E "[.:]${port}[[:space:]].*LISTEN" | head -n 1 || true)"
-        [ -n "$line" ] && return 0
-    fi
     return 1
+}
+
+ep_mihomo_run_bounded_port_probe()
+{
+    local seconds="$1"
+    shift
+    if ep_command_exists timeout; then
+        timeout -k 1 "$seconds" "$@"
+    elif ep_command_exists gtimeout; then
+        gtimeout -k 1 "$seconds" "$@"
+    elif ep_command_exists perl; then
+        perl -e 'alarm shift; exec @ARGV' "$seconds" "$@"
+    else
+        return 125
+    fi
 }
 
 ep_proxy_port_is_listening()
 {
     local host="${1:-127.0.0.1}"
     local port="${2:-$(ep_mihomo_proxy_port)}"
+    local line
     if ep_proxy_port_socket_listening "$port"; then
         return 0
     fi
     if ep_command_exists nc && nc -z -w 1 "$host" "$port" >/dev/null 2>&1; then
         return 0
     fi
-    if ep_command_exists timeout && timeout 1 bash -c ": </dev/tcp/$host/$port" >/dev/null 2>&1; then
+    if ep_mihomo_run_bounded_port_probe 1 bash -c ": </dev/tcp/$host/$port" >/dev/null 2>&1; then
         return 0
+    fi
+    if ep_command_exists lsof; then
+        line="$(
+            ep_mihomo_run_bounded_port_probe 2 \
+                lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null |
+                awk 'NR == 2 { print; exit }' || true
+        )"
+        [ -n "$line" ] && return 0
     fi
     return 1
 }

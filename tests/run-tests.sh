@@ -115,7 +115,12 @@ grep -q 'MIHOMO_START_LOCK_DIR="\${MIHOMO_RUNTIME_DIR}.start.lock"' "$ROOT/templ
 grep -q 'MIHOMO_QUIET_START=1' "$ROOT/templates/bashrc" "$ROOT/templates/zshrc"
 grep -q 'envpilot_prepare_noninteractive_proxy' "$ROOT/templates/bashrc" "$ROOT/templates/zshrc"
 grep -q 'envpilot_export_proxy_if_ready' "$ROOT/templates/bashrc" "$ROOT/templates/zshrc"
-grep -q 'timeout 1 bash -c ": </dev/tcp/\$host/\$port"' "$ROOT/templates/zshrc"
+grep -q 'envpilot_run_bounded_port_probe 1 bash -c ": </dev/tcp/\$host/\$port"' "$ROOT/templates/zshrc"
+grep -q 'ep_mihomo_run_bounded_port_probe 2' "$ROOT/components/mihomo.sh"
+grep -q 'mihomo_run_bounded_port_probe 2' "$ROOT/templates/mihomo_common.sh"
+grep -q 'envpilot_run_bounded_port_probe 2' "$ROOT/templates/bashrc" "$ROOT/templates/zshrc"
+grep -q 'run_bounded 2 lsof -nP -U' "$ROOT/templates/codex-remote.sh"
+! grep -q 'netstat -an' "$ROOT/components/mihomo.sh" "$ROOT/templates/mihomo_common.sh" "$ROOT/templates/bashrc" "$ROOT/templates/zshrc"
 grep -q 'BASHRC_USE_NODE_LOCAL_TMP' "$ROOT/templates/shell.local.example"
 grep -q 'install-time proxy preparation trust an already-listening port' "$ROOT/CHANGELOG.md"
 grep -q 'API .* was not ready' "$ROOT/templates/start_mihomo.sh"
@@ -1139,6 +1144,54 @@ status_check="$(
     bash --noprofile --norc -ic '. "'"$tmp_bin/bashrc-test"'"; if proxy_port_is_listening; then printf yes; else printf no; fi' 2>/dev/null | tail -n 1
 )"
 [ "$status_check" = "yes" ]
+rm -rf "$tmp_home" "$tmp_bin"
+
+echo "[TEST] hanging lsof port fallback is bounded"
+tmp_home="$(mktemp -d)"
+tmp_bin="$(mktemp -d)"
+lsof_marker="$tmp_home/lsof-called"
+cat > "$tmp_bin/ss" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+cat > "$tmp_bin/nc" <<'EOF'
+#!/usr/bin/env bash
+exit 1
+EOF
+cat > "$tmp_bin/lsof" <<'EOF'
+#!/usr/bin/env bash
+: > "$ENVPILOT_LSOF_MARKER"
+trap '' TERM
+exec sleep 10
+EOF
+chmod +x "$tmp_bin/ss" "$tmp_bin/nc" "$tmp_bin/lsof"
+(
+    export HOME="$tmp_home"
+    export PATH="$tmp_bin:$PATH"
+    export ENVPILOT_LSOF_MARKER="$lsof_marker"
+    export ENVPILOT_ROOT="$ROOT"
+    # shellcheck source=/dev/null
+    . "$ROOT/lib/common.sh"
+    # shellcheck source=/dev/null
+    . "$ROOT/lib/platform.sh"
+    # shellcheck source=/dev/null
+    . "$ROOT/lib/download.sh"
+    # shellcheck source=/dev/null
+    . "$ROOT/lib/manifest.sh"
+    # shellcheck source=/dev/null
+    . "$ROOT/components/mihomo.sh"
+    SECONDS=0
+    if ep_proxy_port_is_listening 127.0.0.1 9; then
+        echo "Unexpected listening result for closed fixture port" >&2
+        exit 1
+    fi
+    [ "$SECONDS" -lt 6 ] || {
+        echo "Bounded lsof fallback took ${SECONDS}s" >&2
+        exit 1
+    }
+)
+[ -f "$lsof_marker" ]
+rm -rf "$tmp_home" "$tmp_bin"
 
 echo "[TEST] proxy helpers preserve no_proxy and gate SOCKS"
 tmp_home="$(mktemp -d)"

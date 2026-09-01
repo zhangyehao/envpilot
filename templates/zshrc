@@ -291,27 +291,43 @@ proxy_port_socket_listening()
         line="$(ss -lntH "sport = :$port" 2>/dev/null | head -n 1 || true)"
         [ -n "$line" ] && return 0
     fi
-    if command_exists lsof; then
-        line="$(lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | awk 'NR == 2 { print; exit }' || true)"
-        [ -n "$line" ] && return 0
-    fi
-    if command_exists netstat; then
-        line="$(netstat -an 2>/dev/null | grep -E "[.:]${port}[[:space:]].*LISTEN" | head -n 1 || true)"
-        [ -n "$line" ] && return 0
-    fi
     return 1
+}
+
+envpilot_run_bounded_port_probe()
+{
+    local seconds="$1"
+    shift
+    if command_exists timeout; then
+        timeout -k 1 "$seconds" "$@"
+    elif command_exists gtimeout; then
+        gtimeout -k 1 "$seconds" "$@"
+    elif command_exists perl; then
+        perl -e 'alarm shift; exec @ARGV' "$seconds" "$@"
+    else
+        return 125
+    fi
 }
 
 proxy_port_is_listening()
 {
     local host="${1:-$MIHOMO_PROXY_HOST}"
     local port="${2:-$MIHOMO_PROXY_PORT}"
+    local line
     proxy_port_socket_listening "$port" && return 0
     if command_exists nc && nc -z -w 1 "$host" "$port" >/dev/null 2>&1; then
         return 0
     fi
-    if command_exists timeout && timeout 1 bash -c ": </dev/tcp/$host/$port" >/dev/null 2>&1; then
+    if envpilot_run_bounded_port_probe 1 bash -c ": </dev/tcp/$host/$port" >/dev/null 2>&1; then
         return 0
+    fi
+    if command_exists lsof; then
+        line="$(
+            envpilot_run_bounded_port_probe 2 \
+                lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null |
+                awk 'NR == 2 { print; exit }' || true
+        )"
+        [ -n "$line" ] && return 0
     fi
     return 1
 }

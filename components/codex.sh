@@ -99,9 +99,9 @@ ep_codex_run_bounded()
     local seconds="${1:-$EP_CODEX_PROBE_TIMEOUT}"
     shift || true
     if ep_command_exists timeout; then
-        timeout "$seconds" "$@"
+        timeout -k 1 "$seconds" "$@"
     elif ep_command_exists gtimeout; then
-        gtimeout "$seconds" "$@"
+        gtimeout -k 1 "$seconds" "$@"
     elif ep_command_exists perl; then
         perl -e 'alarm shift; exec @ARGV' "$seconds" "$@"
     else

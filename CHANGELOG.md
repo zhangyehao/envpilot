@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.22 - 2026-09-01
+
+### Fixed
+
+- Reordered Mihomo TCP port detection to prefer `ss`, `nc`, and bounded `/dev/tcp` probes before falling back to `lsof`.
+- Limited `lsof` TCP and Codex Unix-socket listener probes to two seconds through `timeout`, `gtimeout`, or Perl alarm, preventing `doctor`, shell startup, and runtime management commands from hanging on slow shared filesystems.
+- Removed the slower `netstat` fallback from the managed Unix port detection path and added regression coverage for a hanging `lsof` process.
+
 ## 0.2.21 - 2026-08-22
 
 ### Fixed
