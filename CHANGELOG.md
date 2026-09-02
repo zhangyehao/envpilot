@@ -1,10 +1,16 @@
 # Changelog
 
+## 0.2.25 - 2026-09-02
+
+### Fixed
+
+- Completed the ShellCheck 0.9.0 compatibility cleanup by expressing the literal command-substitution marker with an escaped double-quoted value, preserving the same migration rejection rule without SC2016.
+
 ## 0.2.24 - 2026-09-02
 
 ### Fixed
 
-- Rewrote the safe profile-migration command-substitution and backslash matchers so the Linux ShellCheck release gate accepts the same conservative parsing behavior without informational diagnostics.
+- Rewrote the safe profile-migration backslash matchers and reduced the Linux ShellCheck diagnostics to the remaining command-substitution literal handled in 0.2.25.
 
 ## 0.2.23 - 2026-09-02
 

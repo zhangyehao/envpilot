@@ -94,7 +94,7 @@ ep_shell_trim_line()
 ep_shell_value_is_safe()
 {
     local value="$1"
-    local command_substitution='$('
+    local command_substitution="\$("
     local char index=0 length single_quote=0 double_quote=0 escaped=0
 
     case "$value" in
