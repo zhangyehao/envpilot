@@ -628,9 +628,16 @@ cat > "$tmp_home/.config/envpilot/shell.local" <<'EOF'
 # envpilot shell.local
 MIHOMO_PROXY_PORT=42290
 MIHOMO_API_PORT=60290
+alias existing='keep-me'
 EOF
 cat > "$tmp_home/.bashrc" <<'EOF'
+export python38="$HOME/bin/python3.8/bin"
+PATH=$PATH:$python38
 export PATH="$HOME/bin:$PATH"
+export PATH=$PATH:$HOME/bin/seqtk
+export PATH=$HOME/bin/gfatools:$PATH
+export LD_LIBRARY_PATH=$HOME/local/gcc9/lib64:$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$HOME/local/R/lib
 export GOPATH="$HOME/software/go"
 export SINGULARITY_CACHEDIR="$HOME/singularity_cache"
 export http_proxy="http://127.0.0.1:7890"
@@ -639,6 +646,9 @@ export GITHUB_TOKEN="migrated-github-token"
 export BASHRC_AUTO_LOAD_SECRETS=0
 export MIHOMO_PROXY_PORT=7890
 export DANGEROUS_VALUE="$(touch should-never-run)"
+alias snpeff='$HOME/miniconda3/bin/java -jar $HOME/bin/snpEff/snpEff.jar'
+alias existing='replace-me'
+alias dangerous='printf rejected; touch alias-should-never-run'
 module load compiler/gcc/9.3.0
 curl https://example.invalid/install.sh | bash
 for conda_sh in \
@@ -666,6 +676,16 @@ if grep -q 'conda\.sh' "$shell_local"; then
     exit 1
 fi
 grep -q 'export PATH=' "$shell_local"
+grep -Fqx 'PATH=$PATH:$python38' "$shell_local"
+grep -Fqx 'export PATH="$HOME/bin:$PATH"' "$shell_local"
+grep -Fqx 'export PATH=$PATH:$HOME/bin/seqtk' "$shell_local"
+grep -Fqx 'export PATH=$HOME/bin/gfatools:$PATH' "$shell_local"
+grep -Fqx 'export LD_LIBRARY_PATH=$HOME/local/gcc9/lib64:$LD_LIBRARY_PATH' "$shell_local"
+grep -Fqx 'export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$HOME/local/R/lib' "$shell_local"
+grep -Fqx "alias snpeff='\$HOME/miniconda3/bin/java -jar \$HOME/bin/snpEff/snpEff.jar'" "$shell_local"
+grep -Fqx "alias existing='keep-me'" "$shell_local"
+! grep -q 'replace-me' "$shell_local"
+! grep -q 'alias dangerous=' "$shell_local"
 grep -q 'export GOPATH=' "$shell_local"
 grep -q 'export SINGULARITY_CACHEDIR=' "$shell_local"
 grep -q '^MIHOMO_PROXY_PORT=42290$' "$shell_local"
@@ -678,6 +698,7 @@ grep -q '^export OPENAI_API_KEY="migrated-openai-key"$' "$secret_file"
 grep -q '^export GITHUB_TOKEN="migrated-github-token"$' "$secret_file"
 ! grep -q 'BASHRC_AUTO_LOAD_SECRETS' "$secret_file"
 test ! -e "$tmp_home/should-never-run"
+test ! -e "$tmp_home/alias-should-never-run"
 bash --noprofile --norc -c 'module() { :; }; . "$1"' bash "$shell_local"
 rm -rf "$tmp_home"
 
@@ -791,7 +812,7 @@ apply_shell_local="$tmp_apply_shell_home/.config/envpilot/shell.local"
     EP_ROLLBACK_LOG="$tmp_apply_shell_home/.config/envpilot/rollback.log"
     ep_require_unix_runtime() { return 0; }
     ep_confirm() { return 0; }
-    ep_apply_shell_profile >/dev/null
+    ep_apply_shell_profile >"$tmp_apply_shell_home/apply-shell.out" 2>"$tmp_apply_shell_home/apply-shell.warn"
 )
 grep -q 'export PATH="\$HOME/custom/bin:\$PATH"' "$apply_shell_local"
 grep -q 'export CUSTOM_TOOL_HOME=' "$apply_shell_local"
@@ -806,6 +827,8 @@ grep -q '^export NCBI_API_KEY=keep-this-file$' "$tmp_apply_shell_home/.config/se
 grep -q '^export OPENAI_API_KEY=backup-openai-key$' "$tmp_apply_shell_home/.config/secrets/api.env"
 ! grep -q 'must-not-overwrite' "$tmp_apply_shell_home/.config/secrets/api.env"
 test ! -e "$tmp_apply_shell_home/profile-was-executed"
+grep -q 'REQUIRED REVIEW: immediately check shell.local' "$tmp_apply_shell_home/apply-shell.warn"
+grep -q 'Silent/non-interactive/no-real-TTY shells do NOT source shell.local in full' "$tmp_apply_shell_home/apply-shell.warn"
 cp "$apply_shell_local" "$tmp_apply_shell_home/shell.local.after-first"
 cp "$tmp_apply_shell_home/.config/secrets/api.env" "$tmp_apply_shell_home/api.env.after-first"
 (
@@ -818,7 +841,7 @@ cp "$tmp_apply_shell_home/.config/secrets/api.env" "$tmp_apply_shell_home/api.en
     EP_ROLLBACK_LOG="$tmp_apply_shell_home/.config/envpilot/rollback.log"
     ep_require_unix_runtime() { return 0; }
     ep_confirm() { return 0; }
-    ep_apply_shell_profile >/dev/null
+    ep_apply_shell_profile >/dev/null 2>&1
 )
 cmp -s "$tmp_apply_shell_home/shell.local.after-first" "$apply_shell_local"
 cmp -s "$tmp_apply_shell_home/api.env.after-first" "$tmp_apply_shell_home/.config/secrets/api.env"

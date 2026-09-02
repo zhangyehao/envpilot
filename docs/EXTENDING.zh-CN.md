@@ -99,7 +99,7 @@ Shell 模板必须：
 - 默认不自动激活 Conda base
 - 允许从 `~/.config/envpilot/shell.local` 读取用户自定义内容
 
-apply-shell 迁移必须保留已有 shell.local 和 api.env 内容，不覆盖同名变量，不 source 或执行旧 profile，也不在日志中输出受保护值。只允许迁移严格的单行 export 和简单 module load；命令替换、控制操作符、重定向、函数、循环和条件必须拒绝。当前 profile 已受管时，只能从最新的非受管备份迁移，避免复制模板自身。
+apply-shell 迁移必须保留已有 shell.local 和 api.env 内容，不覆盖同名标量变量，不 source 或执行旧 profile，也不在日志中输出受保护值。只允许迁移严格的单行 export、按顺序保留的 PATH 类赋值、安全 alias 和简单 module load；命令替换、控制操作符、重定向、函数、循环和条件必须拒绝。当前 profile 已受管时，只能从最新的非受管备份迁移，避免复制模板自身。命令结束前必须醒目提示用户对照迁移来源和 shell.local，列出可以人工补回的交互式配置，并明确静默 shell 不会完整加载 shell.local。
 
 代理辅助函数必须先检查目标端口正在监听，再导出代理变量；默认只启用 HTTP/HTTPS，SOCKS 必须显式开启；只能向已有 `no_proxy` 追加本地地址，关闭代理时不得清空 `no_proxy`。
 

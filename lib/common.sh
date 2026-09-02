@@ -176,10 +176,14 @@ ep_backup_file()
 {
     local target="$1"
     local backup
+    EP_LAST_BACKUP_FILE=""
     [ -e "$target" ] || return 0
     backup="$target.bak.$(ep_timestamp)"
     cp -p "$target" "$backup"
     printf '%s\t%s\n' "$target" "$backup" >> "$EP_ROLLBACK_LOG"
+    # Consumed by profile installers after this shared helper returns.
+    # shellcheck disable=SC2034
+    EP_LAST_BACKUP_FILE="$backup"
     ep_log "Backed up $target -> $backup"
 }
 

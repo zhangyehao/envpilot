@@ -38,7 +38,9 @@ proxy_on
 bash envpilot.sh install
 ~~~
 
-`apply-shell` 会先备份原 profile，再把旧 profile 中可安全识别的普通 `export`、PATH 和简单 `module load` 增量合并到 `~/.config/envpilot/shell.local`，把 API key、token、secret、password、auth 等受保护变量合并到 `~/.config/secrets/api.env`。已有同名值优先保留；迁移只解析单行赋值，不执行旧 profile 中的函数、命令替换或网络命令。
+`apply-shell` 会先备份原 profile，再把旧 profile 中可安全识别的普通 `export`、按顺序累积的 PATH/库路径、简单 alias 和 `module load` 增量合并到 `~/.config/envpilot/shell.local`，把 API key、token、secret、password、auth 等受保护变量合并到 `~/.config/secrets/api.env`。已有标量同名值优先保留；迁移只解析严格的单行内容，不执行旧 profile 中的函数、命令替换或网络命令。命令结束前会醒目提示立即对照旧 profile 与 `shell.local`，人工补回未自动迁移但仍需要的交互式设置。
+
+可在核对后手工补入 `shell.local` 的内容包括缺失的 PATH/PYTHONPATH/库路径、alias、Shell 函数、EDITOR/LANG/工具变量、提示符与历史设置、自定义 module 命令和工具初始化。API key/token 应放在 `api.env`；旧 Conda 初始化、代理 export 和 Mihomo 启动块通常不应照搬，因为这些已由 envpilot 管理。静默、非交互或没有真实 TTY 的 Shell 不会完整加载 `shell.local`，所以其中自定义 PATH、alias、函数、module 和工具初始化只保证用于交互式真实 TTY。
 
 受管 Bash/zsh 默认开启以下功能。需要关闭时，把对应值写入 `~/.config/envpilot/shell.local` 后执行 `source ~/.bashrc` 或重新登录：
 

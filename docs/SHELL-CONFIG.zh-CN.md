@@ -23,13 +23,23 @@ BASHRC_PROFILE_ACTIVE 是 envpilot profile 的内部标记，不是用户需要�
 
 `apply-shell` 不会因为 `shell.local` 或 `api.env` 已存在就跳过迁移。它会保留目标文件中的已有内容和同名变量，再从原 profile 增量补充缺失项：
 
-- 普通的单行 `export NAME=value` 和简单 `module load NAME` 进入 `shell.local`；
+- 普通的单行 `export NAME=value` 进入 `shell.local`，已有同名标量保留；
+- `PATH`、`PYTHONPATH`、`LD_LIBRARY_PATH` 等累计型路径变量按原顺序迁移，包括严格的单行 `PATH=...`；
+- 不含命令替换、控制操作符或重定向的简单 `alias NAME=value` 和 `module load NAME` 进入 `shell.local`；
 - 名称含 `KEY`、`TOKEN`、`SECRET`、`PASSWORD`、`PASSWD` 或 `AUTH` 的变量进入 `api.env`；
 - 代理、Mihomo 和 envpilot 内部变量不从旧 profile 迁移；
 - 命令替换、管道、重定向、复合语句、函数、循环和条件均不迁移，也不会被执行；
 - 如果当前 profile 已由 envpilot 管理，只检查最近的非 envpilot 备份，避免把模板自身迁移进 `shell.local`。
 
 因此 `api.env` 不是 Mihomo 或 Codex 专属文件，它是多个应用共享的受保护变量入口。迁移日志只报告数量和路径，不显示值。
+
+`apply-shell` 完成前会要求立即核对旧 profile 和 `shell.local`。自动迁移故意不处理复杂 Bash 语法，因此确认仍然需要后，可以人工补入：
+
+- 未识别的 PATH、PYTHONPATH、库路径和其他工具变量；
+- alias、Shell 函数、EDITOR、LANG、提示符和历史设置；
+- 自定义 module 命令和工具初始化。
+
+不要把 API key/token 写入 `shell.local`，应写入 `api.env`。不要盲目复制旧 Conda initialize 块、代理环境变量或 Mihomo 启动块，因为这些通常已由 envpilot 接管。`PROMPT_COMMAND` 和历史设置也要先与 envpilot 的历史同步逻辑比较，避免重复记录。
 
 api.env 只应包含安静的变量赋值，例如：
 
@@ -65,7 +75,8 @@ BASHRC_ENABLE_HISTORY_SYNC=1
 2. 加入用户态 Git/Python/Node 路径；
 3. 根据白名单读取 Mihomo 端口和节点临时目录；
 4. 必要时安静地启动 Mihomo，并在端口真实监听后导出 HTTP/HTTPS 代理；
-5. 不加载 Conda conda.sh、历史同步、module、交互提示或大段函数执行。
+5. 不完整 source shell.local，因此其中自定义 PATH、alias、函数、module 命令、提示符和工具初始化不会继承；
+6. 不加载 Conda conda.sh、历史同步、module、交互提示或大段函数执行。
 
 因此 ssh host command、Codex Desktop 的无返回 SSH 启动器可以继承 API key 和代理，但不会触发完整交互初始化。完全不读取 .bashrc 的 supervisor 或启动器仍需要显式使用 bash -lc 或受信任的 BASH_ENV。
 

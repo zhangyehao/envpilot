@@ -107,4 +107,4 @@ templates/shell.local.example
 ~/.codex/
 ~~~
 
-apply-shell 会备份并替换 profile，并在不执行旧 profile 的前提下增量迁移可安全识别的配置。普通 export、PATH 和简单 module 设置进入 shell.local；API key、token、secret、password、auth 等受保护变量进入 api.env；目标文件已有同名值不会被覆盖。api.env 供多个软件共用，不是 Mihomo 专属；.condarc 由模板统一管理。真实订阅 URL、API key、auth.json、日志和运行目录不进入仓库。
+apply-shell 会备份并替换 profile，并在不执行旧 profile 的前提下增量迁移可安全识别的配置。普通 export、按顺序累积的 PATH/库路径、简单 alias 和 module 设置进入 shell.local；API key、token、secret、password、auth 等受保护变量进入 api.env；目标文件已有同名标量不会被覆盖。命令结束前会要求立即对照旧 profile 和 shell.local，补回仍需要的交互式 PATH、alias、函数、工具变量、提示符或初始化逻辑。静默 shell 不会完整加载 shell.local。api.env 供多个软件共用，不是 Mihomo 专属；.condarc 由模板统一管理。真实订阅 URL、API key、auth.json、日志和运行目录不进入仓库。

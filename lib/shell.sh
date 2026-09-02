@@ -155,6 +155,93 @@ ep_shell_export_name()
     printf '%s' "$name"
 }
 
+ep_shell_assignment_name()
+{
+    local line="$1" assignment name value
+    assignment="$line"
+    case "$assignment" in
+        export[[:space:]]*)
+            assignment="${assignment#export}"
+            assignment="${assignment#"${assignment%%[![:space:]]*}"}"
+            ;;
+    esac
+    case "$assignment" in
+        *=*) ;;
+        *) return 1 ;;
+    esac
+    name="${assignment%%=*}"
+    value="${assignment#*=}"
+    case "$name" in
+        ''|[0-9]*|*[!A-Za-z0-9_]*) return 1 ;;
+    esac
+    ep_shell_value_is_safe "$value" || return 1
+    printf '%s' "$name"
+}
+
+ep_shell_variable_is_ordered_path()
+{
+    case "$1" in
+        PATH|PYTHONPATH|LD_LIBRARY_PATH|DYLD_LIBRARY_PATH|MANPATH|CPATH|C_INCLUDE_PATH|CPLUS_INCLUDE_PATH|LIBRARY_PATH|PKG_CONFIG_PATH|PERL5LIB|RUBYLIB|CLASSPATH)
+            return 0
+            ;;
+        *) return 1 ;;
+    esac
+}
+
+ep_shell_alias_name()
+{
+    local line="$1" assignment name value
+    case "$line" in
+        alias[[:space:]]*) ;;
+        *) return 1 ;;
+    esac
+    assignment="${line#alias}"
+    assignment="${assignment#"${assignment%%[![:space:]]*}"}"
+    case "$assignment" in
+        *=*) ;;
+        *) return 1 ;;
+    esac
+    name="${assignment%%=*}"
+    value="${assignment#*=}"
+    case "$name" in
+        ''|[0-9]*|*[!A-Za-z0-9_.-]*) return 1 ;;
+    esac
+    ep_shell_value_is_safe "$value" || return 1
+    printf '%s' "$name"
+}
+
+ep_shell_alias_declared_name()
+{
+    local line="$1" assignment name
+    case "$line" in
+        alias[[:space:]]*) ;;
+        *) return 1 ;;
+    esac
+    assignment="${line#alias}"
+    assignment="${assignment#"${assignment%%[![:space:]]*}"}"
+    case "$assignment" in
+        *=*) ;;
+        *) return 1 ;;
+    esac
+    name="${assignment%%=*}"
+    case "$name" in
+        ''|[0-9]*|*[!A-Za-z0-9_.-]*) return 1 ;;
+    esac
+    printf '%s' "$name"
+}
+
+ep_shell_profile_has_alias()
+{
+    local name="$1" profile="$2" line normalized existing_name
+    [ -f "$profile" ] || return 1
+    while IFS= read -r line || [ -n "$line" ]; do
+        normalized="$(ep_shell_trim_line "$line")"
+        existing_name="$(ep_shell_alias_declared_name "$normalized" 2>/dev/null || true)"
+        [ "$existing_name" = "$name" ] && return 0
+    done < "$profile"
+    return 1
+}
+
 ep_shell_variable_is_excluded()
 {
     local upper
@@ -228,8 +315,9 @@ ep_migrate_shell_local()
     local managed_template=""
     local profile_is_managed=0
     local line normalized name module_name
-    local shell_count=0 secret_count=0 module_count=0
+    local shell_count=0 path_count=0 alias_count=0 secret_count=0 module_count=0
     EP_SHELL_LOCAL_BACKED_UP=0
+    EP_SHELL_MIGRATION_SOURCE=""
     EP_ROLLBACK_LOG="${EP_ROLLBACK_LOG:-$EP_CONFIG_DIR/rollback.log}"
     mkdir -p "$EP_CONFIG_DIR"
     [ -f "$(ep_secrets_file)" ] && secret_skip_backup=0
@@ -264,6 +352,7 @@ ep_migrate_shell_local()
     fi
 
     source="$(ep_shell_migration_source "$old_profile" 2>/dev/null || true)"
+    EP_SHELL_MIGRATION_SOURCE="$source"
     if [ -n "$source" ]; then
         while IFS= read -r line || [ -n "$line" ]; do
             normalized="$(ep_shell_trim_line "$line")"
@@ -276,10 +365,33 @@ ep_migrate_shell_local()
                         printf '%s\n' "$normalized" >> "$secret_additions"
                         secret_count=$((secret_count + 1))
                     fi
+                elif ep_shell_variable_is_ordered_path "$name"; then
+                    if ! ep_shell_profile_has_line "$normalized" "$local_file" 2>/dev/null &&
+                       ! ep_shell_profile_has_line "$normalized" "$shell_additions" 2>/dev/null; then
+                        printf '%s\n' "$normalized" >> "$shell_additions"
+                        path_count=$((path_count + 1))
+                    fi
                 elif ! ep_shell_env_file_has_variable "$local_file" "$name" &&
                      ! ep_shell_env_file_has_variable "$shell_additions" "$name"; then
                     printf '%s\n' "$normalized" >> "$shell_additions"
                     shell_count=$((shell_count + 1))
+                fi
+                continue
+            fi
+            if name="$(ep_shell_assignment_name "$normalized" 2>/dev/null)" &&
+               ep_shell_variable_is_ordered_path "$name"; then
+                if ! ep_shell_profile_has_line "$normalized" "$local_file" 2>/dev/null &&
+                   ! ep_shell_profile_has_line "$normalized" "$shell_additions" 2>/dev/null; then
+                    printf '%s\n' "$normalized" >> "$shell_additions"
+                    path_count=$((path_count + 1))
+                fi
+                continue
+            fi
+            if name="$(ep_shell_alias_name "$normalized" 2>/dev/null)"; then
+                if ! ep_shell_profile_has_alias "$name" "$local_file" &&
+                   ! ep_shell_profile_has_alias "$name" "$shell_additions"; then
+                    printf '%s\n' "$normalized" >> "$shell_additions"
+                    alias_count=$((alias_count + 1))
                 fi
                 continue
             fi
@@ -303,8 +415,9 @@ ep_migrate_shell_local()
     fi
 
     if ep_shell_merge_additions "$local_file" "$shell_additions" 600 "$EP_SHELL_LOCAL_BACKED_UP"; then
-        if [ "$shell_count" -gt 0 ] || [ "$module_count" -gt 0 ]; then
-            ep_log "Merged $shell_count safe exported variable(s) and $module_count module setting(s) into: $local_file"
+        if [ "$shell_count" -gt 0 ] || [ "$path_count" -gt 0 ] ||
+           [ "$alias_count" -gt 0 ] || [ "$module_count" -gt 0 ]; then
+            ep_log "Merged $shell_count scalar export(s), $path_count ordered path assignment(s), $alias_count alias(es), and $module_count module setting(s) into: $local_file"
         else
             ep_log "Created or completed envpilot shell.local: $local_file"
         fi
@@ -354,7 +467,7 @@ ep_ensure_secrets_file()
 ep_apply_shell_profile()
 {
     ep_require_unix_runtime
-    local target template
+    local target template migration_source profile_backup review_source
     target="$(ep_shell_profile_target)"
     template="$(ep_shell_template)"
     [ -f "$template" ] || ep_die "Shell template missing: $template"
@@ -368,9 +481,27 @@ ep_apply_shell_profile()
     fi
 
     ep_migrate_shell_local "$target"
+    migration_source="${EP_SHELL_MIGRATION_SOURCE:-}"
     ep_backup_file "$target"
+    profile_backup="${EP_LAST_BACKUP_FILE:-}"
     cp "$template" "$target.tmp"
     mv "$target.tmp" "$target"
     ep_log "Applied shell profile: $target"
+
+    review_source="$migration_source"
+    if [ "$review_source" = "$target" ]; then
+        review_source="$profile_backup"
+    fi
+    ep_warn "REQUIRED REVIEW: immediately check shell.local for important settings missing from the previous profile."
+    if [ -n "$review_source" ]; then
+        ep_warn "Compare the previous profile with the migrated settings: $review_source -> $EP_CONFIG_DIR/shell.local"
+        ep_warn "Suggested review command: less '$review_source' '$EP_CONFIG_DIR/shell.local'"
+    else
+        ep_warn "No unmanaged previous profile was available for automatic migration; inspect your older profile backups manually."
+    fi
+    ep_warn "You may manually restore reviewed interactive settings in shell.local: missing PATH/PYTHONPATH/library paths, aliases, shell functions, EDITOR/LANG/tool variables, prompt/history settings, custom module commands, and tool initialization."
+    ep_warn "Do not copy API keys or tokens there (use $HOME/.config/secrets/api.env), and do not blindly restore old Conda initialization, proxy exports, or Mihomo startup blocks managed by envpilot."
+    ep_warn "Silent/non-interactive/no-real-TTY shells do NOT source shell.local in full. Custom paths, aliases, functions, module commands, prompt settings, and tool initialization added there are interactive-only; protected api.env assignments and envpilot's small non-interactive whitelist are loaded separately."
     ep_log "Reload with: source $target"
+    unset EP_SHELL_MIGRATION_SOURCE EP_LAST_BACKUP_FILE
 }

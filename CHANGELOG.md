@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.26 - 2026-09-02
+
+### Fixed
+
+- Preserved every ordered `PATH`, `PYTHONPATH`, library-path, and related search-path assignment during `apply-shell`, including safe single-line assignments without an `export` prefix, instead of dropping later assignments as duplicate scalar variables.
+- Migrated safe single-line aliases without executing the previous profile, while keeping an existing alias definition and continuing to reject command substitutions, control operators, redirections, functions, loops, and conditionals.
+
+### Changed
+
+- Added a required-review warning before `apply-shell` returns, with the previous-profile and `shell.local` paths, suggested inspection command, examples of interactive settings that may be restored manually, and explicit guidance not to copy secrets or envpilot-managed Conda/proxy/Mihomo blocks.
+- Documented that silent, non-interactive, and no-real-TTY shells do not fully source `shell.local`; custom paths, aliases, functions, modules, prompts, and tool initialization stored there remain interactive-only.
+
 ## 0.2.25 - 2026-09-02
 
 ### Fixed

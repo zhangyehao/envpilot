@@ -59,7 +59,7 @@ For an existing installation, prefer `git pull --ff-only`, `doctor`, `apply-shel
 ## Shell profile rules
 
 - `BASHRC_PROFILE_ACTIVE` and `ENVPILOT_LAST_*` are internal markers that distinguish envpilot-managed values from external overrides. Do not ask users to edit them.
-- `apply-shell` backs up the profile, preserves `shell.local` and `api.env`, and installs the current template.
+- `apply-shell` backs up the profile, preserves `shell.local` and `api.env`, migrates ordered PATH-like assignments and safe aliases without executing the old profile, and installs the current template. Before returning, it must tell the user to compare the previous profile with `shell.local` and explain what silent shells do not inherit.
 - `api.env` is assignment-only and may contain variables for multiple applications. `shell.local` is for user overrides and safe PATH/module additions. Enforce owner and mode checks for secrets.
 - Keep non-interactive shells quiet. Load protected variables and bounded proxy preparation before the TTY guard, but skip interactive Conda, modules, history, and functions with side effects.
 

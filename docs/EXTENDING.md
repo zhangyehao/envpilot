@@ -112,7 +112,7 @@ Shell templates must:
 - avoid auto-activating Conda base by default
 - load user-specific additions from `~/.config/envpilot/shell.local`
 
-`apply-shell` migration must preserve existing `shell.local` and `api.env` content, never overwrite an existing variable, never source the old profile, and never print protected values. Only strict single-line exports and simple module-load statements may be merged; command substitution, control operators, redirection, functions, loops, and conditions must be rejected. If the active profile is already managed, migrate only from the newest unmanaged backup.
+`apply-shell` migration must preserve existing `shell.local` and `api.env` content, never overwrite an existing scalar variable, never source the old profile, and never print protected values. Strict single-line exports, ordered PATH-like assignments, safe aliases, and simple module-load statements may be merged; command substitution, control operators, redirection, functions, loops, and conditions must be rejected. If the active profile is already managed, migrate only from the newest unmanaged backup. Before completion, print a prominent review warning that names the source and target files, lists the interactive settings users may restore manually, and states that silent shells do not fully source `shell.local`.
 
 Proxy helpers must check that the configured port is listening before exporting variables, default to HTTP/HTTPS only, make SOCKS opt-in, append to existing `no_proxy`, and leave `no_proxy` intact when disabling proxy variables.
 
