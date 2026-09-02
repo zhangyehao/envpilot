@@ -11,6 +11,7 @@ CONTROL_DIR="$CODEX_HOME_DIR/app-server-control"
 SOCKET="$CONTROL_DIR/app-server-control.sock"
 PID_FILE="$CONTROL_DIR/envpilot-app-server.pid"
 SERVER_LOG="$CONTROL_DIR/app-server.log"
+START_LOCK="$CONTROL_DIR/.envpilot-app-server-start.lock"
 READY_TIMEOUT="${ENVPILOT_CODEX_REMOTE_READY_TIMEOUT:-60}"
 RUNTIME_ROOT="${ENVPILOT_CODEX_RUNTIME_DIR:-}"
 QUIET="${ENVPILOT_CODEX_REMOTE_QUIET:-0}"
@@ -294,10 +295,15 @@ socket_listener_state()
 {
     # 0 = known absent, 1 = found, 2 = cannot inspect.
     local line
+    if [ -r /proc/net/unix ]; then
+        if awk -v socket="$SOCKET" '$6 == "01" && $8 == socket { found = 1; exit } END { exit !found }' /proc/net/unix; then
+            return 1
+        fi
+    fi
     if command_exists ss; then
         line="$(ss -xlpn 2>/dev/null | grep -F "$SOCKET" | head -n 1 || true)"
         [ -n "$line" ] && return 1
-        return 0
+        [ -r /proc/net/unix ] && return 0
     fi
     if command_exists lsof; then
         line="$(run_bounded 2 lsof -nP -U 2>/dev/null | grep -F "$SOCKET" | head -n 1 || true)"
@@ -328,9 +334,35 @@ pid_is_server()
     kill -0 "$pid" 2>/dev/null || return 1
     args="$(ps -p "$pid" -o args= 2>/dev/null || true)"
     case "$args" in
-        *app-server*) return 0 ;;
+        codex\ *|*/codex\ *) ;;
         *) return 1 ;;
     esac
+    case "$args" in
+        *app-server*--listen*unix://*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+find_existing_server_pid()
+{
+    local pid uid
+    uid="$(id -u)"
+    if command_exists pgrep; then
+        while IFS= read -r pid; do
+            pid_is_server "$pid" && {
+                printf '%s' "$pid"
+                return 0
+            }
+        done < <(pgrep -u "$uid" -f '[a]pp-server' 2>/dev/null || true)
+    fi
+    while IFS= read -r pid; do
+        pid="${pid#"${pid%%[![:space:]]*}"}"
+        pid_is_server "$pid" && {
+            printf '%s' "$pid"
+            return 0
+        }
+    done < <(ps -u "$uid" -o pid= 2>/dev/null || true)
+    return 1
 }
 
 read_server_pid()
@@ -340,6 +372,31 @@ read_server_pid()
     pid="$(sed -n '1p' "$PID_FILE" 2>/dev/null || true)"
     pid_is_server "$pid" || return 1
     printf '%s' "$pid"
+}
+
+acquire_server_start_lock()
+{
+    local attempts=0 lock_pid max
+    max=$((READY_TIMEOUT * 5))
+    while ! mkdir "$START_LOCK" 2>/dev/null; do
+        lock_pid="$(sed -n '1p' "$START_LOCK/pid" 2>/dev/null || true)"
+        if [ -n "$lock_pid" ] && ! kill -0 "$lock_pid" 2>/dev/null; then
+            rm -rf "$START_LOCK"
+            continue
+        fi
+        attempts=$((attempts + 1))
+        [ "$attempts" -lt "$max" ] || die "Timed out waiting for Codex app-server start lock: $START_LOCK"
+        sleep 0.2
+    done
+    printf '%s\n' "$$" > "$START_LOCK/pid"
+}
+
+release_server_start_lock()
+{
+    local lock_pid
+    lock_pid="$(sed -n '1p' "$START_LOCK/pid" 2>/dev/null || true)"
+    [ -z "$lock_pid" ] || [ "$lock_pid" = "$$" ] || return 0
+    rm -rf "$START_LOCK"
 }
 
 acquire_stage_lock()
@@ -430,8 +487,8 @@ stage_runtime()
 
 wait_for_socket()
 {
-    local pid="${1:-}" i=0 max
-    max=$((READY_TIMEOUT * 5))
+    local pid="${1:-}" seconds="${2:-$READY_TIMEOUT}" i=0 max
+    max=$((seconds * 5))
     while [ "$i" -lt "$max" ]; do
         if socket_ready; then
             printf '%s\n' "$(date '+%F %T')" > "$CONTROL_DIR/envpilot-app-server.ready"
@@ -446,11 +503,9 @@ wait_for_socket()
     return 1
 }
 
-start_server()
+start_server_locked()
 {
-    local pid existing_state=0
-    ensure_control_dir
-    stage_runtime 0
+    local pid existing_state=0 existing_pid log_start_lines=0 attempt_output=""
 
     if socket_ready; then
         log "Codex app-server is already ready: $SOCKET"
@@ -463,6 +518,20 @@ start_server()
             return 0
         fi
         rm -f "$PID_FILE"
+    fi
+
+    existing_pid="$(find_existing_server_pid 2>/dev/null || true)"
+    if [ -n "$existing_pid" ]; then
+        log "Waiting for existing Codex app-server PID $existing_pid to publish its control socket."
+        if wait_for_socket "$existing_pid"; then
+            log "Reusing existing Codex app-server PID $existing_pid on $SOCKET"
+            return 0
+        fi
+        if pid_is_server "$existing_pid"; then
+            warn "Existing Codex app-server PID $existing_pid is still running but did not make the control socket ready within ${READY_TIMEOUT}s."
+            warn "envpilot will not kill an app-server it did not start. Close the owning Desktop connection or stop that PID safely, then run: bash envpilot.sh codex remote repair"
+            return 1
+        fi
     fi
 
     if [ -S "$SOCKET" ]; then
@@ -482,6 +551,7 @@ start_server()
     rm -f "$CONTROL_DIR/envpilot-app-server.ready"
     log "Starting Codex app-server; cold start may take several seconds."
     load_codex_environment || true
+    [ -f "$SERVER_LOG" ] && log_start_lines="$(wc -l < "$SERVER_LOG" 2>/dev/null || printf '0')"
     nohup env CODEX_HOME="$CODEX_HOME_DIR" "$(local_bin)" \
         -c features.code_mode_host=true app-server --listen unix:// \
         >>"$SERVER_LOG" 2>&1 < /dev/null &
@@ -492,11 +562,43 @@ start_server()
         return 0
     fi
     rm -f "$PID_FILE"
-    warn "Codex app-server did not become ready within ${READY_TIMEOUT}s."
     if [ -f "$SERVER_LOG" ]; then
-        tail -n 30 "$SERVER_LOG" >&2 || true
+        attempt_output="$(tail -n "+$((log_start_lines + 1))" "$SERVER_LOG" 2>/dev/null || true)"
     fi
+    if printf '%s\n' "$attempt_output" | grep -q 'control socket is already in use'; then
+        log "Another Codex app-server won the control-socket startup race; checking it before reporting failure."
+        if wait_for_socket "" 5; then
+            log "Reusing the concurrent Codex app-server on $SOCKET"
+            return 0
+        fi
+    fi
+    warn "Codex app-server did not become ready within ${READY_TIMEOUT}s."
+    if printf '%s\n' "$attempt_output" | grep -q 'could not find bubblewrap on PATH'; then
+        warn "System bubblewrap is missing. Codex reports that it will try its bundled helper; this warning is separate from a control-socket conflict."
+    fi
+    if [ -n "$attempt_output" ]; then
+        printf '%s\n' "$attempt_output" | tail -n 30 >&2 || true
+    fi
+    warn "Diagnostics: bash envpilot.sh codex remote status"
+    warn "Processes: ps -o pid,ppid,stat,etime,args -u \"\$USER\" | grep -E '[c]odex|[a]pp-server'"
+    warn "Socket: grep -F '$SOCKET' /proc/net/unix 2>/dev/null || ss -xlpn | grep -F '$SOCKET'"
+    warn "Log: tail -100 '$SERVER_LOG'"
     return 1
+}
+
+start_server()
+{
+    local status=0
+    ensure_control_dir
+    stage_runtime 0
+    acquire_server_start_lock
+    if start_server_locked; then
+        status=0
+    else
+        status=$?
+    fi
+    release_server_start_lock
+    return "$status"
 }
 
 stop_server()
@@ -541,7 +643,7 @@ clean_runtime()
 
 status_report()
 {
-    local source="" version="" pid="" wrapper="$HOME/.local/bin/codex"
+    local source="" version="" pid="" existing_pid="" wrapper="$HOME/.local/bin/codex"
     source="$(source_bin 2>/dev/null || true)"
     printf 'Persistent source:\n'
     if [ -n "$source" ]; then printf '  %s\n' "$source"; else printf '  not found\n'; fi
@@ -563,7 +665,16 @@ status_report()
         printf '  socket: NOT READY (%s)\n' "$SOCKET"
     fi
     pid="$(read_server_pid 2>/dev/null || true)"
-    if [ -n "$pid" ]; then printf 'App-server:\n  managed PID %s\n' "$pid"; else printf 'App-server:\n  not managed by envpilot\n'; fi
+    if [ -n "$pid" ]; then
+        printf 'App-server:\n  managed PID %s\n' "$pid"
+    else
+        existing_pid="$(find_existing_server_pid 2>/dev/null || true)"
+        if [ -n "$existing_pid" ]; then
+            printf 'App-server:\n  existing non-envpilot PID %s\n' "$existing_pid"
+        else
+            printf 'App-server:\n  not running or not detectable\n'
+        fi
+    fi
     printf 'Protected environment injection:\n'
     if [ "$LOAD_SECRETS" != "1" ]; then
         printf '  disabled by ENVPILOT_CODEX_LOAD_SECRETS=%s\n' "$LOAD_SECRETS"

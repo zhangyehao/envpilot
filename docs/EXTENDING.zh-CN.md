@@ -109,6 +109,8 @@ Unix shell 模板必须把一段安静、尽力而为的准备逻辑放在非交
 
 进程模型是“用户 + 节点”级别：同一用户在同一主机上的多个 SSH 窗口共享一个 envpilot Mihomo 运行实例，启动锁必须放在运行目录外。代理环境变量则是当前 shell 级别，所以 `proxy_on` 和 `proxy_off` 只影响当前窗口。不要把完整的 `~/.codex` 或 SQLite/会话状态迁移到 `/tmp`，这里只放临时文件、Mihomo 节点本地运行副本和启动锁。
 
+Codex app-server 也必须使用持久启动锁串行化 Desktop SSH、不同终端和 envpilot 的并发启动。检测到非 envpilot app-server 时只能等待和复用，不能自动 kill；只有 PID 文件明确记录的 envpilot 进程可以由 stop/repair 停止。socket 冲突后必须二次检查监听状态，并在失败时输出 status、用户进程、`/proc/net/unix`/`ss` 和日志路径。Codex 版本探测必须提取 `codex-cli VERSION` 行，不能把 stderr 警告当版本。
+
 不是所有远程启动器都会读取 `.bashrc`。测试和文档要分别覆盖 `bash -lc`、`BASH_ENV` 以及 supervisor/app-server 的直接启动；当 Mihomo 缺失、没有配置或健康检查失败时，非交互 profile 仍必须安静返回。
 
 ## 组件升级契约

@@ -298,6 +298,7 @@ tmp_home="$(mktemp -d)"
 tmp_bin="$(mktemp -d)"
 cat > "$tmp_bin/codex" <<'EOF'
 #!/usr/bin/env bash
+printf 'WARNING: failed to clean up stale arg0 temp dirs: Directory not empty (os error 39)\n' >&2
 printf 'codex-cli 0.147.0\n'
 EOF
 chmod +x "$tmp_bin/codex"
@@ -326,9 +327,12 @@ codex_existing_output="$tmp_home/codex-existing.out"
     }
     ep_codex_configure_auth() { :; }
     ep_install_codex
+    printf 'probe-version=%s\n' "$EP_CODEX_VERSION"
     ep_report_finish
 ) >"$codex_existing_output" 2>&1
 grep -q 'Node.js and npm are not required for configuration' "$codex_existing_output"
+grep -q '^probe-version=codex-cli 0.147.0$' "$codex_existing_output"
+! grep -q '^probe-version=WARNING:' "$codex_existing_output"
 ! grep -q 'unexpected Node.js setup' "$codex_existing_output"
 grep -q '^codex=done:' "$tmp_home/.config/envpilot/state"
 rm -rf "$tmp_home" "$tmp_bin"
@@ -486,6 +490,124 @@ case "$(uname -s)" in
         ;;
 esac
 rm -rf "$tmp_remote_home" "$tmp_remote_runtime"
+
+case "$(uname -s)" in
+    Linux)
+        echo "[TEST] Codex remote reuses a concurrently started app-server"
+        tmp_remote_home="$(mktemp -d)"
+        tmp_remote_source="$tmp_remote_home/.codex/packages/standalone/releases/0.147.0/bin"
+        tmp_remote_runtime="/tmp/envpilot-codex-race-test-$$"
+        mkdir -p "$tmp_remote_source" "$tmp_remote_home/.codex/app-server-control"
+        cat > "$tmp_remote_source/codex" <<'EOF'
+#!/usr/bin/env bash
+if [ "${1:-}" = "--version" ]; then
+    printf 'codex-cli 0.147.0\n'
+    exit 0
+fi
+socket="${CODEX_HOME:?}/app-server-control/app-server-control.sock"
+python="$(command -v python3 || command -v python)"
+exec -a codex "$python" - "$socket" app-server --listen unix:// <<'PY'
+import os
+import socket
+import sys
+import time
+
+path = sys.argv[1]
+try:
+    os.unlink(path)
+except FileNotFoundError:
+    pass
+server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+server.bind(path)
+server.listen(1)
+time.sleep(30)
+PY
+EOF
+        chmod 700 "$tmp_remote_source/codex"
+        (
+            HOME="$tmp_remote_home"
+            CODEX_HOME="$tmp_remote_home/.codex"
+            ENVPILOT_CODEX_SOURCE_BIN="$tmp_remote_source"
+            ENVPILOT_CODEX_RUNTIME_DIR="$tmp_remote_runtime"
+            ENVPILOT_CODEX_REMOTE_READY_TIMEOUT=5
+            bash "$ROOT/templates/codex-remote.sh" stage
+            CODEX_HOME="$CODEX_HOME" "$tmp_remote_runtime/current/bin/codex" app-server --listen unix:// >/dev/null 2>&1 &
+            competing_pid=$!
+            trap 'kill -TERM "$competing_pid" 2>/dev/null || true; wait "$competing_pid" 2>/dev/null || true' EXIT
+            output="$(bash "$ROOT/templates/codex-remote.sh" ready 2>&1)"
+            printf '%s\n' "$output" | grep -q 'Reusing existing Codex app-server PID'
+            status="$(bash "$ROOT/templates/codex-remote.sh" status)"
+            printf '%s\n' "$status" | grep -q "existing non-envpilot PID $competing_pid"
+            kill -TERM "$competing_pid" 2>/dev/null || true
+            wait "$competing_pid" 2>/dev/null || true
+            trap - EXIT
+        )
+        rm -rf "$tmp_remote_home" "$tmp_remote_runtime"
+        ;;
+    MINGW*|MSYS*|CYGWIN*)
+        echo "[TEST] Codex remote concurrent app-server fixture via Linux-compatible fakes"
+        tmp_remote_home="$(mktemp -d)"
+        tmp_remote_source="$tmp_remote_home/.codex/packages/standalone/releases/0.147.0/bin"
+        tmp_remote_runtime="/tmp/envpilot-codex-race-test-$$"
+        tmp_remote_bin="$(mktemp -d)"
+        tmp_remote_manager="$tmp_remote_home/codex-remote.fixture.sh"
+        mkdir -p "$tmp_remote_source" "$tmp_remote_home/.codex/app-server-control"
+        sed 's/\[ -S "$SOCKET" \]/[ -e "$SOCKET" ]/g' \
+            "$ROOT/templates/codex-remote.sh" > "$tmp_remote_manager"
+        cat > "$tmp_remote_source/codex" <<'EOF'
+#!/usr/bin/env bash
+[ "${1:-}" = "--version" ] && { printf 'codex-cli 0.147.0\n'; exit 0; }
+sleep 30
+EOF
+        cat > "$tmp_remote_bin/ss" <<'EOF'
+#!/usr/bin/env bash
+[ -e "${ENVPILOT_TEST_SOCKET_MARKER:?}" ] && printf 'u_str LISTEN 0 128 %s 12345 * 0 users:(("codex",pid=12345,fd=9))\n' "${ENVPILOT_TEST_SOCKET:?}"
+EOF
+        cat > "$tmp_remote_bin/pgrep" <<'EOF'
+#!/usr/bin/env bash
+cat "${ENVPILOT_TEST_SERVER_PID_FILE:?}" 2>/dev/null || true
+EOF
+        cat > "$tmp_remote_bin/ps" <<'EOF'
+#!/usr/bin/env bash
+case " $* " in
+    *' args= '*) printf 'codex app-server --listen unix://\n' ;;
+    *' pid= '*) cat "${ENVPILOT_TEST_SERVER_PID_FILE:?}" 2>/dev/null || true ;;
+    *) exec /usr/bin/ps "$@" ;;
+esac
+EOF
+        chmod 700 "$tmp_remote_source/codex" "$tmp_remote_bin/ss" "$tmp_remote_bin/pgrep" "$tmp_remote_bin/ps"
+        (
+            HOME="$tmp_remote_home"
+            CODEX_HOME="$tmp_remote_home/.codex"
+            ENVPILOT_CODEX_SOURCE_BIN="$tmp_remote_source"
+            ENVPILOT_CODEX_RUNTIME_DIR="$tmp_remote_runtime"
+            ENVPILOT_CODEX_REMOTE_READY_TIMEOUT=5
+            ENVPILOT_TEST_SOCKET="$CODEX_HOME/app-server-control/app-server-control.sock"
+            ENVPILOT_TEST_SOCKET_MARKER="$tmp_remote_home/socket-ready"
+            ENVPILOT_TEST_SERVER_PID_FILE="$tmp_remote_home/server.pid"
+            PATH="$tmp_remote_bin:$PATH"
+            export HOME CODEX_HOME ENVPILOT_CODEX_SOURCE_BIN ENVPILOT_CODEX_RUNTIME_DIR
+            export ENVPILOT_CODEX_REMOTE_READY_TIMEOUT ENVPILOT_TEST_SOCKET
+            export ENVPILOT_TEST_SOCKET_MARKER ENVPILOT_TEST_SERVER_PID_FILE PATH
+            bash "$tmp_remote_manager" stage
+            sleep 30 &
+            competing_pid=$!
+            printf '%s\n' "$competing_pid" > "$ENVPILOT_TEST_SERVER_PID_FILE"
+            : > "$ENVPILOT_TEST_SOCKET"
+            : > "$ENVPILOT_TEST_SOCKET_MARKER"
+            trap 'kill -TERM "$competing_pid" 2>/dev/null || true; wait "$competing_pid" 2>/dev/null || true' EXIT
+            output="$(bash "$tmp_remote_manager" ready 2>&1)"
+            if ! printf '%s\n' "$output" | grep -Eq 'Codex app-server is already ready|Reusing existing Codex app-server PID'; then
+                printf 'Unexpected concurrent app-server result:\n%s\n' "$output" >&2
+                exit 1
+            fi
+            kill -TERM "$competing_pid" 2>/dev/null || true
+            wait "$competing_pid" 2>/dev/null || true
+            trap - EXIT
+        )
+        rm -rf "$tmp_remote_home" "$tmp_remote_runtime" "$tmp_remote_bin"
+        ;;
+esac
 
 echo "[TEST] Codex probe is bounded on a slow shared-filesystem executable"
 tmp_slow_home="$(mktemp -d)"

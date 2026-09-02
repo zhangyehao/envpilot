@@ -232,6 +232,8 @@ codex_ready
 
 持久配置、auth、sessions 和 app-server control 留在 ~/.codex，只把可重建 runtime 放到节点本地 /tmp。旧 glibc 的 Node.js 兼容策略、api.env、auth.json 保留规则见 [docs/CODEX.zh-CN.md](docs/CODEX.zh-CN.md)。
 
+Remote app-server 启动使用持久锁，并复用 Desktop SSH 或其他终端已启动的同用户实例；envpilot 不会自动杀死未知 app-server。`bubblewrap` 缺失属于 Linux 沙箱依赖警告，和 `app-server-control.sock` 被占用是两个独立问题。冲突诊断命令见 Codex 详细文档。
+
 ## GitHub CLI
 
 ~~~bash

@@ -54,7 +54,8 @@ For an existing installation, prefer `git pull --ff-only`, `doctor`, `apply-shel
 - `OPENAI_API_KEY` is the real variable. Preserve existing `~/.codex/auth.json`; create a missing auth file only from a detected environment key, protected `api.env`, or explicit user input.
 - On glibc 2.17 through 2.27, use the compatible Node.js 22 glibc-217 fallback. Never replace system glibc.
 - On slow shared storage, keep Codex config, auth, sessions, and app-server control in `~/.codex`; stage only reconstructible runtime files under node-local `/tmp`.
-- Verify Codex Desktop SSH paths with `codex remote status` or `ready`; do not kill unknown app-server processes.
+- Verify Codex Desktop SSH paths with `codex remote status` or `ready`; serialize app-server starts with the persistent control-directory lock, reuse existing Desktop app-servers, and never kill unknown app-server processes.
+- Parse the `codex-cli VERSION` line from mixed probe output. Treat missing `bubblewrap` as a sandbox prerequisite warning distinct from socket ownership; do not install or replace system sandbox components without administrator policy.
 
 ## Shell profile rules
 

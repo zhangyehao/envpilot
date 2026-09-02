@@ -122,6 +122,8 @@ The Unix shell templates intentionally place a quiet, best-effort preparation bl
 
 The process model is node-scoped: one envpilot-managed Mihomo runtime is shared by the same user on the same host, guarded by a lock outside the runtime directory. Proxy variables are shell-scoped, so `proxy_on` and `proxy_off` affect only the current shell. Do not move the complete `~/.codex` directory or its SQLite/session state to `/tmp`; only transient files, the Mihomo runtime copy, and startup locks belong there.
 
+Codex app-server startup must also use a persistent lock to serialize Desktop SSH, other terminals, and envpilot. A detected non-envpilot app-server may only be awaited and reused, never killed automatically; stop/repair may terminate only the PID recorded by envpilot. After a socket-conflict exit, re-check listener readiness before failing and print focused status, process, Unix-socket, and log diagnostics. Codex version probes must select the `codex-cli VERSION` line instead of treating stderr warnings as the version.
+
 Not every remote launcher reads `.bashrc`. Tests and documentation must cover `bash -lc`, `BASH_ENV`, and direct supervisor/app-server invocation separately. A non-interactive profile must remain safe when Mihomo is absent, has no config, or fails health checks.
 
 ## Component update contract

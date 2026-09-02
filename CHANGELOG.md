@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.27 - 2026-09-02
+
+### Fixed
+
+- Extracted the real `codex-cli VERSION` line from mixed stdout/stderr so cleanup warnings can no longer replace the Codex version reported by `doctor` or install status.
+- Serialized Codex app-server startup with a persistent control-directory lock and reused an existing same-user Desktop/SSH app-server instead of racing it for `app-server-control.sock`.
+- Added Linux `/proc/net/unix` listener detection, stricter app-server PID matching, post-conflict socket rechecks, and current-attempt-only log inspection.
+- Made `codex remote enable` report its partial wrapper/runtime state when app-server readiness fails instead of claiming the remote runtime is ready.
+
+### Changed
+
+- Added focused process, Unix-socket, status, and log diagnostics when Codex remote startup fails without automatically killing a non-envpilot app-server.
+- Reports Linux `bubblewrap` availability in `doctor` and distinguishes the official bundled-helper fallback warning from a control-socket conflict.
+
 ## 0.2.26 - 2026-09-02
 
 ### Fixed

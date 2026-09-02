@@ -133,17 +133,18 @@ ep_codex_run_bounded()
 
 ep_codex_probe()
 {
-    local output status
+    local output status version
     EP_CODEX_BIN="$(ep_codex_command 2>/dev/null || true)"
     EP_CODEX_VERSION=""
     EP_CODEX_PROBE_ERROR=""
     [ -n "$EP_CODEX_BIN" ] || return 1
     if output="$(ep_codex_run_bounded "$EP_CODEX_PROBE_TIMEOUT" "$EP_CODEX_BIN" --version 2>&1)"; then
-        EP_CODEX_VERSION="$(printf '%s\n' "$output" | sed -n '1p')"
-        [ -n "$EP_CODEX_VERSION" ] || {
-            EP_CODEX_PROBE_ERROR="empty version output"
+        version="$(printf '%s\n' "$output" | sed -n '/^codex-cli[[:space:]]/{p;q;}')"
+        [ -n "$version" ] || {
+            EP_CODEX_PROBE_ERROR="${output:-empty version output}"
             return 1
         }
+        EP_CODEX_VERSION="$version"
         return 0
     else
         status=$?
@@ -182,6 +183,13 @@ ep_doctor_codex()
         ep_warn "Codex found at $EP_CODEX_BIN but could not execute: $(printf '%s\n' "$EP_CODEX_PROBE_ERROR" | sed -n '1p')"
     else
         ep_warn "Codex: not found"
+    fi
+    if [ "${EP_OS:-}" = "linux" ]; then
+        if ep_command_exists bwrap; then
+            ep_log "Codex sandbox helper: found at $(command -v bwrap)"
+        else
+            ep_warn "Codex sandbox helper: bubblewrap not found on PATH; Codex may fall back to its bundled helper, but the system package is recommended when the cluster permits it."
+        fi
     fi
     if [ -f "$HOME/.codex/config.toml" ]; then
         ep_log "Codex config: $HOME/.codex/config.toml"
@@ -747,8 +755,14 @@ ep_codex_remote_enable()
     chmod 700 "$wrapper.tmp.$$"
     mv "$wrapper.tmp.$$" "$wrapper"
     ep_log "Enabled Codex wrapper: $wrapper"
-    ep_codex_remote_invoke ready
-    ep_log "Codex remote runtime is ready for Desktop."
+    if ep_codex_remote_invoke ready; then
+        ep_log "Codex remote runtime is ready for Desktop."
+    else
+        ep_warn "Codex wrapper and node-local runtime were enabled, but app-server is not ready."
+        ep_warn "Inspect with: bash envpilot.sh codex remote status"
+        ep_warn "After resolving the reported process/socket conflict, run: bash envpilot.sh codex remote repair"
+        return 1
+    fi
 }
 
 ep_codex_remote_disable()

@@ -69,3 +69,17 @@ codex_ready
 持久目录保持在 ~/.codex，包括 config、auth、sessions 和 app-server control；只把可重建的完整 bin/ runtime 暂存到 /tmp/\${USER}-envpilot-codex-\${HOSTNAME}。不要把 ~/.codex/app-server-control 软链接到 /tmp。
 
 wrapper 和 remote manager 会在启动 CLI/app-server 前加载受保护的 api.env。当前进程显式设置的同名变量优先于文件内容。可用 ENVPILOT_CODEX_LOAD_SECRETS=0 关闭 Codex 进程级注入。
+
+`remote enable/ready` 会使用持久启动锁，等待并复用同一用户已经由 Desktop SSH 或其他终端启动的 app-server，避免两个启动器同时争用 `app-server-control.sock`。envpilot 只会停止自己 PID 文件记录的 app-server，不会自动杀死未知的 Desktop app-server。如果已有非 envpilot 进程持续运行但 socket 仍未就绪，先关闭对应 Desktop 远程连接或确认并安全停止该进程，再执行 `bash envpilot.sh codex remote repair`。
+
+失败时按提示提供以下只读信息即可诊断：
+
+~~~bash
+bash envpilot.sh codex remote status
+ps -o pid,ppid,stat,etime,args -u "$USER" | grep -E '[c]odex|[a]pp-server'
+grep -F "$HOME/.codex/app-server-control/app-server-control.sock" /proc/net/unix 2>/dev/null || \
+    ss -xlpn | grep -F "$HOME/.codex/app-server-control/app-server-control.sock"
+tail -100 "$HOME/.codex/app-server-control/app-server.log"
+~~~
+
+Linux 上 Codex 官方推荐安装 `bubblewrap`。如果 PATH 中没有 `bwrap`，Codex 会提示并尝试内置 helper；这条警告本身不等于 socket 冲突。HPC 无管理员权限时不要自行替换系统组件，可把缺少 `bwrap` 和 user namespace 限制交给集群管理员确认。
