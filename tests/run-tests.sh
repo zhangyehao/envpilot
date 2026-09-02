@@ -530,7 +530,10 @@ EOF
             ENVPILOT_CODEX_SOURCE_BIN="$tmp_remote_source"
             ENVPILOT_CODEX_RUNTIME_DIR="$tmp_remote_runtime"
             ENVPILOT_CODEX_REMOTE_READY_TIMEOUT=5
+            export HOME CODEX_HOME ENVPILOT_CODEX_SOURCE_BIN ENVPILOT_CODEX_RUNTIME_DIR
+            export ENVPILOT_CODEX_REMOTE_READY_TIMEOUT
             bash "$ROOT/templates/codex-remote.sh" stage
+            test -x "$tmp_remote_runtime/current/bin/codex"
             CODEX_HOME="$CODEX_HOME" "$tmp_remote_runtime/current/bin/codex" app-server --listen unix:// >/dev/null 2>&1 &
             competing_pid=$!
             trap 'kill -TERM "$competing_pid" 2>/dev/null || true; wait "$competing_pid" 2>/dev/null || true' EXIT

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.29 - 2026-09-02
+
+### Fixed
+
+- Exported the Linux concurrent app-server fixture's isolated runtime variables before invoking the remote manager, so the staged binary and competing process use the same directory on GitHub Actions.
+- Added an explicit staged-binary assertion to prevent future fixture path mismatches from being reported as app-server behavior failures.
+
 ## 0.2.28 - 2026-09-02
 
 ### Fixed
