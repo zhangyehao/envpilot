@@ -20,6 +20,8 @@ git clone https://github.com/zhangyehao/envpilot.git
 # 国内网络可改用：
 # git clone https://gitee.com/zhangyehao0422/envpilot.git
 cd envpilot
+# 仅在更新版本的时候使用
+git pull --ff-only
 
 bash envpilot.sh doctor
 export MIHOMO_PROXY_PORT=42290
