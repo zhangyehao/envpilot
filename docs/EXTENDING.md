@@ -9,7 +9,7 @@ This document is for maintainers who add components, update manifests, or change
 - Explain what will be installed, why that version was chosen, where it will be written, and whether config files will change.
 - Never write secrets, subscription URLs, or generated credentials into tracked profile files.
 - Keep non-interactive shells quiet.
-- Do not auto-start sensitive services in interactive shells unless the user explicitly opts in; a documented non-interactive readiness hook may be best-effort and quiet when it is required for remote automation.
+- Any default service startup must be documented, opt-out, bounded where it waits, and conditional on the managed executable and valid configuration; non-interactive readiness hooks must remain quiet and best-effort.
 
 ## Component contract
 
@@ -106,12 +106,13 @@ If a component writes a user config, back it up before writing. If a component w
 Shell templates must:
 
 - stay quiet in non-interactive shells
-- avoid auto-starting mihomo in interactive shells by default; any non-interactive pre-start must be opt-out, bounded, quiet, and conditional on a valid config
-- avoid auto-loading secrets by default
+- enable Conda integration, module loading, managed Mihomo startup, ready-proxy export, protected environment loading, and history synchronization by default, with an effective `shell.local` opt-out for each feature
+- make default module loading a no-op without `modules.list`, and default Mihomo startup a no-op without both the managed script and a valid config
+- keep any non-interactive Mihomo pre-start opt-out, bounded, quiet, and conditional on a valid config
 - avoid auto-activating Conda base by default
 - load user-specific additions from `~/.config/envpilot/shell.local`
 
-If a profile migration is needed, prefer writing a new template or helper file instead of growing the main profile into a branchy script.
+`apply-shell` migration must preserve existing `shell.local` and `api.env` content, never overwrite an existing variable, never source the old profile, and never print protected values. Only strict single-line exports and simple module-load statements may be merged; command substitution, control operators, redirection, functions, loops, and conditions must be rejected. If the active profile is already managed, migrate only from the newest unmanaged backup.
 
 Proxy helpers must check that the configured port is listening before exporting variables, default to HTTP/HTTPS only, make SOCKS opt-in, append to existing `no_proxy`, and leave `no_proxy` intact when disabling proxy variables.
 

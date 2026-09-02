@@ -36,6 +36,21 @@ proxy_on
 bash envpilot.sh install
 ~~~
 
+`apply-shell` 会先备份原 profile，再把旧 profile 中可安全识别的普通 `export`、PATH 和简单 `module load` 增量合并到 `~/.config/envpilot/shell.local`，把 API key、token、secret、password、auth 等受保护变量合并到 `~/.config/secrets/api.env`。已有同名值优先保留；迁移只解析单行赋值，不执行旧 profile 中的函数、命令替换或网络命令。
+
+受管 Bash/zsh 默认开启以下功能。需要关闭时，把对应值写入 `~/.config/envpilot/shell.local` 后执行 `source ~/.bashrc` 或重新登录：
+
+~~~bash
+BASHRC_INIT_CONDA=0
+BASHRC_AUTO_LOAD_MODULES=0
+BASHRC_AUTO_START_MIHOMO=0
+BASHRC_AUTO_ENABLE_PROXY=0
+BASHRC_AUTO_LOAD_SECRETS=0
+BASHRC_ENABLE_HISTORY_SYNC=0
+~~~
+
+Conda 只在交互式真实 TTY 初始化且不会自动进入 base；module 只有存在 `~/.config/envpilot/modules.list` 时才加载；Mihomo 只有安装脚本和有效配置均存在时才自动启动；代理只有端口真实监听时才导出。`api.env` 是多个软件共用的受保护环境文件，不是 Mihomo 专属。
+
 也可以使用按架构稀疏下载的入口：
 
 bootstrap 使用 partial clone 和 sparse-checkout，只拉取当前架构需要的 Mihomo 缓存，随后再获取仓库其余必要文件。
@@ -242,7 +257,7 @@ tmux -V
 | doctor | 只检查并记录最近一次 restore baseline。 |
 | install COMPONENT | 首次安装组件；默认在线，Mihomo 优先使用本地匹配缓存。 |
 | update COMPONENT | 忽略已完成状态，重新检查兼容 stable 版本。 |
-| apply-shell | 备份并替换 Bash/zsh 或 PowerShell profile。 |
+| apply-shell | 备份并替换 Bash/zsh 或 PowerShell profile；Unix 会增量迁移安全变量和受保护变量。 |
 | restore | 恢复最近一次 doctor baseline，包括受管文件和用户态目录。 |
 | rollback | 恢复最近一次 envpilot 单文件备份。 |
 | resume | 继续中断的 install all。 |
@@ -279,8 +294,8 @@ bash envpilot.sh restore
 | 文件 | 用途 |
 | --- | --- |
 | ~/.bashrc 或 ~/.zshrc | envpilot 受管入口、函数、路径和静默准备逻辑。 |
-| ~/.config/envpilot/shell.local | 用户覆盖项、PATH 和安全的 module 设置。 |
-| ~/.config/secrets/api.env | 需要被多个软件继承的环境变量和 API key，权限 600/400。 |
+| ~/.config/envpilot/shell.local | 用户覆盖项、普通环境变量、PATH 和安全的 module 设置。 |
+| ~/.config/secrets/api.env | 多个软件共用的受保护环境变量和 API key，权限 600/400。 |
 | ~/.condarc | 由 templates/condarc 统一生成的 Conda 配置。 |
 | ~/.config/mihomo/ | Mihomo 持久配置和 geodata。 |
 | ~/.codex/ | Codex 配置、auth、sessions 和持久控制目录。 |

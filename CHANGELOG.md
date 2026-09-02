@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.23 - 2026-09-02
+
+### Fixed
+
+- Made `apply-shell` incrementally merge safe exports, PATH values, and simple module settings even when `shell.local` already exists, while preserving existing values and remaining idempotent.
+- Migrated missing API-key, token, secret, password, and auth exports into the protected multi-application `api.env` without printing values or executing the previous profile.
+- When the active profile is already envpilot-managed, migration now reads the newest unmanaged backup instead of parsing the managed template.
+
+### Changed
+
+- Enabled Conda integration, module loading, managed Mihomo startup, ready-proxy export, protected environment loading, and history synchronization by default in Bash and zsh, with `shell.local` opt-outs.
+- Kept the new defaults quiet when module configuration, Mihomo scripts, or a valid Mihomo config are absent, and documented all shell controls in the quick start.
+
 ## 0.2.22 - 2026-09-01
 
 ### Fixed

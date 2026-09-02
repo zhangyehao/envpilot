@@ -39,7 +39,11 @@ export ENVPILOT_CONFIG_DIR="${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}"
 export BASHRC_SECRETS_FILE="${BASHRC_SECRETS_FILE:-$HOME/.config/secrets/api.env}"
 export BASHRC_INIT_CONDA="${BASHRC_INIT_CONDA:-1}"
 export BASHRC_CONDA_PRIMARY_PREFIX="${BASHRC_CONDA_PRIMARY_PREFIX:-}"
+export BASHRC_AUTO_LOAD_MODULES="${BASHRC_AUTO_LOAD_MODULES:-1}"
+export BASHRC_AUTO_START_MIHOMO="${BASHRC_AUTO_START_MIHOMO:-1}"
+export BASHRC_AUTO_ENABLE_PROXY="${BASHRC_AUTO_ENABLE_PROXY:-1}"
 export BASHRC_AUTO_LOAD_SECRETS="${BASHRC_AUTO_LOAD_SECRETS:-1}"
+export BASHRC_ENABLE_HISTORY_SYNC="${BASHRC_ENABLE_HISTORY_SYNC:-1}"
 export MIHOMO_PROXY_HOST="${MIHOMO_PROXY_HOST:-${BASHRC_PROXY_HOST:-127.0.0.1}}"
 export MIHOMO_PROXY_PORT="${MIHOMO_PROXY_PORT:-${BASHRC_PROXY_PORT:-42290}}"
 export MIHOMO_API_PORT="${MIHOMO_API_PORT:-60290}"
@@ -158,6 +162,14 @@ envpilot_load_noninteractive_settings()
     [ -n "$value" ] && BASHRC_CONDA_PRIMARY_PREFIX="$value"
     value="$(envpilot_shell_local_value BASHRC_AUTO_LOAD_SECRETS || true)"
     [ -n "$value" ] && BASHRC_AUTO_LOAD_SECRETS="$value"
+    value="$(envpilot_shell_local_value BASHRC_AUTO_LOAD_MODULES || true)"
+    [ -n "$value" ] && BASHRC_AUTO_LOAD_MODULES="$value"
+    value="$(envpilot_shell_local_value BASHRC_AUTO_START_MIHOMO || true)"
+    [ -n "$value" ] && BASHRC_AUTO_START_MIHOMO="$value"
+    value="$(envpilot_shell_local_value BASHRC_AUTO_ENABLE_PROXY || true)"
+    [ -n "$value" ] && BASHRC_AUTO_ENABLE_PROXY="$value"
+    value="$(envpilot_shell_local_value BASHRC_ENABLE_HISTORY_SYNC || true)"
+    [ -n "$value" ] && BASHRC_ENABLE_HISTORY_SYNC="$value"
     if [ -z "$BASHRC_EXTERNAL_PROXY_PORT_SET" ]; then
         value="$(envpilot_shell_local_value MIHOMO_PROXY_PORT || true)"
         [ -n "$value" ] || value="$(envpilot_shell_local_value BASHRC_PROXY_PORT || true)"
@@ -370,6 +382,7 @@ envpilot_export_proxy_if_ready()
 
 envpilot_prepare_noninteractive_environment()
 {
+    [ "${BASHRC_AUTO_ENABLE_PROXY:-1}" = "1" ] || return 0
     if envpilot_prepare_noninteractive_proxy; then
         envpilot_export_proxy_if_ready
     fi
@@ -473,6 +486,41 @@ init_conda()
 
 if [ "$BASHRC_INIT_CONDA" = "1" ]; then
     init_conda
+fi
+
+init_environment_modules()
+{
+    type module >/dev/null 2>&1 && return 0
+    local candidate
+    for candidate in \
+        /etc/profile.d/modules.sh \
+        /usr/share/Modules/init/zsh \
+        /usr/share/lmod/lmod/init/zsh \
+        /opt/modules/init/zsh; do
+        if [ -r "$candidate" ]; then
+            . "$candidate"
+            break
+        fi
+    done
+}
+
+hpc_modules_load()
+{
+    [ -r "$HOME/.config/envpilot/modules.list" ] || return 0
+    init_environment_modules
+    type module >/dev/null 2>&1 || return 0
+    while IFS= read -r module_name; do
+        case "$module_name" in ''|'#'*) continue ;; esac
+        module load "$module_name" || return 1
+    done < "$HOME/.config/envpilot/modules.list"
+}
+
+if [ "$BASHRC_ENABLE_HISTORY_SYNC" = "1" ]; then
+    mkdir -p "$HOME/.local/state/zsh" 2>/dev/null || true
+    export HISTFILE="${HISTFILE:-$HOME/.local/state/zsh/history}"
+    export HISTSIZE="${HISTSIZE:-100000}"
+    export SAVEHIST="${SAVEHIST:-200000}"
+    setopt append_history share_history hist_ignore_all_dups hist_save_no_dups 2>/dev/null || true
 fi
 
 proxy_on()
@@ -658,6 +706,18 @@ unset BASHRC_EXTERNAL_PROXY_HOST_VALUE BASHRC_EXTERNAL_PROXY_PORT_VALUE
 unset BASHRC_EXTERNAL_API_PORT_VALUE BASHRC_EXTERNAL_SOCKS_VALUE
 unset BASHRC_EXTERNAL_PRESTART_VALUE BASHRC_EXTERNAL_TMP_VALUE
 unset BASHRC_EXTERNAL_TMP_ROOT_VALUE
+
+if [ "$BASHRC_AUTO_LOAD_MODULES" = "1" ]; then
+    hpc_modules_load
+fi
+if [ "$BASHRC_AUTO_START_MIHOMO" = "1" ] &&
+   [ -x "$BASHRC_MIHOMO_START_SCRIPT" ] &&
+   [ -s "$HOME/.config/mihomo/config.yaml" ]; then
+    mihomo_start
+fi
+if [ "$BASHRC_AUTO_ENABLE_PROXY" = "1" ] && proxy_port_is_listening; then
+    proxy_on
+fi
 
 alias ..='cd ..'
 alias ...='cd ../..'

@@ -21,6 +21,16 @@ BASHRC_PROFILE_ACTIVE 是 envpilot profile 的内部标记，不是用户需要�
 | ~/.config/envpilot/shell.local | 用户覆盖项和安全的 PATH/module 配置。交互 shell 完整加载；非交互 shell 只读取白名单设置。 |
 | ~/.config/secrets/api.env | 需要被多个软件和子进程继承的环境变量，包括 API key。权限必须是 600/400，且属于当前用户。 |
 
+`apply-shell` 不会因为 `shell.local` 或 `api.env` 已存在就跳过迁移。它会保留目标文件中的已有内容和同名变量，再从原 profile 增量补充缺失项：
+
+- 普通的单行 `export NAME=value` 和简单 `module load NAME` 进入 `shell.local`；
+- 名称含 `KEY`、`TOKEN`、`SECRET`、`PASSWORD`、`PASSWD` 或 `AUTH` 的变量进入 `api.env`；
+- 代理、Mihomo 和 envpilot 内部变量不从旧 profile 迁移；
+- 命令替换、管道、重定向、复合语句、函数、循环和条件均不迁移，也不会被执行；
+- 如果当前 profile 已由 envpilot 管理，只检查最近的非 envpilot 备份，避免把模板自身迁移进 `shell.local`。
+
+因此 `api.env` 不是 Mihomo 或 Codex 专属文件，它是多个应用共享的受保护变量入口。迁移日志只报告数量和路径，不显示值。
+
 api.env 只应包含安静的变量赋值，例如：
 
 ~~~bash
@@ -29,6 +39,23 @@ export NCBI_API_KEY="..."
 ~~~
 
 不要在 api.env 中写 module load、conda activate、网络请求、输出或交互逻辑。
+
+## 默认开关
+
+受管 Bash/zsh 默认把以下六个开关设为 1：
+
+~~~bash
+BASHRC_INIT_CONDA=1
+BASHRC_AUTO_LOAD_MODULES=1
+BASHRC_AUTO_START_MIHOMO=1
+BASHRC_AUTO_ENABLE_PROXY=1
+BASHRC_AUTO_LOAD_SECRETS=1
+BASHRC_ENABLE_HISTORY_SYNC=1
+~~~
+
+在 `~/.config/envpilot/shell.local` 将任一项设为 0 即可关闭。开关会在对应功能执行前读取，所以关闭 history、module、Mihomo、代理或 secrets 都能在本次 profile 加载中生效。
+
+默认开启不等于无条件执行：Conda 只初始化交互式真实 TTY 且不自动激活 base；没有 `modules.list` 时不探测 module；缺少 Mihomo 启动脚本或有效配置时不启动；代理端口未监听时不导出代理。
 
 ## 静默 shell 的内容
 

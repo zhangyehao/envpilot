@@ -37,9 +37,9 @@ BASHRC_EXTERNAL_TMP_ROOT_VALUE="${BASHRC_CODEX_TMP_ROOT:-}"
 
 BASHRC_UMASK="${BASHRC_UMASK:-027}"
 BASHRC_INIT_CONDA="${BASHRC_INIT_CONDA:-1}"
-BASHRC_AUTO_LOAD_MODULES="${BASHRC_AUTO_LOAD_MODULES:-0}"
-BASHRC_AUTO_START_MIHOMO="${BASHRC_AUTO_START_MIHOMO:-0}"
-BASHRC_AUTO_ENABLE_PROXY="${BASHRC_AUTO_ENABLE_PROXY:-0}"
+BASHRC_AUTO_LOAD_MODULES="${BASHRC_AUTO_LOAD_MODULES:-1}"
+BASHRC_AUTO_START_MIHOMO="${BASHRC_AUTO_START_MIHOMO:-1}"
+BASHRC_AUTO_ENABLE_PROXY="${BASHRC_AUTO_ENABLE_PROXY:-1}"
 BASHRC_AUTO_LOAD_SECRETS="${BASHRC_AUTO_LOAD_SECRETS:-1}"
 BASHRC_ENABLE_HISTORY_SYNC="${BASHRC_ENABLE_HISTORY_SYNC:-1}"
 
@@ -170,6 +170,14 @@ envpilot_load_noninteractive_settings()
     [ -n "$value" ] && BASHRC_CONDA_PRIMARY_PREFIX="$value"
     value="$(envpilot_shell_local_value BASHRC_AUTO_LOAD_SECRETS || true)"
     [ -n "$value" ] && BASHRC_AUTO_LOAD_SECRETS="$value"
+    value="$(envpilot_shell_local_value BASHRC_AUTO_LOAD_MODULES || true)"
+    [ -n "$value" ] && BASHRC_AUTO_LOAD_MODULES="$value"
+    value="$(envpilot_shell_local_value BASHRC_AUTO_START_MIHOMO || true)"
+    [ -n "$value" ] && BASHRC_AUTO_START_MIHOMO="$value"
+    value="$(envpilot_shell_local_value BASHRC_AUTO_ENABLE_PROXY || true)"
+    [ -n "$value" ] && BASHRC_AUTO_ENABLE_PROXY="$value"
+    value="$(envpilot_shell_local_value BASHRC_ENABLE_HISTORY_SYNC || true)"
+    [ -n "$value" ] && BASHRC_ENABLE_HISTORY_SYNC="$value"
     if [ -z "$BASHRC_EXTERNAL_PROXY_PORT_SET" ]; then
         value="$(envpilot_shell_local_value MIHOMO_PROXY_PORT || true)"
         [ -n "$value" ] || value="$(envpilot_shell_local_value BASHRC_PROXY_PORT || true)"
@@ -413,6 +421,7 @@ envpilot_export_proxy_if_ready()
 
 envpilot_prepare_noninteractive_environment()
 {
+    [ "${BASHRC_AUTO_ENABLE_PROXY:-1}" = "1" ] || return 0
     if envpilot_prepare_noninteractive_proxy; then
         envpilot_export_proxy_if_ready
     fi
@@ -483,17 +492,13 @@ init_environment_modules()
 
 hpc_modules_load()
 {
+    [ -r "$HOME/.config/envpilot/modules.list" ] || return 0
     init_environment_modules
-    if ! type module >/dev/null 2>&1; then
-        printf 'Environment Modules/Lmod not detected.\n' >&2
-        return 1
-    fi
-    if [ -r "$HOME/.config/envpilot/modules.list" ]; then
-        while IFS= read -r module_name; do
-            case "$module_name" in ''|'#'*) continue ;; esac
-            module load "$module_name" || return 1
-        done < "$HOME/.config/envpilot/modules.list"
-    fi
+    type module >/dev/null 2>&1 || return 0
+    while IFS= read -r module_name; do
+        case "$module_name" in ''|'#'*) continue ;; esac
+        module load "$module_name" || return 1
+    done < "$HOME/.config/envpilot/modules.list"
 }
 
 envpilot_conda_env_dir_add()
@@ -864,7 +869,9 @@ unset BASHRC_EXTERNAL_TMP_ROOT_VALUE
 if [ "$BASHRC_AUTO_LOAD_MODULES" = "1" ]; then
     hpc_modules_load
 fi
-if [ "$BASHRC_AUTO_START_MIHOMO" = "1" ]; then
+if [ "$BASHRC_AUTO_START_MIHOMO" = "1" ] &&
+   [ -x "$BASHRC_MIHOMO_START_SCRIPT" ] &&
+   [ -s "$HOME/.config/mihomo/config.yaml" ]; then
     mihomo_start
 fi
 if [ "$BASHRC_AUTO_ENABLE_PROXY" = "1" ] && proxy_port_is_listening; then

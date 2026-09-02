@@ -96,6 +96,15 @@ grep -q 'ep_shell_profile_is_managed' "$ROOT/lib/shell.sh"
 grep -q 'ep_shell_local_cleanup_managed_fragments' "$ROOT/lib/shell.sh"
 grep -q 'BASHRC_INIT_CONDA="${BASHRC_INIT_CONDA:-1}"' "$ROOT/templates/bashrc"
 grep -q 'BASHRC_INIT_CONDA="${BASHRC_INIT_CONDA:-1}"' "$ROOT/templates/zshrc"
+for setting in \
+    BASHRC_AUTO_LOAD_MODULES \
+    BASHRC_AUTO_START_MIHOMO \
+    BASHRC_AUTO_ENABLE_PROXY \
+    BASHRC_AUTO_LOAD_SECRETS \
+    BASHRC_ENABLE_HISTORY_SYNC; do
+    grep -q "$setting=\"\${$setting:-1}\"" "$ROOT/templates/bashrc"
+    grep -q "$setting=\"\${$setting:-1}\"" "$ROOT/templates/zshrc"
+done
 grep -q 'envpilot_conda_prefix' "$ROOT/templates/bashrc" "$ROOT/templates/zshrc"
 grep -q 'envpilot_conda_configure_env_dirs' "$ROOT/templates/bashrc" "$ROOT/templates/zshrc"
 grep -q 'BASHRC_CONDA_PRIMARY_PREFIX' "$ROOT/templates/bashrc" "$ROOT/templates/zshrc"
@@ -612,16 +621,26 @@ chmod +x \
 )
 rm -rf "$tmp_conda_resolver_home"
 
-echo "[TEST] shell.local migration keeps safe environment and excludes old proxy"
+echo "[TEST] profile migration separates safe settings and protected variables"
 tmp_home="$(mktemp -d)"
 mkdir -p "$tmp_home/.config/envpilot"
+cat > "$tmp_home/.config/envpilot/shell.local" <<'EOF'
+# envpilot shell.local
+MIHOMO_PROXY_PORT=42290
+MIHOMO_API_PORT=60290
+EOF
 cat > "$tmp_home/.bashrc" <<'EOF'
 export PATH="$HOME/bin:$PATH"
 export GOPATH="$HOME/software/go"
 export SINGULARITY_CACHEDIR="$HOME/singularity_cache"
 export http_proxy="http://127.0.0.1:7890"
-export OPENAI_API_KEY="should-not-migrate"
+export OPENAI_API_KEY="migrated-openai-key"
+export GITHUB_TOKEN="migrated-github-token"
+export BASHRC_AUTO_LOAD_SECRETS=0
 export MIHOMO_PROXY_PORT=7890
+export DANGEROUS_VALUE="$(touch should-never-run)"
+module load compiler/gcc/9.3.0
+curl https://example.invalid/install.sh | bash
 for conda_sh in \
     "$HOME/software/miniconda3/etc/profile.d/conda.sh" \
     "$HOME/software/anaconda3/etc/profile.d/conda.sh" \
@@ -640,6 +659,7 @@ EOF
     ep_migrate_shell_local "$tmp_home/.bashrc" >/dev/null
 )
 shell_local="$tmp_home/.config/envpilot/shell.local"
+secret_file="$tmp_home/.config/secrets/api.env"
 if grep -q 'conda\.sh' "$shell_local"; then
     echo "shell.local migration must not copy conda.sh fragments" >&2
     cat "$shell_local" >&2
@@ -648,8 +668,18 @@ fi
 grep -q 'export PATH=' "$shell_local"
 grep -q 'export GOPATH=' "$shell_local"
 grep -q 'export SINGULARITY_CACHEDIR=' "$shell_local"
+grep -q '^MIHOMO_PROXY_PORT=42290$' "$shell_local"
+grep -q '^MIHOMO_API_PORT=60290$' "$shell_local"
+grep -q '^export BASHRC_AUTO_LOAD_SECRETS=0$' "$shell_local"
+grep -q '^module load compiler/gcc/9.3.0$' "$shell_local"
 ! grep -qE '(^|[[:space:]])(http_proxy|OPENAI_API_KEY|MIHOMO_PROXY_PORT)=' "$shell_local"
-bash --noprofile --norc -c '. "'"$shell_local"'"'
+! grep -q 'DANGEROUS_VALUE' "$shell_local"
+grep -q '^export OPENAI_API_KEY="migrated-openai-key"$' "$secret_file"
+grep -q '^export GITHUB_TOKEN="migrated-github-token"$' "$secret_file"
+! grep -q 'BASHRC_AUTO_LOAD_SECRETS' "$secret_file"
+test ! -e "$tmp_home/should-never-run"
+bash --noprofile --norc -c 'module() { :; }; . "$1"' bash "$shell_local"
+rm -rf "$tmp_home"
 
 echo "[TEST] Conda initialization stays out of non-interactive shells"
 tmp_conda_shell_home="$(mktemp -d)"
@@ -722,11 +752,20 @@ case "$dual_conda_result" in
 esac
 rm -rf "$tmp_dual_conda_home"
 
-echo "[TEST] repeated apply-shell preserves shell.local and removes stale template fragments"
+echo "[TEST] repeated apply-shell merges an unmanaged backup without overwriting existing values"
 tmp_apply_shell_home="$(mktemp -d)"
 mkdir -p "$tmp_apply_shell_home/.config/envpilot"
 cp "$ROOT/templates/bashrc" "$tmp_apply_shell_home/.bashrc"
 printf '%s\n' 'export NVM_DIR="$HOME/.nvm"' >> "$tmp_apply_shell_home/.bashrc"
+cat > "$tmp_apply_shell_home/.bashrc.bak.20260801000000" <<'EOF'
+export PATH="$HOME/from-backup/bin:$PATH"
+export BACKUP_TOOL_HOME="$HOME/from-backup"
+export OPENAI_API_KEY=backup-openai-key
+export NCBI_API_KEY=must-not-overwrite
+export COMMAND_OUTPUT="$(touch profile-was-executed)"
+export http_proxy=http://127.0.0.1:7890
+module load compiler/cmake/3.23.3
+EOF
 cat > "$tmp_apply_shell_home/.config/envpilot/shell.local" <<'EOF'
 # envpilot shell.local
 BASHRC_ENVPILOT_ROOT=/old/repo
@@ -742,8 +781,6 @@ EOF
 mkdir -p "$tmp_apply_shell_home/.config/secrets"
 cp "$tmp_apply_shell_home/.config/secrets-before" "$tmp_apply_shell_home/.config/secrets/api.env"
 apply_shell_local="$tmp_apply_shell_home/.config/envpilot/shell.local"
-apply_shell_api_before="$tmp_apply_shell_home/api.env.before"
-cp "$tmp_apply_shell_home/.config/secrets/api.env" "$apply_shell_api_before"
 (
     HOME="$tmp_apply_shell_home"
     ENVPILOT_ROOT="$ROOT"
@@ -760,10 +797,17 @@ grep -q 'export PATH="\$HOME/custom/bin:\$PATH"' "$apply_shell_local"
 grep -q 'export CUSTOM_TOOL_HOME=' "$apply_shell_local"
 grep -q 'export NVM_DIR="\$HOME/.nvm"' "$apply_shell_local"
 grep -q 'BASHRC_ENVPILOT_ROOT=/old/repo' "$apply_shell_local"
+grep -q 'export BACKUP_TOOL_HOME="\$HOME/from-backup"' "$apply_shell_local"
+grep -q '^module load compiler/cmake/3.23.3$' "$apply_shell_local"
+! grep -q 'COMMAND_OUTPUT' "$apply_shell_local"
 ! grep -q 'module load "\$module_name"' "$apply_shell_local"
 ! grep -q 'export VISUAL="\${VISUAL:-\${EDITOR:-vi}}"' "$apply_shell_local"
-cmp -s "$apply_shell_api_before" "$tmp_apply_shell_home/.config/secrets/api.env"
+grep -q '^export NCBI_API_KEY=keep-this-file$' "$tmp_apply_shell_home/.config/secrets/api.env"
+grep -q '^export OPENAI_API_KEY=backup-openai-key$' "$tmp_apply_shell_home/.config/secrets/api.env"
+! grep -q 'must-not-overwrite' "$tmp_apply_shell_home/.config/secrets/api.env"
+test ! -e "$tmp_apply_shell_home/profile-was-executed"
 cp "$apply_shell_local" "$tmp_apply_shell_home/shell.local.after-first"
+cp "$tmp_apply_shell_home/.config/secrets/api.env" "$tmp_apply_shell_home/api.env.after-first"
 (
     HOME="$tmp_apply_shell_home"
     ENVPILOT_ROOT="$ROOT"
@@ -777,7 +821,7 @@ cp "$apply_shell_local" "$tmp_apply_shell_home/shell.local.after-first"
     ep_apply_shell_profile >/dev/null
 )
 cmp -s "$tmp_apply_shell_home/shell.local.after-first" "$apply_shell_local"
-cmp -s "$apply_shell_api_before" "$tmp_apply_shell_home/.config/secrets/api.env"
+cmp -s "$tmp_apply_shell_home/api.env.after-first" "$tmp_apply_shell_home/.config/secrets/api.env"
 rm -rf "$tmp_apply_shell_home"
 
 echo "[TEST] Mihomo takeover report"
@@ -1012,7 +1056,7 @@ configured_proxy="$(
         export ENVPILOT_TEST_MARKER="$3"
         export BASHRC_LOCAL_FILE="$4"
         export BASHRC_CODEX_TMP_ROOT="$5"
-        export BASHRC_AUTO_START_MIHOMO=0 BASHRC_AUTO_ENABLE_PROXY=0
+        export BASHRC_AUTO_START_MIHOMO=0 BASHRC_AUTO_ENABLE_PROXY=1
         export BASHRC_AUTO_LOAD_MODULES=0 BASHRC_AUTO_LOAD_SECRETS=0
         . "$4"
         source "$6"

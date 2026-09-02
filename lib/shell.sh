@@ -71,6 +71,7 @@ ep_shell_local_cleanup_managed_fragments()
 
     if [ "$changed" = "1" ]; then
         ep_backup_file "$local_file"
+        EP_SHELL_LOCAL_BACKED_UP=1
         mv "$tmp" "$local_file"
         chmod 600 "$local_file" 2>/dev/null || true
         ep_log "Removed stale envpilot profile fragments from: $local_file"
@@ -81,14 +82,158 @@ ep_shell_local_cleanup_managed_fragments()
     fi
 }
 
+ep_shell_trim_line()
+{
+    local line="$1"
+    line="${line%$'\r'}"
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    printf '%s' "$line"
+}
+
+ep_shell_value_is_safe()
+{
+    local value="$1"
+    local char index=0 length single_quote=0 double_quote=0 escaped=0
+
+    case "$value" in
+        *'$('*|*'`'*|*';'*|*'|'*|*'&'*|*'<'*|*'>'*) return 1 ;;
+    esac
+
+    length="${#value}"
+    while [ "$index" -lt "$length" ]; do
+        char="${value:$index:1}"
+        index=$((index + 1))
+        if [ "$escaped" = "1" ]; then
+            escaped=0
+            continue
+        fi
+        if [ "$single_quote" = "1" ]; then
+            [ "$char" = "'" ] && single_quote=0
+            continue
+        fi
+        if [ "$double_quote" = "1" ]; then
+            case "$char" in
+                '\\') escaped=1 ;;
+                '"') double_quote=0 ;;
+            esac
+            continue
+        fi
+        case "$char" in
+            '\\') escaped=1 ;;
+            "'") single_quote=1 ;;
+            '"') double_quote=1 ;;
+            [[:space:]]) return 1 ;;
+        esac
+    done
+
+    [ "$single_quote" = "0" ] &&
+        [ "$double_quote" = "0" ] &&
+        [ "$escaped" = "0" ]
+}
+
+ep_shell_export_name()
+{
+    local line="$1" assignment name value
+    case "$line" in
+        export[[:space:]]*) ;;
+        *) return 1 ;;
+    esac
+    assignment="${line#export}"
+    assignment="${assignment#"${assignment%%[![:space:]]*}"}"
+    case "$assignment" in
+        *=*) ;;
+        *) return 1 ;;
+    esac
+    name="${assignment%%=*}"
+    value="${assignment#*=}"
+    case "$name" in
+        ''|[0-9]*|*[!A-Za-z0-9_]*) return 1 ;;
+    esac
+    ep_shell_value_is_safe "$value" || return 1
+    printf '%s' "$name"
+}
+
+ep_shell_variable_is_excluded()
+{
+    local upper
+    upper="$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]')"
+    case "$upper" in
+        *MIHOMO*|*PROXY*|ENVPILOT_*|BASHRC_PROFILE_ACTIVE|BASHRC_EXTERNAL_*|BASHRC_LAST_*|BASHRC_ENVPILOT_ROOT)
+            return 0
+            ;;
+        SSH_AUTH_SOCK|XAUTHORITY|DISPLAY|DBUS_SESSION_BUS_ADDRESS|GPG_AGENT_INFO|PWD|OLDPWD|SHLVL|BASH_ENV|ENV|_)
+            return 0
+            ;;
+        *) return 1 ;;
+    esac
+}
+
+ep_shell_variable_is_sensitive()
+{
+    local upper
+    upper="$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]')"
+    case "$upper" in
+        BASHRC_*) return 1 ;;
+        *KEY*|*TOKEN*|*SECRET*|*PASSWORD*|*PASSWD*|*AUTH*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+ep_shell_env_file_has_variable()
+{
+    local file="$1" name="$2"
+    [ -f "$file" ] || return 1
+    grep -Eq "^[[:space:]]*(export[[:space:]]+)?${name}=" "$file" 2>/dev/null
+}
+
+ep_shell_migration_source()
+{
+    local profile="$1" candidate source=""
+    if [ -f "$profile" ] && ! ep_shell_profile_is_managed "$profile"; then
+        printf '%s' "$profile"
+        return 0
+    fi
+    for candidate in "${profile}.bak."*; do
+        [ -f "$candidate" ] || continue
+        ep_shell_profile_is_managed "$candidate" && continue
+        source="$candidate"
+    done
+    [ -n "$source" ] || return 1
+    printf '%s' "$source"
+}
+
+ep_shell_merge_additions()
+{
+    local target="$1" additions="$2" mode="$3" already_backed_up="${4:-0}"
+    local tmp
+    [ -s "$additions" ] || return 1
+    tmp="$(mktemp "${target}.tmp.XXXXXX")"
+    if [ -f "$target" ]; then
+        cat "$target" > "$tmp"
+        printf '\n' >> "$tmp"
+        [ "$already_backed_up" = "1" ] || ep_backup_file "$target"
+    fi
+    cat "$additions" >> "$tmp"
+    chmod "$mode" "$tmp" 2>/dev/null || true
+    mv "$tmp" "$target"
+}
+
 ep_migrate_shell_local()
 {
     local old_profile="$1"
     local local_file="$EP_CONFIG_DIR/shell.local"
+    local secret_file source shell_additions secret_additions secret_skip_backup=1
     local managed_template=""
     local profile_is_managed=0
+    local line normalized name module_name
+    local shell_count=0 secret_count=0 module_count=0
+    EP_SHELL_LOCAL_BACKED_UP=0
     EP_ROLLBACK_LOG="${EP_ROLLBACK_LOG:-$EP_CONFIG_DIR/rollback.log}"
     mkdir -p "$EP_CONFIG_DIR"
+    [ -f "$(ep_secrets_file)" ] && secret_skip_backup=0
+    ep_ensure_secrets_file
+    secret_file="$(ep_secrets_file)"
 
     if ep_shell_profile_is_managed "$old_profile"; then
         profile_is_managed=1
@@ -101,36 +246,77 @@ ep_migrate_shell_local()
             ep_shell_local_cleanup_managed_fragments "$local_file" "$managed_template"
         else
             chmod 600 "$local_file" 2>/dev/null || true
-            if [ "$profile_is_managed" = "1" ]; then
-                ep_log "Preserved existing envpilot shell.local: $local_file"
-            else
-                ep_log "Preserved existing shell.local and skipped profile migration: $local_file"
-            fi
         fi
-        return 0
     fi
 
-    {
+    shell_additions="$(mktemp "$EP_CONFIG_DIR/shell.local.additions.XXXXXX")"
+    secret_additions="$(mktemp "$(dirname "$secret_file")/api.env.additions.XXXXXX")"
+    chmod 600 "$shell_additions" "$secret_additions" 2>/dev/null || true
+
+    if [ ! -f "$local_file" ]; then
         printf '%s\n' '# envpilot shell.local'
-        printf '%s\n' '# Safe exported variables migrated from the previous profile.'
-        printf '%s\n' '# Proxy, Mihomo, secret, and API-key variables are intentionally excluded.'
-        printf 'BASHRC_ENVPILOT_ROOT=%q\n' "$ENVPILOT_ROOT"
-        if [ "$profile_is_managed" = "0" ] && [ -f "$old_profile" ]; then
-            grep -E '^[[:space:]]*export[[:space:]]+[A-Za-z_][A-Za-z0-9_]*=' "$old_profile" 2>/dev/null |
-                grep -Evi 'KEY|TOKEN|SECRET|PASSWORD|PASSWD|AUTH|MIHOMO|PROXY|ENVPILOT_ROOT' |
-                grep -Ev '\$\(' || true
-            grep -E '^[[:space:]]*module[[:space:]]+load[[:space:]]+' "$old_profile" 2>/dev/null |
-                grep -Evi 'KEY|TOKEN|SECRET|PASSWORD|PASSWD|AUTH|MIHOMO|PROXY|ENVPILOT_ROOT' || true
-        fi
-    } > "$local_file.tmp"
-    mv "$local_file.tmp" "$local_file"
-    chmod 600 "$local_file" 2>/dev/null || true
-    if [ "$profile_is_managed" = "1" ]; then
-        ep_log "Created new envpilot shell.local: $local_file"
-    else
-        ep_log "Wrote migrated shell hints: $local_file"
-        ep_log "Migrated safe exported variables; excluded old proxy/Mihomo functions and secret-like variables."
+        printf '%s\n' '# User overrides and safe shell settings preserved across apply-shell updates.'
+    fi > "$shell_additions"
+    if ! ep_shell_env_file_has_variable "$local_file" BASHRC_ENVPILOT_ROOT &&
+       ! ep_shell_env_file_has_variable "$shell_additions" BASHRC_ENVPILOT_ROOT; then
+        printf 'BASHRC_ENVPILOT_ROOT=%q\n' "$ENVPILOT_ROOT" >> "$shell_additions"
     fi
+
+    source="$(ep_shell_migration_source "$old_profile" 2>/dev/null || true)"
+    if [ -n "$source" ]; then
+        while IFS= read -r line || [ -n "$line" ]; do
+            normalized="$(ep_shell_trim_line "$line")"
+            [ -n "$normalized" ] || continue
+            if name="$(ep_shell_export_name "$normalized" 2>/dev/null)"; then
+                ep_shell_variable_is_excluded "$name" && continue
+                if ep_shell_variable_is_sensitive "$name"; then
+                    if ! ep_shell_env_file_has_variable "$secret_file" "$name" &&
+                       ! ep_shell_env_file_has_variable "$secret_additions" "$name"; then
+                        printf '%s\n' "$normalized" >> "$secret_additions"
+                        secret_count=$((secret_count + 1))
+                    fi
+                elif ! ep_shell_env_file_has_variable "$local_file" "$name" &&
+                     ! ep_shell_env_file_has_variable "$shell_additions" "$name"; then
+                    printf '%s\n' "$normalized" >> "$shell_additions"
+                    shell_count=$((shell_count + 1))
+                fi
+                continue
+            fi
+            case "$normalized" in
+                module[[:space:]]load[[:space:]]*)
+                    module_name="${normalized#module}"
+                    module_name="${module_name#"${module_name%%[![:space:]]*}"}"
+                    module_name="${module_name#load}"
+                    module_name="${module_name#"${module_name%%[![:space:]]*}"}"
+                    case "$module_name" in
+                        ''|*[!A-Za-z0-9_./:+-]*) continue ;;
+                    esac
+                    if ! grep -Fqx "module load $module_name" "$local_file" 2>/dev/null &&
+                       ! grep -Fqx "module load $module_name" "$shell_additions" 2>/dev/null; then
+                        printf 'module load %s\n' "$module_name" >> "$shell_additions"
+                        module_count=$((module_count + 1))
+                    fi
+                    ;;
+            esac
+        done < "$source"
+    fi
+
+    if ep_shell_merge_additions "$local_file" "$shell_additions" 600 "$EP_SHELL_LOCAL_BACKED_UP"; then
+        if [ "$shell_count" -gt 0 ] || [ "$module_count" -gt 0 ]; then
+            ep_log "Merged $shell_count safe exported variable(s) and $module_count module setting(s) into: $local_file"
+        else
+            ep_log "Created or completed envpilot shell.local: $local_file"
+        fi
+    elif [ "$EP_SHELL_LOCAL_BACKED_UP" != "1" ]; then
+        ep_log "Preserved existing shell.local: $local_file"
+    fi
+    if ep_shell_merge_additions "$secret_file" "$secret_additions" 600 "$secret_skip_backup"; then
+        ep_log "Migrated $secret_count protected variable(s) into: $secret_file"
+    fi
+
+    rm -f "$shell_additions" "$secret_additions"
+    chmod 600 "$local_file" "$secret_file" 2>/dev/null || true
+    unset EP_SHELL_LOCAL_BACKED_UP
 }
 
 ep_secrets_file()
@@ -180,9 +366,8 @@ ep_apply_shell_profile()
         return 0
     fi
 
-    ep_ensure_secrets_file
-    ep_backup_file "$target"
     ep_migrate_shell_local "$target"
+    ep_backup_file "$target"
     cp "$template" "$target.tmp"
     mv "$target.tmp" "$target"
     ep_log "Applied shell profile: $target"

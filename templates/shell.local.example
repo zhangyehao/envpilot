@@ -1,17 +1,18 @@
 # envpilot shell.local
 # User-specific additions live here so envpilot can update the main shell profile safely.
 
-# Conda integration is enabled by default for interactive real TTYs.
+# These interactive features are enabled by default. Set a value to 0 here to disable it.
 # BASHRC_INIT_CONDA="0"
+# BASHRC_AUTO_LOAD_MODULES="0"
+# BASHRC_AUTO_START_MIHOMO="0"
+# BASHRC_AUTO_ENABLE_PROXY="0"
+# BASHRC_AUTO_LOAD_SECRETS="0"
+# BASHRC_ENABLE_HISTORY_SYNC="0"
 # Optional explicit primary Conda prefix when Miniconda is installed outside
 # the standard $HOME/software/miniconda3 or $HOME/miniconda3 locations.
 # Use an absolute path because shell.local only accepts literal safe values.
 # BASHRC_CONDA_PRIMARY_PREFIX="/work/home/your-user/miniconda3"
-# BASHRC_AUTO_START_MIHOMO="1"
-# BASHRC_AUTO_ENABLE_PROXY="1"
-# api.env is loaded by default before the interactive/TTY guard.
-# Set this to 0 to disable automatic loading in managed shells.
-# BASHRC_AUTO_LOAD_SECRETS="0"
+# api.env is loaded before the interactive/TTY guard, including silent shells.
 
 # Non-interactive SSH/Codex shells may prepare the envpilot Mihomo proxy
 # before returning from the profile. Set to 0 to disable this behavior.
