@@ -535,7 +535,10 @@ EOF
             competing_pid=$!
             trap 'kill -TERM "$competing_pid" 2>/dev/null || true; wait "$competing_pid" 2>/dev/null || true' EXIT
             output="$(bash "$ROOT/templates/codex-remote.sh" ready 2>&1)"
-            printf '%s\n' "$output" | grep -q 'Reusing existing Codex app-server PID'
+            if ! printf '%s\n' "$output" | grep -Eq 'Codex app-server is already ready|Reusing existing Codex app-server PID'; then
+                printf 'Unexpected concurrent app-server result:\n%s\n' "$output" >&2
+                exit 1
+            fi
             status="$(bash "$ROOT/templates/codex-remote.sh" status)"
             printf '%s\n' "$status" | grep -q "existing non-envpilot PID $competing_pid"
             kill -TERM "$competing_pid" 2>/dev/null || true

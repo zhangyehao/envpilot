@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.28 - 2026-09-02
+
+### Fixed
+
+- Made the Linux concurrent app-server regression test accept both valid startup timings: detecting an already-ready socket immediately or waiting for and reusing the existing same-user server.
+
 ## 0.2.27 - 2026-09-02
 
 ### Fixed
