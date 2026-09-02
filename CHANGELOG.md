@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.24 - 2026-09-02
+
+### Fixed
+
+- Rewrote the safe profile-migration command-substitution and backslash matchers so the Linux ShellCheck release gate accepts the same conservative parsing behavior without informational diagnostics.
+
 ## 0.2.23 - 2026-09-02
 
 ### Fixed

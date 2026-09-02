@@ -94,10 +94,11 @@ ep_shell_trim_line()
 ep_shell_value_is_safe()
 {
     local value="$1"
+    local command_substitution='$('
     local char index=0 length single_quote=0 double_quote=0 escaped=0
 
     case "$value" in
-        *'$('*|*'`'*|*';'*|*'|'*|*'&'*|*'<'*|*'>'*) return 1 ;;
+        *"$command_substitution"*|*'`'*|*';'*|*'|'*|*'&'*|*'<'*|*'>'*) return 1 ;;
     esac
 
     length="${#value}"
@@ -114,13 +115,13 @@ ep_shell_value_is_safe()
         fi
         if [ "$double_quote" = "1" ]; then
             case "$char" in
-                '\\') escaped=1 ;;
+                \\) escaped=1 ;;
                 '"') double_quote=0 ;;
             esac
             continue
         fi
         case "$char" in
-            '\\') escaped=1 ;;
+            \\) escaped=1 ;;
             "'") single_quote=1 ;;
             '"') double_quote=1 ;;
             [[:space:]]) return 1 ;;
