@@ -30,12 +30,10 @@ bash envpilot.sh install mihomo
 bash envpilot.sh apply-shell
 source ~/.bashrc
 
-mihomo start
-mihomo status
-proxy_on
-
 bash envpilot.sh install
 ~~~
+
+默认 profile 会在 `source ~/.bashrc` 时检查并启动已配置的 Mihomo，并仅在代理端口真实监听后为当前 Shell 启用代理，因此快速开始无需重复执行 `mihomo start`、`mihomo status` 或 `proxy_on`。这些命令仍可用于手动控制和排障。
 
 `apply-shell` 会先备份原 profile，再把旧 profile 中可安全识别的普通 `export`、按顺序累积的 PATH/库路径、简单 alias 和 `module load` 增量合并到 `~/.config/envpilot/shell.local`，把 API key、token、secret、password、auth 等受保护变量合并到 `~/.config/secrets/api.env`。已有标量同名值优先保留；迁移只解析严格的单行内容，不执行旧 profile 中的函数、命令替换或网络命令。命令结束前会醒目提示立即对照旧 profile 与 `shell.local`，人工补回未自动迁移但仍需要的交互式设置。
 
