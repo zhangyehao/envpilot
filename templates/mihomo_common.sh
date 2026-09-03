@@ -3,9 +3,32 @@
 
 MIHOMO_SOURCE_BIN="${HOME}/software/mihomo/mihomo"
 MIHOMO_SOURCE_CONFIG="${HOME}/.config/mihomo"
+MIHOMO_SUBSCRIPTION_FILE="${ENVPILOT_MIHOMO_SUBSCRIPTION_FILE:-${MIHOMO_SOURCE_CONFIG}/subscription.url}"
 MIHOMO_PROXY_HOST="${MIHOMO_PROXY_HOST:-127.0.0.1}"
-MIHOMO_PROXY_PORT="${MIHOMO_PROXY_PORT:-42290}"
-MIHOMO_API_PORT="${MIHOMO_API_PORT:-60290}"
+
+mihomo_persisted_port()
+{
+    local key="$1" config_key="$2" file value
+    file="${HOME}/.config/envpilot/shell.local"
+    if [ -r "$file" ]; then
+        value="$(grep -E "^[[:space:]]*(export[[:space:]]+)?${key}=" "$file" 2>/dev/null | tail -n 1 | sed -E "s/^[[:space:]]*(export[[:space:]]+)?${key}=//" | tr -d "\"'[:space:]" || true)"
+        case "$value" in ''|*[!0-9]*) ;; *) printf '%s' "$value"; return 0 ;; esac
+    fi
+    file="${MIHOMO_SOURCE_CONFIG}/config.yaml"
+    [ -r "$file" ] || return 1
+    case "$config_key" in
+        mixed-port)
+            value="$(grep -E '^[[:space:]]*mixed-port:[[:space:]]*[0-9]+' "$file" 2>/dev/null | tail -n 1 | sed -E 's/^[^:]+:[[:space:]]*([0-9]+).*/\1/' || true)"
+            ;;
+        external-controller)
+            value="$(grep -E '^[[:space:]]*external-controller:[[:space:]]*(127\.0\.0\.1|localhost):[0-9]+' "$file" 2>/dev/null | tail -n 1 | sed -E 's|^.*:([0-9]+)[[:space:]]*$|\1|' || true)"
+            ;;
+    esac
+    case "$value" in ''|*[!0-9]*) return 1 ;; *) printf '%s' "$value" ;; esac
+}
+
+MIHOMO_PROXY_PORT="${MIHOMO_PROXY_PORT:-$(mihomo_persisted_port MIHOMO_PROXY_PORT mixed-port 2>/dev/null || printf '42290')}"
+MIHOMO_API_PORT="${MIHOMO_API_PORT:-$(mihomo_persisted_port MIHOMO_API_PORT external-controller 2>/dev/null || printf '60290')}"
 MIHOMO_STARTUP_TIMEOUT="${MIHOMO_STARTUP_TIMEOUT:-30}"
 
 mihomo_die()
@@ -206,4 +229,62 @@ mihomo_apply_local_config()
     mihomo_set_yaml_key "allow-lan" "false" "$file"
     mihomo_set_yaml_key "bind-address" "$MIHOMO_PROXY_HOST" "$file"
     mihomo_set_yaml_key "external-controller" "$MIHOMO_PROXY_HOST:$MIHOMO_API_PORT" "$file"
+}
+
+mihomo_saved_subscription_url()
+{
+    local url
+    mihomo_subscription_file_is_safe "$MIHOMO_SUBSCRIPTION_FILE" || return 1
+    url="$(sed -n '1p' "$MIHOMO_SUBSCRIPTION_FILE" 2>/dev/null || true)"
+    case "$url" in
+        http://*|https://*) printf '%s' "$url" ;;
+        *) return 1 ;;
+    esac
+}
+
+mihomo_subscription_file_is_safe()
+{
+    local file="$1" mode owner_uid current_uid
+    [ -f "$file" ] || return 1
+    current_uid="$(id -u 2>/dev/null || true)"
+    owner_uid="$(stat -c '%u' "$file" 2>/dev/null || stat -f '%u' "$file" 2>/dev/null || true)"
+    [ -z "$current_uid" ] || [ "$owner_uid" = "$current_uid" ] || return 1
+    case "$(uname -s 2>/dev/null || true)" in
+        MINGW*|MSYS*|CYGWIN*) return 0 ;;
+    esac
+    mode="$(stat -c '%a' "$file" 2>/dev/null || stat -f '%Lp' "$file" 2>/dev/null || true)"
+    case "$mode" in
+        400|600) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+mihomo_save_subscription_url()
+{
+    local url="$1" tmp backup
+    case "$url" in
+        http://*|https://*) ;;
+        *) mihomo_die "invalid subscription URL" ;;
+    esac
+    case "$url" in
+        *$'\n'*|*$'\r'*) mihomo_die "subscription URL must be one line" ;;
+    esac
+    mkdir -p "$(dirname "$MIHOMO_SUBSCRIPTION_FILE")"
+    chmod 700 "$(dirname "$MIHOMO_SUBSCRIPTION_FILE")" 2>/dev/null || true
+    tmp="$(mktemp "${MIHOMO_SUBSCRIPTION_FILE}.tmp.XXXXXX")"
+    printf '%s\n' "$url" > "$tmp"
+    chmod 600 "$tmp" || mihomo_die "could not protect subscription URL file"
+    if [ -e "$MIHOMO_SUBSCRIPTION_FILE" ]; then
+        if cmp -s "$MIHOMO_SUBSCRIPTION_FILE" "$tmp"; then
+            chmod 600 "$MIHOMO_SUBSCRIPTION_FILE" ||
+                mihomo_die "could not protect subscription URL file"
+            rm -f "$tmp"
+            return 0
+        fi
+        backup="$MIHOMO_SUBSCRIPTION_FILE.bak.$(date +%Y%m%d%H%M%S)"
+        cp -p "$MIHOMO_SUBSCRIPTION_FILE" "$backup"
+        chmod 600 "$backup" || mihomo_die "could not protect subscription URL backup"
+        printf '[INFO] subscription source backup: %s\n' "$backup"
+    fi
+    mv "$tmp" "$MIHOMO_SUBSCRIPTION_FILE"
 }

@@ -7,6 +7,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 mihomo_init_runtime
 
 subscription_url="${1:-${ENVPILOT_MIHOMO_SUBSCRIPTION_URL:-}}"
+if [ -z "$subscription_url" ]; then
+    subscription_url="$(mihomo_saved_subscription_url 2>/dev/null || true)"
+fi
 if [ -z "$subscription_url" ] && [ -t 0 ]; then
     printf 'Paste Clash/Mihomo subscription URL: '
     IFS= read -r subscription_url
@@ -62,6 +65,9 @@ if [ "$was_running" = "1" ]; then
     fi
 fi
 
+mihomo_save_subscription_url "$subscription_url"
+
 printf '[OK] Mihomo subscription updated.\n'
+printf '[OK] subscription source saved at %s (value not displayed).\n' "$MIHOMO_SUBSCRIPTION_FILE"
 printf '[OK] proxy: %s:%s\n' "$MIHOMO_PROXY_HOST" "$MIHOMO_PROXY_PORT"
 printf '[OK] API:   %s:%s\n' "$MIHOMO_PROXY_HOST" "$MIHOMO_API_PORT"

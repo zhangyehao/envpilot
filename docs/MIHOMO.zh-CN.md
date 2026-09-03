@@ -9,6 +9,7 @@
 ~~~text
 ~/software/mihomo/mihomo
 ~/.config/mihomo/config.yaml
+~/.config/mihomo/subscription.url
 ~/.config/mihomo/country.mmdb
 ~/.config/mihomo/geoip.metadb
 ~~~
@@ -42,7 +43,9 @@ envpilot 管理的实例在升级前运行，升级后会恢复运行并保留�
 
 ## 双端口配置
 
-所有安装、启动、状态和订阅操作统一读取两个端口：
+新安装且没有显式或持久端口时，envpilot 从 proxy `42290` 和 API `60290` 分别开始探测。优先执行 `nc -z -w 1 127.0.0.1 PORT`；端口被占用就加 1，直到找到两个不同的空闲端口或到达 65535。缺少 `nc` 时依次使用 `ss`、有界 `/dev/tcp` 或有界 `lsof`。选定结果写入 `~/.config/envpilot/shell.local`。
+
+已有非默认环境变量、`shell.local` 或 `config.yaml` 中的有效端口属于显式/持久选择，不会在更新时自动漂移。若要固定使用恰好为默认值的端口，请用 `mihomo ports 42290 60290` 持久写入，而不要只依赖 profile 自动导出的默认值。所有安装、启动、状态和订阅操作统一读取两个端口：
 
 ~~~bash
 export MIHOMO_PROXY_HOST=127.0.0.1
@@ -75,7 +78,7 @@ mihomo port 42291
 bash envpilot.sh mihomo ports 42290 60290
 ~~~
 
-envpilot 只修改本地监听项，不会改订阅节点的远端 server、port、uuid、public-key 或 short-id。
+envpilot 只修改本地顶层监听项 `mixed-port`、`external-controller`、`allow-lan` 和 `bind-address`，不会改订阅节点的远端 `server`、`port`、`uuid`、`public-key` 或 `short-id`。因此 `MIHOMO_PROXY_PORT` 和 `MIHOMO_API_PORT` 不是机场节点端口。
 
 ## 进程命令
 
@@ -113,7 +116,25 @@ mihomo update-subscription 'https://example.invalid/clash-meta'
 bash envpilot.sh mihomo update-subscription 'https://example.invalid/clash-meta'
 ~~~
 
-更新过程会下载临时文件、拒绝空文件和 HTML 错误页、备份旧配置、修正两个本地端口；运行中的实例会停止并重启。新配置启动失败时会恢复旧配置。
+首次成功下载后，链接会保存到：
+
+~~~text
+~/.config/mihomo/subscription.url
+~~~
+
+该文件权限为 600，状态和 doctor 只报告路径，不显示链接。自动读取前会校验当前用户属主以及 600/400 权限；不安全的文件会被拒绝。链接发生变化时，旧文件会保留为权限 600 的时间戳备份。以后直接执行 `mihomo update-subscription` 会优先使用命令参数，其次使用 `ENVPILOT_MIHOMO_SUBSCRIPTION_URL`，最后使用这个已保存链接。
+
+从旧版 envpilot 升级时，现有 `config.yaml` 通常不包含可可靠恢复的原始完整配置订阅 URL。若 `subscription.url` 尚不存在，需要首次执行一次 `mihomo update-subscription 'URL'`；成功后才能无参数复用。
+
+更新过程会下载临时文件、拒绝空文件和 HTML 错误页、备份旧配置、修正两个本地端口；运行中的实例会停止并重启。新配置启动失败时会恢复旧配置。每次完整配置更新都会重新写入本地 `mixed-port` 和 `external-controller`，但不会改任何远端代理节点端口。
+
+envpilot 默认不修改用户的 crontab，也没有隐含的完整配置更新频率。需要每 6 小时自动更新时，可执行 `crontab -e` 并加入：
+
+~~~cron
+17 */6 * * * "$HOME/software/mihomo/update_mihomo_subscription.sh" >>"$HOME/.config/mihomo/subscription-update.log" 2>&1
+~~~
+
+这里的频率由 cron 表达式控制。另一方面，如果下载的配置使用 `proxy-providers` 并带有 `interval: 3600`，则 Mihomo 会每 3600 秒自行刷新该 provider；这与重新下载整个 `config.yaml` 是两种不同机制。
 
 ## 代理开关
 

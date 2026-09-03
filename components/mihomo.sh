@@ -10,6 +10,11 @@ ep_mihomo_config_file()
     printf '%s/.config/mihomo/config.yaml' "$HOME"
 }
 
+ep_mihomo_subscription_file()
+{
+    printf '%s/.config/mihomo/subscription.url' "$HOME"
+}
+
 ep_mihomo_shell_local_file()
 {
     printf '%s/shell.local' "${EP_CONFIG_DIR:-$HOME/.config/envpilot}"
@@ -130,6 +135,47 @@ ep_mihomo_api_port()
     else
         printf '60290'
     fi
+}
+
+ep_mihomo_proxy_port_is_configured()
+{
+    local port
+    if ep_port_is_valid "${MIHOMO_PROXY_PORT:-}"; then
+        if [ "$MIHOMO_PROXY_PORT" != "42290" ] ||
+           [ "${ENVPILOT_PROFILE_ACTIVE:-0}" != "1" ] ||
+           [ "$MIHOMO_PROXY_PORT" != "${ENVPILOT_LAST_MIHOMO_PROXY_PORT:-}" ]; then
+            return 0
+        fi
+    fi
+    if ep_port_is_valid "${BASHRC_PROXY_PORT:-}"; then
+        if [ "$BASHRC_PROXY_PORT" != "42290" ] ||
+           [ "${ENVPILOT_PROFILE_ACTIVE:-0}" != "1" ] ||
+           [ "$BASHRC_PROXY_PORT" != "${ENVPILOT_LAST_MIHOMO_PROXY_PORT:-}" ]; then
+            return 0
+        fi
+    fi
+    port="$(ep_mihomo_shell_local_port MIHOMO_PROXY_PORT 2>/dev/null || true)"
+    ep_port_is_valid "$port" && return 0
+    port="$(ep_mihomo_shell_local_port BASHRC_PROXY_PORT 2>/dev/null || true)"
+    ep_port_is_valid "$port" && return 0
+    port="$(ep_mihomo_config_proxy_port 2>/dev/null || true)"
+    ep_port_is_valid "$port"
+}
+
+ep_mihomo_api_port_is_configured()
+{
+    local port
+    if ep_port_is_valid "${MIHOMO_API_PORT:-}"; then
+        if [ "$MIHOMO_API_PORT" != "60290" ] ||
+           [ "${ENVPILOT_PROFILE_ACTIVE:-0}" != "1" ] ||
+           [ "$MIHOMO_API_PORT" != "${ENVPILOT_LAST_MIHOMO_API_PORT:-}" ]; then
+            return 0
+        fi
+    fi
+    port="$(ep_mihomo_shell_local_port MIHOMO_API_PORT 2>/dev/null || true)"
+    ep_port_is_valid "$port" && return 0
+    port="$(ep_mihomo_config_api_port 2>/dev/null || true)"
+    ep_port_is_valid "$port"
 }
 
 ep_mihomo_set_shell_local_ports()
@@ -308,7 +354,8 @@ ep_proxy_port_is_listening()
     if ep_mihomo_run_bounded_port_probe 1 bash -c ": </dev/tcp/$host/$port" >/dev/null 2>&1; then
         return 0
     fi
-    if ep_command_exists lsof; then
+    if ep_command_exists lsof &&
+       { ep_command_exists timeout || ep_command_exists gtimeout || ep_command_exists perl; }; then
         line="$(
             ep_mihomo_run_bounded_port_probe 2 \
                 lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null |
@@ -317,6 +364,140 @@ ep_proxy_port_is_listening()
         [ -n "$line" ] && return 0
     fi
     return 1
+}
+
+ep_mihomo_port_is_available()
+{
+    local host="${1:-127.0.0.1}" port="${2:-}" line
+    ep_port_is_valid "$port" || return 2
+    if ep_command_exists nc; then
+        nc -z -w 1 "$host" "$port" >/dev/null 2>&1 && return 1
+        return 0
+    fi
+    if ep_command_exists ss; then
+        ep_proxy_port_socket_listening "$port" && return 1
+        return 0
+    fi
+    if ep_command_exists timeout || ep_command_exists gtimeout || ep_command_exists perl; then
+        ep_mihomo_run_bounded_port_probe 1 bash -c ": </dev/tcp/$host/$port" >/dev/null 2>&1 && return 1
+        return 0
+    fi
+    if ep_command_exists lsof &&
+       { ep_command_exists timeout || ep_command_exists gtimeout || ep_command_exists perl; }; then
+        line="$(
+            ep_mihomo_run_bounded_port_probe 2 \
+                lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null |
+                awk 'NR == 2 { print; exit }' || true
+        )"
+        [ -n "$line" ] && return 1
+        return 0
+    fi
+    return 2
+}
+
+ep_mihomo_find_available_port()
+{
+    local port="${1:-}" excluded="${2:-}" state
+    ep_port_is_valid "$port" || return 1
+    while [ "$port" -le 65535 ]; do
+        if [ "$port" != "$excluded" ]; then
+            state=0
+            ep_mihomo_port_is_available 127.0.0.1 "$port" || state=$?
+            case "$state" in
+                0) printf '%s' "$port"; return 0 ;;
+                1) ;;
+                *) ep_die "Cannot inspect local port availability: install nc or ss, or provide lsof with timeout/gtimeout/perl." ;;
+            esac
+        fi
+        port=$((port + 1))
+    done
+    return 1
+}
+
+ep_mihomo_select_install_ports()
+{
+    local proxy_port api_port proxy_configured=false api_configured=false
+    ep_mihomo_proxy_port_is_configured && proxy_configured=true
+    ep_mihomo_api_port_is_configured && api_configured=true
+    if [ "$proxy_configured" = true ]; then
+        proxy_port="$(ep_mihomo_proxy_port)"
+    else
+        proxy_port=42290
+    fi
+    if [ "$api_configured" = true ]; then
+        api_port="$(ep_mihomo_api_port)"
+    else
+        api_port=60290
+    fi
+    if [ "$proxy_configured" != true ]; then
+        proxy_port="$(ep_mihomo_find_available_port 42290 "$api_port")" ||
+            ep_die "No free Mihomo proxy port was found from 42290 through 65535."
+    fi
+    if [ "$api_configured" != true ]; then
+        api_port="$(ep_mihomo_find_available_port 60290 "$proxy_port")" ||
+            ep_die "No free Mihomo API port was found from 60290 through 65535."
+    fi
+    ep_require_mihomo_ports "$proxy_port" "$api_port"
+}
+
+ep_mihomo_saved_subscription_url()
+{
+    local file url
+    file="$(ep_mihomo_subscription_file)"
+    ep_mihomo_subscription_file_is_safe "$file" || return 1
+    url="$(sed -n '1p' "$file" 2>/dev/null || true)"
+    case "$url" in
+        http://*|https://*) printf '%s' "$url" ;;
+        *) return 1 ;;
+    esac
+}
+
+ep_mihomo_subscription_file_is_safe()
+{
+    local file="$1" mode owner_uid current_uid
+    [ -f "$file" ] || return 1
+    current_uid="$(id -u 2>/dev/null || true)"
+    owner_uid="$(stat -c '%u' "$file" 2>/dev/null || stat -f '%u' "$file" 2>/dev/null || true)"
+    [ -z "$current_uid" ] || [ "$owner_uid" = "$current_uid" ] || return 1
+    case "$(uname -s 2>/dev/null || true)" in
+        MINGW*|MSYS*|CYGWIN*) return 0 ;;
+    esac
+    mode="$(stat -c '%a' "$file" 2>/dev/null || stat -f '%Lp' "$file" 2>/dev/null || true)"
+    case "$mode" in
+        400|600) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+ep_mihomo_save_subscription_url()
+{
+    local url="${1:-}" file tmp
+    case "$url" in
+        http://*|https://*) ;;
+        *) ep_die "Invalid Mihomo subscription URL; expected http:// or https://." ;;
+    esac
+    case "$url" in
+        *$'\n'*|*$'\r'*) ep_die "Mihomo subscription URL must be one line." ;;
+    esac
+    file="$(ep_mihomo_subscription_file)"
+    mkdir -p "$(dirname "$file")"
+    chmod 700 "$(dirname "$file")" 2>/dev/null || true
+    tmp="$(mktemp "${file}.tmp.XXXXXX")"
+    printf '%s\n' "$url" > "$tmp"
+    chmod 600 "$tmp" || ep_die "Could not protect Mihomo subscription URL file: $file"
+    if [ -e "$file" ]; then
+        if cmp -s "$file" "$tmp"; then
+            chmod 600 "$file" || ep_die "Could not protect Mihomo subscription URL file: $file"
+            rm -f "$tmp"
+            ep_log "Mihomo subscription URL is already saved at $file (value not displayed)."
+            return 0
+        fi
+        ep_backup_file "$file"
+        chmod 600 "$EP_LAST_BACKUP_FILE" ||
+            ep_die "Could not protect Mihomo subscription URL backup: $EP_LAST_BACKUP_FILE"
+    fi
+    mv "$tmp" "$file"
+    ep_log "Saved Mihomo subscription URL without displaying it: $file"
 }
 
 ep_mihomo_api_healthy()
@@ -743,11 +924,12 @@ ep_mihomo_cli()
 }
 ep_doctor_mihomo()
 {
-    local bin cached offline_pattern config_dir geo_path proxy_port api_port runtime_bin
+    local bin cached offline_pattern config_dir geo_path proxy_port api_port runtime_bin subscription_file
 
     bin="$(ep_mihomo_bin)"
     runtime_bin="$(ep_mihomo_runtime_bin)"
     config_dir="$HOME/.config/mihomo"
+    subscription_file="$(ep_mihomo_subscription_file)"
     offline_pattern="$(ep_mihomo_offline_pattern)"
     proxy_port="$(ep_mihomo_proxy_port)"
     api_port="$(ep_mihomo_api_port)"
@@ -789,6 +971,13 @@ ep_doctor_mihomo()
         ep_log "Mihomo runtime: running from $runtime_bin"
     else
         ep_warn "Mihomo runtime: not running on this node ($runtime_bin)"
+    fi
+    if ep_mihomo_saved_subscription_url >/dev/null 2>&1; then
+        ep_log "Mihomo subscription source: saved at $subscription_file (value not displayed)"
+    elif [ -e "$subscription_file" ]; then
+        ep_warn "Mihomo subscription source: $subscription_file exists but is not owned by the current user with mode 600 or 400; it will not be loaded."
+    else
+        ep_warn "Mihomo subscription source: not saved; update-subscription will require a URL unless ENVPILOT_MIHOMO_SUBSCRIPTION_URL is set."
     fi
 }
 ep_yaml_set_scalar()
@@ -853,10 +1042,8 @@ ep_install_mihomo()
     EP_MIHOMO_TAKEOVER_MANAGED_RUNTIME_WAS_RUNNING=false
     EP_MIHOMO_TAKEOVER_MANAGED_RUNTIME_RESTARTED=false
     EP_MIHOMO_TAKEOVER_EXISTING_CONFIG_PRESERVED=false
-    proxy_port="$(ep_mihomo_proxy_port)"
-    api_port="$(ep_mihomo_api_port)"
     read -r proxy_port api_port <<EOF
-$(ep_require_mihomo_ports "$proxy_port" "$api_port")
+$(ep_mihomo_select_install_ports)
 EOF
     EP_MIHOMO_TAKEOVER_PROXY_PORT="$proxy_port"
     EP_MIHOMO_TAKEOVER_API_PORT="$api_port"
@@ -864,6 +1051,7 @@ EOF
     ep_log "Component: mihomo"
     ep_log "Selected stable asset rule for $EP_OS/$EP_ARCH: $asset_regex"
     ep_log "Offline asset pattern: $offline_pattern"
+    ep_log "Port policy: preserve explicit or persisted values; otherwise scan upward from proxy=42290 and API=60290, preferring nc when available."
     ep_log "Before takeover, register at https://proxy.yanhuoapi.com/ and prepare a Clash/Mihomo subscription URL."
     EP_MIHOMO_TAKEOVER_EXISTING_PROCESSES="$(ep_mihomo_existing_processes)"
     EP_MIHOMO_TAKEOVER_EXISTING_PROCESS_VERSIONS="$(ep_mihomo_existing_process_versions "$EP_MIHOMO_TAKEOVER_EXISTING_PROCESSES")"
@@ -1001,6 +1189,10 @@ EOF
     ep_install_mihomo_data_assets "$config_dir"
 
     subscription="${ENVPILOT_MIHOMO_SUBSCRIPTION_URL:-}"
+    if [ -z "$subscription" ]; then
+        subscription="$(ep_mihomo_saved_subscription_url 2>/dev/null || true)"
+        [ -z "$subscription" ] || ep_log "Using saved Mihomo subscription URL from $(ep_mihomo_subscription_file) without displaying it."
+    fi
     if [ -z "$subscription" ] &&
        [ "$EP_ASSUME_YES" != "1" ] &&
        { [ "$EP_UPGRADE" != "1" ] || [ "$config_before_present" != true ]; }; then
@@ -1015,6 +1207,7 @@ EOF
         mv "$config_dir/config.yaml.tmp" "$config_dir/config.yaml"
         ep_patch_mihomo_config "$config_dir/config.yaml" "$proxy_port" "$api_port"
         chmod 600 "$config_dir/config.yaml"
+        ep_mihomo_save_subscription_url "$subscription"
         ep_log "Wrote Mihomo config: $config_dir/config.yaml"
         ep_log "Applied local-only ports: proxy=$proxy_port API=$api_port"
     elif [ "$config_before_present" = true ] && [ -f "$config_dir/config.yaml" ]; then

@@ -24,9 +24,8 @@ cd envpilot
 git pull --ff-only
 
 bash envpilot.sh doctor
-export MIHOMO_PROXY_PORT=42290
-export MIHOMO_API_PORT=60290
-
+# 未显式指定端口时，安装器从 42290 和 60290 开始，优先用 nc
+# 检查 127.0.0.1；已占用就分别加 1，直到找到两个不同的空闲端口。
 bash envpilot.sh install mihomo
 bash envpilot.sh apply-shell
 source ~/.bashrc
@@ -140,14 +139,15 @@ proxy_off
 proxy_status
 ~~~
 
-统一端口变量：
+安装时通常不需要预设端口。envpilot 会从 proxy `42290`、API `60290` 开始独立向上扫描；优先用 `nc -z -w 1`，没有 `nc` 时使用 `ss`、有界 `/dev/tcp` 或 `lsof`。用户设置的非默认端口以及 `shell.local`/现有配置中的端口不会被自动改写。需要固定端口时使用持久命令：
 
 ~~~bash
-export MIHOMO_PROXY_HOST=127.0.0.1
-export MIHOMO_PROXY_PORT=42290
-export MIHOMO_API_PORT=60290
 mihomo ports 42290 60290
 ~~~
+
+这两个值只控制本机 `127.0.0.1` 上的 mixed HTTP/SOCKS5 端口和 REST API 端口，不是订阅节点的远端端口。下载或更新订阅后，envpilot 会重新写入 `mixed-port` 和 `external-controller`，但不会改节点的 `server`、`port`、UUID、公钥等字段。
+
+首次成功使用订阅 URL 后，envpilot 会把链接保存到权限为 600 的 `~/.config/mihomo/subscription.url`，之后可直接运行 `mihomo update-subscription`。旧版本升级后若只有 `config.yaml` 而没有该文件，需要再提供一次原始订阅 URL；程序不会从节点配置猜测链接。envpilot 不默认创建后台定时任务；完整配置订阅的更新频率由用户的 cron 决定，而配置内 `proxy-providers.*.interval` 由 Mihomo 自己按秒执行。
 
 mihomo status 会检查进程、实际监听端口、API 健康、代理出口和最近日志。mihomo stop 只停止当前用户、当前节点、envpilot 运行目录中的实例。安装或更新遇到已有 Mihomo 时会先显示接管计划，确认后才停止，并记录 mihomo-takeover-report.json。
 

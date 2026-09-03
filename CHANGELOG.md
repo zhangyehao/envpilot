@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.30 - 2026-09-03
+
+### Fixed
+
+- Selects free default Mihomo proxy and API ports independently by scanning upward from 42290 and 60290, preferring `nc` and preserving explicit or persisted choices.
+- Persists a successfully used full-config subscription URL in protected `~/.config/mihomo/subscription.url`, with protected replacement backups and doctor-baseline recovery, allowing later URL-free updates and cron use without resetting selected local ports.
+- Clarifies that envpilot rewrites only local `mixed-port` and `external-controller` fields, never remote subscription node ports.
+
+### Changed
+
+- Documents full-config refresh scheduling separately from Mihomo `proxy-providers.interval`; envpilot does not silently modify the user's crontab.
+
 ## 0.2.29 - 2026-09-02
 
 ### Fixed

@@ -72,6 +72,7 @@ grep -q 'ep_find_cached_asset' "$ROOT/lib/download.sh"
 grep -q 'ep_capture_doctor_baseline' "$ROOT/lib/baseline.sh"
 grep -q 'ep_restore_doctor_baseline' "$ROOT/lib/baseline.sh"
 grep -q 'mihomo-bin' "$ROOT/lib/baseline.sh"
+grep -q 'mihomo-subscription-url' "$ROOT/lib/baseline.sh"
 grep -q 'Using bundled downloads/ Mihomo asset for' "$ROOT/components/mihomo.sh"
 grep -q 'ep_mihomo_set_shell_local_ports "$proxy_port" "$api_port"' "$ROOT/components/mihomo.sh"
 grep -q 'Using bundled downloads/ mihomo data asset before network' "$ROOT/components/mihomo.sh"
@@ -1388,6 +1389,154 @@ chmod +x "$tmp_bin/ss" "$tmp_bin/nc" "$tmp_bin/lsof"
 [ -f "$lsof_marker" ]
 rm -rf "$tmp_home" "$tmp_bin"
 
+echo "[TEST] fresh Mihomo install ports scan upward with nc"
+tmp_home="$(mktemp -d)"
+tmp_bin="$(mktemp -d)"
+port_probe_log="$tmp_home/nc-probes"
+cat > "$tmp_bin/nc" <<'EOF'
+#!/usr/bin/env bash
+port=""
+for value in "$@"; do port="$value"; done
+printf '%s\n' "$port" >> "$ENVPILOT_PORT_PROBE_LOG"
+case "$port" in
+    42290|60290) exit 0 ;;
+    *) exit 1 ;;
+esac
+EOF
+chmod +x "$tmp_bin/nc"
+selected_ports="$(
+    env -u MIHOMO_PROXY_PORT -u MIHOMO_API_PORT -u BASHRC_PROXY_PORT \
+        -u ENVPILOT_PROFILE_ACTIVE -u ENVPILOT_LAST_MIHOMO_PROXY_PORT \
+        -u ENVPILOT_LAST_MIHOMO_API_PORT \
+        HOME="$tmp_home" \
+        PATH="$tmp_bin:/usr/bin:/bin:$PATH" \
+        ENVPILOT_PORT_PROBE_LOG="$port_probe_log" \
+        ENVPILOT_ROOT="$ROOT" \
+        bash --noprofile --norc -c '
+            . "$ENVPILOT_ROOT/lib/common.sh"
+            . "$ENVPILOT_ROOT/components/mihomo.sh"
+            ep_mihomo_select_install_ports
+        '
+)"
+[ "$selected_ports" = "42291 60291" ]
+[ "$(sed -n '1p' "$port_probe_log")" = "42290" ]
+[ "$(sed -n '2p' "$port_probe_log")" = "42291" ]
+[ "$(sed -n '3p' "$port_probe_log")" = "60290" ]
+[ "$(sed -n '4p' "$port_probe_log")" = "60291" ]
+profile_default_ports="$(
+    HOME="$tmp_home" \
+    PATH="$tmp_bin:/usr/bin:/bin:$PATH" \
+    ENVPILOT_PORT_PROBE_LOG="$port_probe_log" \
+    ENVPILOT_ROOT="$ROOT" \
+    ENVPILOT_PROFILE_ACTIVE=1 \
+    ENVPILOT_LAST_MIHOMO_PROXY_PORT=42290 \
+    ENVPILOT_LAST_MIHOMO_API_PORT=60290 \
+    MIHOMO_PROXY_PORT=42290 \
+    BASHRC_PROXY_PORT=42290 \
+    MIHOMO_API_PORT=60290 \
+    bash --noprofile --norc -c '
+        . "$ENVPILOT_ROOT/lib/common.sh"
+        . "$ENVPILOT_ROOT/components/mihomo.sh"
+        ep_mihomo_select_install_ports
+    '
+)"
+[ "$profile_default_ports" = "42291 60291" ]
+explicit_ports="$(
+    HOME="$tmp_home" \
+    PATH="$tmp_bin:/usr/bin:/bin:$PATH" \
+    ENVPILOT_PORT_PROBE_LOG="$port_probe_log" \
+    ENVPILOT_ROOT="$ROOT" \
+    MIHOMO_PROXY_PORT=43000 \
+    MIHOMO_API_PORT=61000 \
+    bash --noprofile --norc -c '
+        . "$ENVPILOT_ROOT/lib/common.sh"
+        . "$ENVPILOT_ROOT/components/mihomo.sh"
+        ep_mihomo_select_install_ports
+    '
+)"
+[ "$explicit_ports" = "43000 61000" ]
+[ "$(wc -l < "$port_probe_log" | tr -d '[:space:]')" = "8" ]
+rm -rf "$tmp_home" "$tmp_bin"
+
+echo "[TEST] Mihomo subscription URL is protected and reusable"
+tmp_home="$(mktemp -d)"
+tmp_bin="$(mktemp -d)"
+subscription_url_log="$tmp_home/subscription-urls"
+mkdir -p "$tmp_home/software/mihomo" "$tmp_home/.config/mihomo"
+cp "$ROOT/templates/mihomo_common.sh" "$tmp_home/software/mihomo/mihomo_common.sh"
+cp "$ROOT/templates/update_mihomo_subscription.sh" "$tmp_home/software/mihomo/update_mihomo_subscription.sh"
+cp "$ROOT/templates/start_mihomo.sh" "$tmp_home/software/mihomo/start_mihomo.sh"
+cp "$ROOT/templates/stop_mihomo.sh" "$tmp_home/software/mihomo/stop_mihomo.sh"
+chmod +x "$tmp_home/software/mihomo/"*.sh
+cat > "$tmp_bin/curl" <<'EOF'
+#!/usr/bin/env bash
+destination=""
+subscription_url=""
+while [ "$#" -gt 0 ]; do
+    if [ "$1" = "-o" ]; then
+        destination="$2"
+        shift 2
+    else
+        case "$1" in http://*|https://*) subscription_url="$1" ;; esac
+        shift
+    fi
+done
+[ -n "$destination" ] || exit 1
+printf '%s\n' "$subscription_url" >> "$ENVPILOT_SUBSCRIPTION_URL_LOG"
+cat > "$destination" <<'YAML'
+mixed-port: 7890
+external-controller: 127.0.0.1:9090
+proxies:
+  - name: remote-node
+    server: remote.example.invalid
+    port: 443
+rules: []
+YAML
+EOF
+cat > "$tmp_bin/pgrep" <<'EOF'
+#!/usr/bin/env bash
+exit 1
+EOF
+chmod +x "$tmp_bin/curl" "$tmp_bin/pgrep"
+HOME="$tmp_home" PATH="$tmp_bin:$PATH" \
+    ENVPILOT_SUBSCRIPTION_URL_LOG="$subscription_url_log" \
+    MIHOMO_PROXY_PORT=42291 MIHOMO_API_PORT=60291 \
+    bash "$tmp_home/software/mihomo/update_mihomo_subscription.sh" \
+        "https://example.invalid/clash-meta" >/tmp/envpilot-mihomo-subscription-protected.out
+HOME="$tmp_home" PATH="$tmp_bin:$PATH" \
+    ENVPILOT_SUBSCRIPTION_URL_LOG="$subscription_url_log" \
+    bash "$tmp_home/software/mihomo/update_mihomo_subscription.sh" \
+        >/tmp/envpilot-mihomo-subscription-reused.out
+HOME="$tmp_home" PATH="$tmp_bin:$PATH" \
+    ENVPILOT_SUBSCRIPTION_URL_LOG="$subscription_url_log" \
+    bash "$tmp_home/software/mihomo/update_mihomo_subscription.sh" \
+        "https://example.invalid/clash-meta-new" >/tmp/envpilot-mihomo-subscription-changed.out
+[ "$(sed -n '1p' "$subscription_url_log")" = "https://example.invalid/clash-meta" ]
+[ "$(sed -n '2p' "$subscription_url_log")" = "https://example.invalid/clash-meta" ]
+[ "$(sed -n '3p' "$subscription_url_log")" = "https://example.invalid/clash-meta-new" ]
+grep -q '^mixed-port: 42291$' "$tmp_home/.config/mihomo/config.yaml"
+grep -q '^external-controller: 127.0.0.1:60291$' "$tmp_home/.config/mihomo/config.yaml"
+grep -q '^[[:space:]]*port: 443$' "$tmp_home/.config/mihomo/config.yaml"
+[ "$(sed -n '1p' "$tmp_home/.config/mihomo/subscription.url")" = "https://example.invalid/clash-meta-new" ]
+subscription_backup="$(find "$tmp_home/.config/mihomo" -maxdepth 1 -type f -name 'subscription.url.bak.*' -print -quit)"
+[ -n "$subscription_backup" ]
+[ "$(sed -n '1p' "$subscription_backup")" = "https://example.invalid/clash-meta" ]
+case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*) ;;
+    *)
+        [ "$(stat -c '%a' "$tmp_home/.config/mihomo/subscription.url" 2>/dev/null || stat -f '%Lp' "$tmp_home/.config/mihomo/subscription.url")" = "600" ]
+        [ "$(stat -c '%a' "$subscription_backup" 2>/dev/null || stat -f '%Lp' "$subscription_backup")" = "600" ]
+        chmod 644 "$tmp_home/.config/mihomo/subscription.url"
+        if HOME="$tmp_home" PATH="$tmp_bin:$PATH" \
+            bash "$tmp_home/software/mihomo/update_mihomo_subscription.sh" \
+                >/tmp/envpilot-mihomo-subscription-unsafe.out 2>&1; then
+            echo "Unsafe subscription URL file should not be loaded" >&2
+            exit 1
+        fi
+        ;;
+esac
+rm -rf "$tmp_home" "$tmp_bin"
+
 echo "[TEST] proxy helpers preserve no_proxy and gate SOCKS"
 tmp_home="$(mktemp -d)"
 tmp_bin="$(mktemp -d)"
@@ -1526,19 +1675,32 @@ EOF
     cat > "$tmp_bin/curl" <<'EOF'
 #!/usr/bin/env bash
 destination=""
+subscription_url=""
 while [ "$#" -gt 0 ]; do
     if [ "$1" = "-o" ]; then
         destination="$2"
         shift 2
     else
+        case "$1" in http://*|https://*) subscription_url="$1" ;; esac
         shift
     fi
 done
 [ -n "$destination" ] || exit 1
+[ -z "${ENVPILOT_SUBSCRIPTION_URL_LOG:-}" ] || printf '%s\n' "$subscription_url" >> "$ENVPILOT_SUBSCRIPTION_URL_LOG"
 printf 'proxies: []\nrules: []\n' > "$destination"
 EOF
     chmod +x "$tmp_bin/curl"
-    HOME="$tmp_home" HOSTNAME="$test_host" PATH="$tmp_bin:$PATH"         MIHOMO_PROXY_PORT=42291 MIHOMO_API_PORT=60291         bash "$ROOT/templates/update_mihomo_subscription.sh" "https://example.invalid/clash-meta"         >/tmp/envpilot-mihomo-subscription.out
+    subscription_url_log="$tmp_home/subscription-urls"
+    HOME="$tmp_home" HOSTNAME="$test_host" PATH="$tmp_bin:$PATH"         ENVPILOT_SUBSCRIPTION_URL_LOG="$subscription_url_log"         MIHOMO_PROXY_PORT=42291 MIHOMO_API_PORT=60291         bash "$ROOT/templates/update_mihomo_subscription.sh" "https://example.invalid/clash-meta"         >/tmp/envpilot-mihomo-subscription.out
+    grep -q '^mixed-port: 42291$' "$tmp_home/.config/mihomo/config.yaml"
+    grep -q '^external-controller: 127.0.0.1:60291$' "$tmp_home/.config/mihomo/config.yaml"
+    [ "$(sed -n '1p' "$tmp_home/.config/mihomo/subscription.url")" = "https://example.invalid/clash-meta" ]
+    case "$(uname -s)" in
+        MINGW*|MSYS*|CYGWIN*) ;;
+        *) [ "$(stat -c '%a' "$tmp_home/.config/mihomo/subscription.url" 2>/dev/null || stat -f '%Lp' "$tmp_home/.config/mihomo/subscription.url")" = "600" ] ;;
+    esac
+    HOME="$tmp_home" HOSTNAME="$test_host" PATH="$tmp_bin:$PATH"         ENVPILOT_SUBSCRIPTION_URL_LOG="$subscription_url_log"         bash "$ROOT/templates/update_mihomo_subscription.sh"         >/tmp/envpilot-mihomo-subscription-saved.out
+    [ "$(sed -n '2p' "$subscription_url_log")" = "https://example.invalid/clash-meta" ]
     grep -q '^mixed-port: 42291$' "$tmp_home/.config/mihomo/config.yaml"
     grep -q '^external-controller: 127.0.0.1:60291$' "$tmp_home/.config/mihomo/config.yaml"
     rm -rf "$runtime_dir" "$tmp_home" "$tmp_bin"
@@ -1599,6 +1761,8 @@ EOF
 cat > "$tmp_home/.config/mihomo/config.yaml" <<'EOF'
 mixed-port: 7890
 EOF
+printf '%s\n' 'https://example.invalid/original' > "$tmp_home/.config/mihomo/subscription.url"
+chmod 600 "$tmp_home/.config/mihomo/subscription.url"
 cat > "$tmp_home/.config/envpilot/shell.local" <<'EOF'
 BASHRC_UMASK=027
 EOF
@@ -1630,6 +1794,7 @@ printf '%s\n' keep > "$tmp_home/software/mihomo/keep.txt"
 printf 'changed\n' > "$tmp_home/.bashrc"
 rm -f "$tmp_home/.condarc"
 printf 'changed\n' > "$tmp_home/.config/mihomo/config.yaml"
+printf '%s\n' 'https://example.invalid/changed' > "$tmp_home/.config/mihomo/subscription.url"
 printf '%s\n' '#!/usr/bin/env sh' > "$tmp_home/software/mihomo/mihomo"
 chmod +x "$tmp_home/software/mihomo/mihomo"
 printf 'changed\n' > "$tmp_home/.config/envpilot/shell.local"
@@ -1659,9 +1824,37 @@ printf 'changed\n' > "$tmp_home/.config/envpilot/shell.local"
 grep -q 'export PATH' "$tmp_home/.bashrc"
 grep -q 'channels:' "$tmp_home/.condarc"
 grep -q 'mixed-port: 7890' "$tmp_home/.config/mihomo/config.yaml"
+grep -q 'https://example.invalid/original' "$tmp_home/.config/mihomo/subscription.url"
 test ! -e "$tmp_home/software/mihomo/mihomo"
 grep -q 'keep' "$tmp_home/software/mihomo/keep.txt"
 grep -q 'BASHRC_UMASK=027' "$tmp_home/.config/envpilot/shell.local"
+rm -rf "$tmp_home"
+
+echo "[TEST] doctor baseline removes a newly created subscription URL"
+tmp_home="$(mktemp -d)"
+mkdir -p "$tmp_home/.config/envpilot" "$tmp_home/.config/mihomo"
+(
+    HOME="$tmp_home"
+    ENVPILOT_ROOT="$ROOT"
+    . "$ROOT/lib/common.sh"
+    . "$ROOT/lib/platform.sh"
+    . "$ROOT/lib/shell.sh"
+    . "$ROOT/lib/baseline.sh"
+    . "$ROOT/components/mihomo.sh"
+    EP_PREFIX="$tmp_home/software"
+    EP_OS=linux
+    EP_ARCH=amd64
+    EP_LIBC=glibc
+    EP_SHELL_NAME=bash
+    EP_CONFIG_DIR="$tmp_home/.config/envpilot"
+    EP_BASELINE_DIR="$EP_CONFIG_DIR/baseline"
+    EP_BASELINE_FILE="$EP_BASELINE_DIR/baseline.tsv"
+    ep_capture_doctor_baseline >/dev/null
+    printf '%s\n' 'https://example.invalid/new' > "$tmp_home/.config/mihomo/subscription.url"
+    chmod 600 "$tmp_home/.config/mihomo/subscription.url"
+    ep_restore_doctor_baseline >/tmp/envpilot-subscription-baseline-restore.out 2>&1
+)
+test ! -e "$tmp_home/.config/mihomo/subscription.url"
 rm -rf "$tmp_home"
 echo "[TEST] doctor works with isolated HOME"
 HOME="$tmp_home" bash "$ROOT/envpilot.sh" doctor >/tmp/envpilot-doctor.out 2>&1

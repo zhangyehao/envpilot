@@ -90,6 +90,7 @@ ep_capture_doctor_baseline()
     ep_baseline_record_file repo-root "$EP_REPO_ROOT_FILE"
     ep_baseline_record_file condarc "$HOME/.condarc"
     ep_baseline_record_file mihomo-config "$HOME/.config/mihomo/config.yaml"
+    ep_baseline_record_file mihomo-subscription-url "$HOME/.config/mihomo/subscription.url"
     ep_baseline_record_file mihomo-country "$HOME/.config/mihomo/country.mmdb"
     ep_baseline_record_file mihomo-geoip "$HOME/.config/mihomo/geoip.metadb"
     ep_baseline_record_file mihomo-bin "$HOME/software/mihomo/mihomo"

@@ -33,6 +33,8 @@ For an existing installation, prefer `git pull --ff-only`, `doctor`, `apply-shel
 ## Mihomo invariants
 
 - Use `MIHOMO_PROXY_HOST`, `MIHOMO_PROXY_PORT`, and `MIHOMO_API_PORT` consistently. Proxy and API ports must be distinct and available.
+- For a fresh install without explicit or persisted ports, scan upward independently from proxy 42290 and API 60290, preferring `nc`; preserve user-selected and existing managed ports during updates.
+- Treat the full-config subscription URL as sensitive. Save a successfully used URL only in protected `~/.config/mihomo/subscription.url`, never print it, and distinguish cron-driven full-config refresh from Mihomo `proxy-providers.interval`.
 - Prefer the architecture-matched `downloads/` asset before a network download.
 - List and explicitly take over a user-owned existing Mihomo before stopping it. Preserve an envpilot-managed config and restore a runtime that was running before an update.
 - `mihomo status` must check real listening sockets and API health, not just process existence.
