@@ -21,7 +21,6 @@ EP_CODEX_PROBE_STATE="missing"
 EP_CODEX_INSTALL_METHOD="none"
 EP_CODEX_INSTALLED_BIN=""
 EP_CODEX_PROBE_BIN=""
-EP_CODEX_VISIBLE_BIN=""
 EP_CODEX_STANDALONE_BIN=""
 EP_CODEX_NPM_BIN=""
 
@@ -114,13 +113,11 @@ ep_codex_npm_command()
         printf '%s' "$visible"
         return 0
     fi
-    for candidate in "$HOME/software/node22/bin/codex"; do
-        [ -n "$candidate" ] || continue
-        if ep_codex_is_npm_command "$candidate"; then
-            printf '%s' "$candidate"
-            return 0
-        fi
-    done
+    candidate="$HOME/software/node22/bin/codex"
+    if ep_codex_is_npm_command "$candidate"; then
+        printf '%s' "$candidate"
+        return 0
+    fi
     if [ -n "${NVM_BIN:-}" ]; then
         candidate="$NVM_BIN/codex"
         if ep_codex_is_npm_command "$candidate"; then
@@ -147,7 +144,6 @@ ep_codex_detect_installation()
     EP_CODEX_STANDALONE_BIN="$(ep_codex_standalone_command 2>/dev/null || true)"
     EP_CODEX_NPM_BIN="$(ep_codex_npm_command 2>/dev/null || true)"
     visible="$(ep_codex_command 2>/dev/null || true)"
-    EP_CODEX_VISIBLE_BIN="$visible"
 
     if [ -n "$EP_CODEX_STANDALONE_BIN" ]; then
         EP_CODEX_INSTALL_METHOD=standalone
