@@ -138,7 +138,7 @@ Each component update path must:
 - preserve user configuration and restore the previous running state when updating an envpilot-managed service
 - keep install and update behavior covered on Unix and PowerShell entrypoints
 
-Mihomo updates preserve an existing envpilot `config.yaml` and restart the managed runtime only if it was running before the update. `install all` prepares Mihomo before network-dependent components so a configured proxy is available before Git/Python/Conda/Mamba/Codex downloads. Conda and Mamba defer compatibility selection to the current Conda solver. tmux compares the current command with `manifests/tmux.json` and builds the target in user space when the system/module version is older. Codex uses the standalone installer first and only falls back to npm; GitHub CLI updates only an envpilot-managed copy on Unix and uses winget on Windows when available.
+Mihomo updates preserve an existing envpilot `config.yaml` and restart the managed runtime only if it was running before the update. `install all` prepares Mihomo before network-dependent components so a configured proxy is available before Git/Python/Conda/Mamba/Codex downloads. Conda and Mamba defer compatibility selection to the current Conda solver. tmux compares the current command with `manifests/tmux.json` and builds the target in user space when the system/module version is older. Codex defaults to the standalone installer; a first-install npm fallback requires separate confirmation. GitHub CLI updates only an envpilot-managed copy on Unix and uses winget on Windows when available.
 
 Every initialized run records the repository path in `~/.config/envpilot/repo-root`. Shell templates may default to `$HOME/envpilot`, but must fall back to this recorded path so a repository cloned elsewhere remains manageable after upgrades.
 
@@ -146,9 +146,9 @@ Codex must keep credentials separate from profile and TOML configuration. `~/.co
 
 ### Codex and Node.js resolver
 
-The Codex component must probe the executable with `codex --version`, not merely trust `command -v`. A usable existing Codex is reused by ordinary `install`; it must not trigger Node.js, npm, or nvm installation. `update codex` or `--upgrade` is the explicit path for replacing the CLI.
+The Codex component must separate installation artifacts from bounded `codex --version` readiness. Ordinary `install` reuses an existing artifact when the probe succeeds or times out; a timeout is not absence and must not trigger Node.js, npm, or nvm. Only an immediate execution failure enters repair logic. `update codex` or `--upgrade` is the explicit path for replacing the CLI.
 
-For a missing or explicitly upgraded Codex, online mode tries the official standalone installer at `https://chatgpt.com/codex/install.sh` first. npm is only a fallback after that installer fails. Offline mode must stop with an actionable error when no usable local Codex is present; it must never silently reach the npm registry.
+Run the official standalone installer with `CODEX_NON_INTERACTIVE=1`; it must not launch Codex, enter login, or uninstall an npm/brew/bun installation. Official installer success plus a standalone artifact is success even if the bounded post-install version probe times out or fails, and must never trigger automatic npm fallback. A first-install official failure may offer npm only through a second, default-no confirmation. Updates preserve the detected install method; coexistence prefers standalone and preserves the other copy with a warning.
 
 The npm fallback resolver must inspect OS, architecture, libc, and the real Node.js execution result. On Linux amd64 with glibc 2.17-2.27, select Node.js 22 `x64-glibc-217` from the unofficial-builds installer and place its `bin` directory ahead of nvm. On Linux glibc >= 2.28, official nvm binaries may be used. For unsupported architectures or unknown libc, stop and explain how to provide a compatible runtime rather than downloading an x64 asset. Preserve stderr from failed `node -v` probes so GLIBC loader errors remain visible.
 

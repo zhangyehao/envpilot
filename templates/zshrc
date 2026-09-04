@@ -251,7 +251,6 @@ path_prepend()
     esac
 }
 
-path_prepend "$HOME/.local/bin"
 path_prepend "$HOME/bin"
 path_prepend "$HOME/software/bin"
 path_prepend "$HOME/software/git/current/bin"
@@ -260,6 +259,9 @@ path_prepend "$HOME/software/python/current/bin"
 path_prepend "$HOME/software/python/bin"
 # Legacy Linux hosts use a glibc-217 Node.js build; keep it ahead of nvm.
 path_prepend "$HOME/software/node22/bin"
+# Standalone Codex and the remote wrapper live here and take precedence over
+# any preserved npm Codex launcher under node22 or nvm.
+path_prepend "$HOME/.local/bin"
 
 if [ "${BASHRC_USE_NODE_LOCAL_TMP:-1}" = "1" ] && [ -d /tmp ] && [ -w /tmp ]; then
     case "$BASHRC_CODEX_TMP_ROOT" in

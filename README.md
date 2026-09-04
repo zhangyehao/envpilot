@@ -214,7 +214,9 @@ bash envpilot.sh install codex
 bash envpilot.sh update codex
 ~~~
 
-普通 install codex 会复用已有且可执行的 Codex，只更新配置和认证；只有 update 才会主动重新解析和更新版本。真正的 API 变量是 OPENAI_API_KEY，已有 ~/.codex/auth.json 会被保留。
+官方 standalone 是 Linux/macOS 默认安装方式，不需要 Node.js、npm 或系统 glibc 升级。安装器以非交互模式运行，不再出现 `Start Codex now?`，也不会在安装结束后启动登录界面。
+
+普通 `install codex` 会复用已有安装；即使共享文件系统上的 `codex --version` 超过 5 秒，也只提示启用 node-local runtime，不会谎报“未安装”或改走 npm。`update codex` 保持当前安装方法：standalone 仍用官方安装器，npm-only 仍用 npm。两者同时存在时优先 standalone，但不会自动卸载 npm 副本。真正的 API 变量是 OPENAI_API_KEY，已有 ~/.codex/auth.json 会被保留。
 
 共享文件系统上的 Codex 较慢时：
 

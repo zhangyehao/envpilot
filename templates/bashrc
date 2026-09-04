@@ -287,7 +287,6 @@ path_append()
 }
 
 umask "$BASHRC_UMASK"
-path_prepend "$HOME/.local/bin"
 path_prepend "$HOME/bin"
 path_prepend "$HOME/software/bin"
 # User-managed Git and Python must be visible to non-interactive commands too.
@@ -297,6 +296,9 @@ path_prepend "$HOME/software/python/current/bin"
 path_prepend "$HOME/software/python/bin"
 # Legacy Linux hosts use a glibc-217 Node.js build; keep it ahead of nvm.
 path_prepend "$HOME/software/node22/bin"
+# Standalone Codex and the remote wrapper live here and take precedence over
+# any preserved npm Codex launcher under node22 or nvm.
+path_prepend "$HOME/.local/bin"
 
 # Prepare node-local temporary state and a usable proxy before the non-
 # interactive guard. Everything in this block is quiet and best-effort.

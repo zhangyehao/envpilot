@@ -17,6 +17,13 @@ EP_NODE_PROBE_ERROR=""
 EP_CODEX_BIN=""
 EP_CODEX_VERSION=""
 EP_CODEX_PROBE_ERROR=""
+EP_CODEX_PROBE_STATE="missing"
+EP_CODEX_INSTALL_METHOD="none"
+EP_CODEX_INSTALLED_BIN=""
+EP_CODEX_PROBE_BIN=""
+EP_CODEX_VISIBLE_BIN=""
+EP_CODEX_STANDALONE_BIN=""
+EP_CODEX_NPM_BIN=""
 
 ep_node_major_from_version()
 {
@@ -66,13 +73,109 @@ ep_codex_command()
         "$HOME/.local/bin/codex" \
         "$HOME/.local/bin/codex.exe" \
         "$HOME/bin/codex" \
-        "$HOME/bin/codex.exe"; do
+        "$HOME/bin/codex.exe" \
+        "${CODEX_HOME:-$HOME/.codex}/packages/standalone/current/bin/codex" \
+        "${CODEX_HOME:-$HOME/.codex}/packages/standalone/current/codex"; do
         if [ -x "$candidate" ]; then
             printf '%s' "$candidate"
             return 0
         fi
     done
     return 1
+}
+
+ep_codex_standalone_command()
+{
+    local root candidate
+    root="${CODEX_HOME:-$HOME/.codex}/packages/standalone/current"
+    for candidate in "$root/bin/codex" "$root/codex"; do
+        if [ -x "$candidate" ]; then
+            printf '%s' "$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
+ep_codex_is_npm_command()
+{
+    local candidate="${1:-}"
+    [ -n "$candidate" ] && [ -x "$candidate" ] || return 1
+    [ "$(LC_ALL=C head -c 2 "$candidate" 2>/dev/null || true)" = '#!' ] || return 1
+    LC_ALL=C head -c 256 "$candidate" 2>/dev/null |
+        grep -Eq '^#!.*(^|[/[:space:]])node(js)?([[:space:]]|$)'
+}
+
+ep_codex_npm_command()
+{
+    local visible candidate
+    visible="$(command -v codex 2>/dev/null || true)"
+    if ep_codex_is_npm_command "$visible"; then
+        printf '%s' "$visible"
+        return 0
+    fi
+    for candidate in "$HOME/software/node22/bin/codex"; do
+        [ -n "$candidate" ] || continue
+        if ep_codex_is_npm_command "$candidate"; then
+            printf '%s' "$candidate"
+            return 0
+        fi
+    done
+    if [ -n "${NVM_BIN:-}" ]; then
+        candidate="$NVM_BIN/codex"
+        if ep_codex_is_npm_command "$candidate"; then
+            printf '%s' "$candidate"
+            return 0
+        fi
+    fi
+    for candidate in "$HOME"/.nvm/versions/node/*/bin/codex; do
+        [ -e "$candidate" ] || continue
+        if ep_codex_is_npm_command "$candidate"; then
+            printf '%s' "$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
+ep_codex_detect_installation()
+{
+    local visible
+    EP_CODEX_INSTALL_METHOD=none
+    EP_CODEX_INSTALLED_BIN=""
+    EP_CODEX_PROBE_BIN=""
+    EP_CODEX_STANDALONE_BIN="$(ep_codex_standalone_command 2>/dev/null || true)"
+    EP_CODEX_NPM_BIN="$(ep_codex_npm_command 2>/dev/null || true)"
+    visible="$(ep_codex_command 2>/dev/null || true)"
+    EP_CODEX_VISIBLE_BIN="$visible"
+
+    if [ -n "$EP_CODEX_STANDALONE_BIN" ]; then
+        EP_CODEX_INSTALL_METHOD=standalone
+        EP_CODEX_INSTALLED_BIN="$EP_CODEX_STANDALONE_BIN"
+        EP_CODEX_PROBE_BIN="$EP_CODEX_STANDALONE_BIN"
+        if [ -n "$visible" ] && declare -F ep_codex_remote_is_managed_wrapper >/dev/null 2>&1 &&
+           ep_codex_remote_is_managed_wrapper "$visible"; then
+            EP_CODEX_PROBE_BIN="$visible"
+        fi
+    elif [ -n "$EP_CODEX_NPM_BIN" ]; then
+        EP_CODEX_INSTALL_METHOD=npm
+        EP_CODEX_INSTALLED_BIN="$EP_CODEX_NPM_BIN"
+        EP_CODEX_PROBE_BIN="$EP_CODEX_NPM_BIN"
+    elif [ -n "$visible" ]; then
+        EP_CODEX_INSTALL_METHOD=unknown
+        EP_CODEX_INSTALLED_BIN="$visible"
+        EP_CODEX_PROBE_BIN="$visible"
+    fi
+}
+
+ep_codex_warn_duplicate_installation()
+{
+    if [ -n "$EP_CODEX_STANDALONE_BIN" ] && [ -n "$EP_CODEX_NPM_BIN" ]; then
+        ep_warn "Both standalone and npm-managed Codex installations were found."
+        ep_warn "Standalone is the envpilot default: $EP_CODEX_STANDALONE_BIN"
+        ep_warn "The npm installation is preserved and will not be uninstalled automatically: $EP_CODEX_NPM_BIN"
+        ep_warn "Start a new shell or source the envpilot profile so $HOME/.local/bin takes precedence."
+    fi
 }
 
 ep_codex_kill_process_tree()
@@ -97,92 +200,117 @@ ep_codex_kill_process_tree()
 ep_codex_run_bounded()
 {
     local seconds="${1:-$EP_CODEX_PROBE_TIMEOUT}"
+    local output_file pid elapsed=0 status
     shift || true
-    if ep_command_exists timeout; then
-        timeout -k 1 "$seconds" "$@"
-    elif ep_command_exists gtimeout; then
-        gtimeout -k 1 "$seconds" "$@"
-    elif ep_command_exists perl; then
-        perl -e 'alarm shift; exec @ARGV' "$seconds" "$@"
-    else
-        local output_file pid elapsed=0 status
-        output_file="$(mktemp "${TMPDIR:-/tmp}/envpilot-codex-probe.XXXXXX")" || {
-            "$@"
-            return
-        }
-        ("$@" >"$output_file" 2>&1) &
-        pid=$!
-        while kill -0 "$pid" 2>/dev/null; do
-            if [ "$elapsed" -ge "$seconds" ]; then
-                ep_codex_kill_process_tree "$pid"
-                wait "$pid" 2>/dev/null || true
-                cat "$output_file"
-                rm -f "$output_file"
-                return 124
-            fi
-            sleep 1
-            elapsed=$((elapsed + 1))
-        done
-        status=0
-        wait "$pid" || status=$?
-        cat "$output_file"
-        rm -f "$output_file"
-        return "$status"
-    fi
+    output_file="$(mktemp "${TMPDIR:-/tmp}/envpilot-codex-probe.XXXXXX")" || {
+        "$@"
+        return
+    }
+    ("$@" >"$output_file" 2>&1) &
+    pid=$!
+    while kill -0 "$pid" 2>/dev/null; do
+        if [ "$elapsed" -ge "$seconds" ]; then
+            ep_codex_kill_process_tree "$pid"
+            wait "$pid" 2>/dev/null || true
+            cat "$output_file"
+            rm -f "$output_file"
+            return 124
+        fi
+        sleep 1
+        elapsed=$((elapsed + 1))
+    done
+    status=0
+    wait "$pid" || status=$?
+    cat "$output_file"
+    rm -f "$output_file"
+    return "$status"
 }
 
-ep_codex_probe()
+ep_codex_probe_path()
 {
-    local output status version
-    EP_CODEX_BIN="$(ep_codex_command 2>/dev/null || true)"
+    local path="${1:-}" output status version
+    EP_CODEX_BIN="$path"
     EP_CODEX_VERSION=""
     EP_CODEX_PROBE_ERROR=""
-    [ -n "$EP_CODEX_BIN" ] || return 1
+    EP_CODEX_PROBE_STATE=missing
+    [ -n "$EP_CODEX_BIN" ] && [ -x "$EP_CODEX_BIN" ] || return 1
     if output="$(ep_codex_run_bounded "$EP_CODEX_PROBE_TIMEOUT" "$EP_CODEX_BIN" --version 2>&1)"; then
         version="$(printf '%s\n' "$output" | sed -n '/^codex-cli[[:space:]]/{p;q;}')"
         [ -n "$version" ] || {
             EP_CODEX_PROBE_ERROR="${output:-empty version output}"
+            EP_CODEX_PROBE_STATE=failed
             return 1
         }
         EP_CODEX_VERSION="$version"
+        EP_CODEX_PROBE_STATE=ready
         return 0
     else
         status=$?
         if [ "$status" = "124" ]; then
             EP_CODEX_PROBE_ERROR="codex --version timed out after ${EP_CODEX_PROBE_TIMEOUT}s on the current filesystem"
+            EP_CODEX_PROBE_STATE=timeout
         else
             EP_CODEX_PROBE_ERROR="${output:-codex exited with status $status}"
+            EP_CODEX_PROBE_STATE=failed
         fi
         return 1
     fi
+}
+
+ep_codex_probe()
+{
+    local command_path
+    command_path="$(ep_codex_command 2>/dev/null || true)"
+    ep_codex_probe_path "$command_path"
+}
+
+ep_codex_warn_slow_probe()
+{
+    local path="${1:-$EP_CODEX_BIN}"
+    ep_warn "Codex is installed at $path, but codex --version did not finish within ${EP_CODEX_PROBE_TIMEOUT}s on the shared filesystem."
+    ep_warn "The installation is retained; this timeout is not treated as a missing executable, and npm fallback is skipped."
+    ep_warn "Use the node-local runtime for fast startup: bash envpilot.sh codex remote enable"
 }
 
 ep_doctor_codex()
 {
     local secret_file legacy_target
 
+    ep_codex_detect_installation
+    ep_codex_warn_duplicate_installation
     if ep_node_probe; then
         ep_log "Node.js: found at $(command -v node)"
         ep_log "Node.js version: $EP_NODE_VERSION"
     elif ep_command_exists node; then
-        ep_warn "Node.js found at $(command -v node) but could not execute: $(printf '%s\n' "$EP_NODE_PROBE_ERROR" | sed -n '1p')"
-        ep_node_nvm_compatibility_warning
+        if [ "$EP_CODEX_INSTALL_METHOD" = "npm" ]; then
+            ep_warn "Node.js found at $(command -v node) but could not execute: $(printf '%s\n' "$EP_NODE_PROBE_ERROR" | sed -n '1p')"
+            ep_node_nvm_compatibility_warning
+        else
+            ep_log "Node.js: present but unusable and not required by the $EP_CODEX_INSTALL_METHOD Codex path: $(printf '%s\n' "$EP_NODE_PROBE_ERROR" | sed -n '1p')"
+        fi
     else
         legacy_target="$(ep_node_legacy_target_dir)"
         if [ -x "$legacy_target/bin/node" ]; then
             ep_log "Node.js legacy candidate: $legacy_target/bin/node"
+        elif [ "$EP_CODEX_INSTALL_METHOD" = "npm" ]; then
+            ep_warn "Node.js: not found; the detected npm Codex installation requires Node.js $EP_MIN_NODE_MAJOR+"
         else
-            ep_warn "Node.js: not found"
+            ep_log "Node.js: not found (optional; only required for the legacy npm Codex path)"
         fi
     fi
 
-    if ep_codex_probe; then
-        ep_log "Codex: found at $EP_CODEX_BIN"
-        ep_log "Codex version: $EP_CODEX_VERSION"
-    elif [ -n "$EP_CODEX_BIN" ]; then
-        ep_warn "Codex found at $EP_CODEX_BIN but could not execute: $(printf '%s\n' "$EP_CODEX_PROBE_ERROR" | sed -n '1p')"
-    else
+    if [ -z "$EP_CODEX_INSTALLED_BIN" ]; then
         ep_warn "Codex: not found"
+    elif ep_codex_probe_path "$EP_CODEX_PROBE_BIN"; then
+        ep_log "Codex: found at $EP_CODEX_BIN"
+        ep_log "Codex install method: $EP_CODEX_INSTALL_METHOD"
+        ep_log "Codex version: $EP_CODEX_VERSION"
+    elif [ "$EP_CODEX_PROBE_STATE" = "timeout" ]; then
+        ep_log "Codex: installed at $EP_CODEX_BIN"
+        ep_log "Codex install method: $EP_CODEX_INSTALL_METHOD"
+        ep_codex_warn_slow_probe "$EP_CODEX_BIN"
+    else
+        ep_warn "Codex found at $EP_CODEX_BIN but could not execute: $(printf '%s\n' "$EP_CODEX_PROBE_ERROR" | sed -n '1p')"
     fi
     if [ "${EP_OS:-}" = "linux" ]; then
         if ep_command_exists bwrap; then
@@ -426,22 +554,34 @@ ep_install_codex_official()
     ep_log "Codex source: official standalone installer $EP_CODEX_INSTALL_URL"
     if ! curl -fsSL "$EP_CODEX_INSTALL_URL" -o "$installer"; then
         rm -f "$installer"
-        ep_warn "Could not download the official Codex installer; falling back to npm if a compatible Node.js exists."
+        ep_warn "Could not download the official Codex installer. No npm or Node.js fallback has been started."
         return 1
     fi
-    if ! sh "$installer"; then
+    ep_log "The official installer will run non-interactively; it will not launch Codex or uninstall another installation method."
+    if ! CODEX_NON_INTERACTIVE=1 sh "$installer"; then
         rm -f "$installer"
-        ep_warn "The official Codex installer failed; falling back to npm if a compatible Node.js exists."
+        ep_warn "The official Codex installer failed. No npm or Node.js fallback has been started."
         return 1
     fi
     rm -f "$installer"
     hash -r
-    if ep_codex_probe; then
-        ep_log "Codex CLI ready: $EP_CODEX_VERSION at $EP_CODEX_BIN"
-        return 0
+    ep_codex_detect_installation
+    if [ -z "$EP_CODEX_STANDALONE_BIN" ]; then
+        ep_warn "The official installer exited successfully, but the standalone Codex artifact was not found under ${CODEX_HOME:-$HOME/.codex}/packages/standalone/current."
+        return 1
     fi
-    ep_warn "The official Codex installer completed, but no executable Codex CLI was found: $(printf '%s\n' "$EP_CODEX_PROBE_ERROR" | sed -n '1p')"
-    return 1
+    EP_CODEX_INSTALL_METHOD=standalone
+    EP_CODEX_INSTALLED_BIN="$EP_CODEX_STANDALONE_BIN"
+    if ep_codex_probe_path "$EP_CODEX_STANDALONE_BIN"; then
+        ep_log "Codex CLI ready: $EP_CODEX_VERSION at $EP_CODEX_BIN"
+    elif [ "$EP_CODEX_PROBE_STATE" = "timeout" ]; then
+        ep_codex_warn_slow_probe "$EP_CODEX_STANDALONE_BIN"
+    else
+        ep_warn "The official installer succeeded and the standalone artifact exists, but the bounded post-install probe failed: $(printf '%s\n' "$EP_CODEX_PROBE_ERROR" | sed -n '1p')"
+        ep_warn "The standalone installation is preserved; envpilot will not replace it with npm automatically."
+    fi
+    ep_codex_warn_duplicate_installation
+    return 0
 }
 
 ep_install_codex_npm()
@@ -465,8 +605,18 @@ ep_install_codex_npm()
         ep_die "npm failed to install/update $EP_CODEX_PACKAGE"
     fi
     hash -r
-    ep_codex_probe || ep_die "npm completed but the codex command is not executable: $(printf '%s\n' "$EP_CODEX_PROBE_ERROR" | sed -n '1p')"
-    ep_log "Codex CLI ready: $EP_CODEX_VERSION at $EP_CODEX_BIN"
+    EP_CODEX_NPM_BIN="$(ep_codex_npm_command 2>/dev/null || true)"
+    [ -n "$EP_CODEX_NPM_BIN" ] || ep_die "npm completed, but no npm-managed Codex launcher was found."
+    EP_CODEX_INSTALL_METHOD=npm
+    EP_CODEX_INSTALLED_BIN="$EP_CODEX_NPM_BIN"
+    EP_CODEX_PROBE_BIN="$EP_CODEX_NPM_BIN"
+    if ep_codex_probe_path "$EP_CODEX_NPM_BIN"; then
+        ep_log "Codex CLI ready: $EP_CODEX_VERSION at $EP_CODEX_BIN"
+    elif [ "$EP_CODEX_PROBE_STATE" = "timeout" ]; then
+        ep_codex_warn_slow_probe "$EP_CODEX_NPM_BIN"
+    else
+        ep_die "npm completed but the installed Codex command failed immediately: $(printf '%s\n' "$EP_CODEX_PROBE_ERROR" | sed -n '1p')"
+    fi
 }
 
 ep_write_codex_config()
@@ -692,7 +842,11 @@ ep_codex_remote_wrapper_path()
 ep_codex_remote_is_managed_wrapper()
 {
     local path="${1:-$(ep_codex_remote_wrapper_path)}"
-    [ -f "$path" ] && grep -q 'envpilot-managed-codex-wrapper' "$path" 2>/dev/null
+    [ -f "$path" ] || return 1
+    [ ! -L "$path" ] || return 1
+    [ "$(LC_ALL=C head -c 2 "$path" 2>/dev/null || true)" = '#!' ] || return 1
+    LC_ALL=C head -c 512 "$path" 2>/dev/null |
+        grep -Fq 'envpilot-managed-codex-wrapper'
 }
 
 ep_codex_remote_install_manager()
@@ -712,6 +866,18 @@ ep_codex_remote_install_manager()
     chmod 700 "$tmp"
     mv "$tmp" "$manager"
     ep_log "Installed Codex remote manager: $manager"
+}
+
+ep_codex_remote_install_wrapper()
+{
+    local wrapper tmp
+    wrapper="$(ep_codex_remote_wrapper_path)"
+    mkdir -p "$(dirname "$wrapper")"
+    tmp="$wrapper.tmp.$$"
+    cp "$ENVPILOT_ROOT/templates/codex-wrapper.sh" "$tmp"
+    chmod 700 "$tmp"
+    mv "$tmp" "$wrapper"
+    ep_log "Enabled Codex wrapper: $wrapper"
 }
 
 ep_codex_remote_invoke()
@@ -751,10 +917,7 @@ ep_codex_remote_enable()
             ep_backup_file "$wrapper"
         fi
     fi
-    cp "$ENVPILOT_ROOT/templates/codex-wrapper.sh" "$wrapper.tmp.$$"
-    chmod 700 "$wrapper.tmp.$$"
-    mv "$wrapper.tmp.$$" "$wrapper"
-    ep_log "Enabled Codex wrapper: $wrapper"
+    ep_codex_remote_install_wrapper
     if ep_codex_remote_invoke ready; then
         ep_log "Codex remote runtime is ready for Desktop."
     else
@@ -840,36 +1003,71 @@ ep_doctor_codex_remote()
 ep_install_codex()
 {
     ep_require_unix_runtime
-    local action codex_ready
+    local action existing probe_ready install_source remote_wrapper_enabled
     action=configured
+    install_source=existing
+    remote_wrapper_enabled=0
+    if ep_codex_remote_is_managed_wrapper "$(ep_codex_remote_wrapper_path)"; then
+        remote_wrapper_enabled=1
+    fi
     ep_log "Component: codex"
     ep_log "Package: $EP_CODEX_PACKAGE"
+    ep_log "Default install method: official standalone; Node.js and npm are not required."
     ep_log "Codex config uses env_key=OPENAI_API_KEY; existing auth.json is preserved, and a missing file may be created from a detected key."
     ep_confirm "Install/update and configure Codex CLI?" "yes" || {
         ep_report_event codex skipped "user declined" "" "" ""
         return 0
     }
 
-    codex_ready=0
-    if ep_codex_probe; then
-        codex_ready=1
+    existing=0
+    probe_ready=0
+    ep_codex_detect_installation
+    ep_codex_warn_duplicate_installation
+    if [ -n "$EP_CODEX_INSTALLED_BIN" ]; then
+        existing=1
+        if ep_codex_probe_path "$EP_CODEX_PROBE_BIN"; then
+            probe_ready=1
+        fi
     fi
-    if [ "$codex_ready" = "1" ] && [ "$EP_UPGRADE" != "1" ]; then
-        ep_log "Existing Codex CLI is usable at $EP_CODEX_BIN; Node.js and npm are not required for configuration."
-    elif [ "$EP_MODE" = "online" ] && ep_install_codex_official; then
-        if [ "$codex_ready" = "1" ]; then
-            action=updated
-        else
-            action=installed
-        fi
-    elif [ "$EP_MODE" = "offline" ]; then
-        if [ "$codex_ready" = "1" ]; then
-            ep_die "Codex update requires an online installer source; existing CLI was not changed. Use online mode or omit --upgrade."
-        fi
-        ep_die "Codex is not available in offline mode. Use online mode for the official installer or provide a compatible local Node.js/npm runtime."
+
+    if [ "$existing" = "1" ] && [ "$EP_UPGRADE" != "1" ] && [ "$probe_ready" = "1" ]; then
+        ep_log "Existing $EP_CODEX_INSTALL_METHOD Codex CLI is usable at $EP_CODEX_BIN; installation is unchanged."
+    elif [ "$existing" = "1" ] && [ "$EP_UPGRADE" != "1" ] && [ "$EP_CODEX_PROBE_STATE" = "timeout" ]; then
+        ep_log "Existing $EP_CODEX_INSTALL_METHOD Codex installation found at $EP_CODEX_INSTALLED_BIN; installation is unchanged."
+        ep_codex_warn_slow_probe "$EP_CODEX_INSTALLED_BIN"
     else
-        ep_install_codex_npm "$codex_ready"
-        if [ "$codex_ready" = "1" ]; then
+        if [ "$EP_MODE" = "offline" ]; then
+            if [ "$existing" = "1" ]; then
+                ep_die "Codex requires repair/update, but offline mode cannot reach its existing $EP_CODEX_INSTALL_METHOD installer source. Existing files were not changed."
+            fi
+            ep_die "Codex is not installed and offline mode has no standalone package source. Run online mode."
+        fi
+
+        case "$EP_CODEX_INSTALL_METHOD" in
+            npm)
+                ep_log "Preserving the existing npm installation method for this Codex update."
+                ep_install_codex_npm 1
+                install_source="npm:$EP_CODEX_PACKAGE"
+                ;;
+            standalone|unknown)
+                [ "$EP_CODEX_PROBE_STATE" != "failed" ] ||
+                    ep_warn "The existing $EP_CODEX_INSTALL_METHOD Codex command failed its bounded probe; reinstalling with the official standalone installer."
+                ep_install_codex_official ||
+                    ep_die "The official standalone Codex install/update failed. Existing Codex files, if any, were preserved; npm fallback was not started."
+                install_source="$EP_CODEX_INSTALL_URL"
+                ;;
+            none)
+                if ep_install_codex_official; then
+                    install_source="$EP_CODEX_INSTALL_URL"
+                elif ep_confirm "The official standalone installer failed. Try the legacy npm method, which may install Node.js first?" "no"; then
+                    ep_install_codex_npm 0
+                    install_source="npm:$EP_CODEX_PACKAGE"
+                else
+                    ep_die "Codex was not installed. The official installer failed, and the optional npm fallback was not selected."
+                fi
+                ;;
+        esac
+        if [ "$existing" = "1" ]; then
             action=updated
         else
             action=installed
@@ -878,9 +1076,13 @@ ep_install_codex()
     ep_write_codex_config
     ep_codex_configure_auth
     ep_state_mark_done codex
-    ep_codex_probe || true
-    if [ -f "$(ep_codex_remote_manager_path)" ] && grep -q 'envpilot Codex remote runtime manager' "$(ep_codex_remote_manager_path)" 2>/dev/null; then
+    ep_codex_detect_installation
+    if [ "$remote_wrapper_enabled" = "1" ]; then
+        ep_codex_remote_install_manager
+        ep_codex_remote_install_wrapper
+        ep_log "Restored the envpilot Codex remote wrapper after the CLI install/update."
+    elif [ -f "$(ep_codex_remote_manager_path)" ] && grep -q 'envpilot Codex remote runtime manager' "$(ep_codex_remote_manager_path)" 2>/dev/null; then
         ep_codex_remote_install_manager
     fi
-    ep_report_event codex "$action" "installed or updated Codex and configured env_key" "$EP_CODEX_VERSION" "$EP_CODEX_INSTALL_URL; npm:$EP_CODEX_PACKAGE" "$EP_CODEX_BIN"
+    ep_report_event codex "$action" "preserved the Codex install method and configured env_key" "$EP_CODEX_VERSION" "$install_source" "${EP_CODEX_INSTALLED_BIN:-$EP_CODEX_BIN}"
 }

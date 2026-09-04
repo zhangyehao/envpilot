@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.31 - 2026-09-04
+
+### Fixed
+
+- Runs the official Codex standalone installer with `CODEX_NON_INTERACTIVE=1`, preventing the post-install `Start Codex now?` prompt and login launch.
+- Separates installed Codex artifacts from bounded version readiness, so slow shared-filesystem probes no longer produce a false "no executable found" result or trigger Node.js/npm installation.
+- Normalizes probe expiration to a timeout state instead of exposing the probe's forced status 137 as an immediate Codex failure.
+- Preserves the detected standalone or npm install method during updates and restores an enabled envpilot remote wrapper after standalone updates.
+- Gives standalone precedence over a preserved npm copy without automatically uninstalling either installation.
+- Bounds launcher and wrapper identification to script headers, avoiding native-binary scans and false wrapper matches through standalone symlinks.
+- Reports missing or incompatible Node.js as optional when standalone Codex is selected, while retaining a dependency warning for npm-only installations.
+
+### Changed
+
+- Makes npm a legacy, explicit default-no fallback only after a first standalone installation genuinely fails. Standalone Codex does not require Node.js or a system glibc upgrade.
+
 ## 0.2.30 - 2026-09-03
 
 ### Fixed

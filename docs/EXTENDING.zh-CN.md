@@ -125,7 +125,7 @@ Codex app-server 也必须使用持久启动锁串行化 Desktop SSH、不同终
 - 更新 envpilot 已管理服务时保留用户配置，并恢复升级前的运行状态
 - 同时覆盖 Unix 和 PowerShell 入口的 install/update 测试
 
-Mihomo 升级必须保留已有 envpilot `config.yaml`，并且只在升级前本来就在运行时自动重启。`install all` 必须先准备 Mihomo，再处理 Git/Python/Conda/Mamba/Codex 等网络依赖，确保后续下载有机会使用代理。Conda 和 Mamba 由当前 Conda 求解器选择兼容版本。tmux 将当前命令与 `manifests/tmux.json` 比较，系统或 module 版本过低时构建用户态目标版本。Codex 优先使用官方独立安装器，失败后才回退 npm；GitHub CLI 在 Unix 上只更新 envpilot 管理的副本，Windows 上优先交给 winget。
+Mihomo 升级必须保留已有 envpilot `config.yaml`，并且只在升级前本来就在运行时自动重启。`install all` 必须先准备 Mihomo，再处理 Git/Python/Conda/Mamba/Codex 等网络依赖，确保后续下载有机会使用代理。Conda 和 Mamba 由当前 Conda 求解器选择兼容版本。tmux 将当前命令与 `manifests/tmux.json` 比较，系统或 module 版本过低时构建用户态目标版本。Codex 默认使用官方独立安装器；只有首次安装明确失败且用户再次确认后才允许 npm 回退。GitHub CLI 在 Unix 上只更新 envpilot 管理的副本，Windows 上优先交给 winget。
 
 每次初始化都会把仓库实际位置记录到 `~/.config/envpilot/repo-root`。Shell 模板可以默认使用 `$HOME/envpilot`，但必须在该目录无效时读取记录路径，确保仓库 clone 到其他位置后仍可升级和管理。
 
@@ -184,9 +184,9 @@ Codex 组件不得把密钥写入日志。`~/.codex/config.toml` 只保存 `env_
 
 ### Codex 与 Node.js resolver
 
-Codex 组件必须实际执行 `codex --version` 检查可执行性，不能只依赖 `command -v`。普通 `install` 遇到已经可执行的 Codex 时必须复用它，不能因此安装 Node.js、npm 或 nvm；只有 `update codex` 或 `--upgrade` 才是替换 CLI 的明确路径。
+Codex 组件必须把“安装产物存在”与“`codex --version` 在限定时间内完成”分开。普通 `install` 遇到已有产物且探测成功或超时时都必须复用它；超时不是缺失，不能因此安装 Node.js、npm 或 nvm。只有立即执行失败才进入修复逻辑，`update codex` 或 `--upgrade` 才是主动替换 CLI 的明确路径。
 
-缺少 Codex 或显式升级时，在线模式先尝试官方独立安装器 `https://chatgpt.com/codex/install.sh`，只有下载安装器失败后才进入 npm 回退。离线模式没有可用本地 Codex 时必须明确失败，不能悄悄访问 npm registry。
+官方独立安装器必须使用 `CODEX_NON_INTERACTIVE=1`，不得启动 Codex、登录界面或自动卸载已有 npm/brew/bun 安装。官方安装器成功且 standalone 产物存在时，即使后续版本探测超时或失败，也保留该安装并禁止自动 npm fallback。首次官方安装明确失败后只能在第二次、默认否的确认下选择 npm。更新必须保持检测到的安装方法；两种方法共存时优先 standalone、保留另一份并告警。
 
 npm 回退 resolver 必须检查 OS、架构、libc 和真实的 Node.js 执行结果。Linux amd64 且 glibc 2.17-2.27 时选择 unofficial-builds 的 Node.js 22 `x64-glibc-217`，并把其 `bin` 放在 nvm 前面；glibc >= 2.28 才允许使用官方 nvm 二进制。架构不支持或 libc 无法确认时必须停止并说明如何提供兼容 runtime，不能错误下载 x64。`node -v` 失败时必须保留 stderr，让 `GLIBC_2.28 not found` 等动态链接器诊断可见。
 

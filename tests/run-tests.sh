@@ -293,6 +293,8 @@ grep -q 'Node.js target:' "$codex_output"
 grep -q 'Node.js 22+ is required for Codex' "$codex_output"
 grep -q 'Installing the latest compatible Codex CLI from the npm registry' "$ROOT/components/codex.sh"
 grep -q 'official standalone installer' "$ROOT/components/codex.sh"
+grep -q 'CODEX_NON_INTERACTIVE=1 sh' "$ROOT/components/codex.sh"
+grep -q '"CODEX_NON_INTERACTIVE": "1"' "$ROOT/manifests/codex.json"
 
 echo "[TEST] existing Codex bypasses Node setup"
 tmp_home="$(mktemp -d)"
@@ -331,12 +333,312 @@ codex_existing_output="$tmp_home/codex-existing.out"
     printf 'probe-version=%s\n' "$EP_CODEX_VERSION"
     ep_report_finish
 ) >"$codex_existing_output" 2>&1
-grep -q 'Node.js and npm are not required for configuration' "$codex_existing_output"
+grep -q 'installation is unchanged' "$codex_existing_output"
 grep -q '^probe-version=codex-cli 0.147.0$' "$codex_existing_output"
 ! grep -q '^probe-version=WARNING:' "$codex_existing_output"
 ! grep -q 'unexpected Node.js setup' "$codex_existing_output"
 grep -q '^codex=done:' "$tmp_home/.config/envpilot/state"
 rm -rf "$tmp_home" "$tmp_bin"
+
+echo "[TEST] doctor treats Node.js as optional for standalone Codex"
+tmp_home="$(mktemp -d)"
+mkdir -p "$tmp_home/.codex/packages/standalone/releases/0.153.0/bin" \
+    "$tmp_home/.codex/packages/standalone"
+cat > "$tmp_home/.codex/packages/standalone/releases/0.153.0/bin/codex" <<'EOF'
+#!/usr/bin/env bash
+printf 'codex-cli 0.153.0\n'
+EOF
+chmod +x "$tmp_home/.codex/packages/standalone/releases/0.153.0/bin/codex"
+ln -sfn "$tmp_home/.codex/packages/standalone/releases/0.153.0" \
+    "$tmp_home/.codex/packages/standalone/current"
+codex_doctor_node_output="$tmp_home/codex-doctor-node.out"
+(
+    set -euo pipefail
+    export HOME="$tmp_home"
+    export PATH="/usr/bin:/bin"
+    export ENVPILOT_ROOT="$ROOT"
+    . "$ROOT/lib/common.sh"
+    . "$ROOT/lib/shell.sh"
+    . "$ROOT/components/codex.sh"
+    export EP_OS=linux EP_ARCH=amd64 EP_LIBC=glibc EP_GLIBC_VERSION=2.17
+    ep_command_exists()
+    {
+        [ "$1" != "node" ] && command -v "$1" >/dev/null 2>&1
+    }
+    ep_doctor_codex
+) >"$codex_doctor_node_output" 2>&1
+grep -q 'Node.js: not found (optional; only required for the legacy npm Codex path)' "$codex_doctor_node_output"
+grep -q 'Codex install method: standalone' "$codex_doctor_node_output"
+! grep -q '\[WARN\] Node.js: not found' "$codex_doctor_node_output"
+rm -rf "$tmp_home"
+
+echo "[TEST] existing slow Codex is preserved without installer fallback"
+tmp_home="$(mktemp -d)"
+tmp_bin="$(mktemp -d)"
+cat > "$tmp_bin/codex" <<'EOF'
+#!/usr/bin/env bash
+sleep 10
+EOF
+chmod +x "$tmp_bin/codex"
+codex_slow_existing_output="$tmp_home/codex-slow-existing.out"
+(
+    set -euo pipefail
+    export HOME="$tmp_home"
+    export PATH="$tmp_bin:/usr/bin:/bin"
+    export ENVPILOT_ROOT="$ROOT"
+    export EP_MODE=online EP_ASSUME_YES=1 EP_UPGRADE=0 EP_CODEX_PROBE_TIMEOUT=1
+    . "$ROOT/lib/common.sh"
+    . "$ROOT/lib/platform.sh"
+    . "$ROOT/lib/shell.sh"
+    . "$ROOT/components/codex.sh"
+    export EP_OS=linux EP_ARCH=amd64 EP_LIBC=glibc EP_GLIBC_VERSION=2.17
+    ep_init
+    ep_report_start install codex
+    ep_install_codex_official() { printf 'unexpected standalone install\n' >&2; return 99; }
+    ep_install_codex_npm() { printf 'unexpected npm install\n' >&2; return 98; }
+    ep_codex_configure_auth() { :; }
+    ep_install_codex
+) >"$codex_slow_existing_output" 2>&1
+grep -q 'installation found' "$codex_slow_existing_output"
+grep -q 'not treated as a missing executable' "$codex_slow_existing_output"
+! grep -q 'unexpected standalone install' "$codex_slow_existing_output"
+! grep -q 'unexpected npm install' "$codex_slow_existing_output"
+grep -q '^codex=done:' "$tmp_home/.config/envpilot/state"
+rm -rf "$tmp_home" "$tmp_bin"
+
+echo "[TEST] standalone installer success remains success when version probe times out"
+tmp_home="$(mktemp -d)"
+tmp_bin="$(mktemp -d)"
+cat > "$tmp_bin/curl" <<'EOF'
+#!/usr/bin/env bash
+output=""
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        -o) output="$2"; shift 2 ;;
+        *) shift ;;
+    esac
+done
+cat > "$output" <<'INSTALL'
+#!/bin/sh
+[ "${CODEX_NON_INTERACTIVE:-}" = "1" ] || exit 71
+mkdir -p "$HOME/.codex/packages/standalone/releases/0.153.0/bin"
+cat > "$HOME/.codex/packages/standalone/releases/0.153.0/bin/codex" <<'CODEX'
+#!/usr/bin/env bash
+sleep 10
+CODEX
+chmod +x "$HOME/.codex/packages/standalone/releases/0.153.0/bin/codex"
+mkdir -p "$HOME/.codex/packages/standalone"
+ln -sfn "$HOME/.codex/packages/standalone/releases/0.153.0" "$HOME/.codex/packages/standalone/current"
+mkdir -p "$HOME/.local/bin"
+ln -sfn "$HOME/.codex/packages/standalone/current/bin/codex" "$HOME/.local/bin/codex"
+INSTALL
+chmod +x "$output"
+EOF
+chmod +x "$tmp_bin/curl"
+codex_official_slow_output="$tmp_home/codex-official-slow.out"
+(
+    set -euo pipefail
+    export HOME="$tmp_home"
+    export PATH="$tmp_bin:/usr/bin:/bin"
+    export ENVPILOT_ROOT="$ROOT"
+    export EP_MODE=online EP_ASSUME_YES=1 EP_CODEX_PROBE_TIMEOUT=1
+    . "$ROOT/lib/common.sh"
+    . "$ROOT/components/codex.sh"
+    ep_init
+    ep_install_codex_official
+    printf 'method=%s\n' "$EP_CODEX_INSTALL_METHOD"
+) >"$codex_official_slow_output" 2>&1
+grep -q 'will run non-interactively' "$codex_official_slow_output"
+grep -q 'not treated as a missing executable' "$codex_official_slow_output"
+grep -q '^method=standalone$' "$codex_official_slow_output"
+! grep -q 'no executable Codex CLI was found' "$codex_official_slow_output"
+rm -rf "$tmp_home" "$tmp_bin"
+
+echo "[TEST] npm-managed Codex updates remain on npm"
+tmp_home="$(mktemp -d)"
+tmp_bin="$(mktemp -d)"
+cat > "$tmp_bin/codex" <<'EOF'
+#!/usr/bin/env node
+EOF
+chmod +x "$tmp_bin/codex"
+codex_npm_update_output="$tmp_home/codex-npm-update.out"
+(
+    set -euo pipefail
+    export HOME="$tmp_home"
+    export PATH="$tmp_bin:/usr/bin:/bin"
+    export ENVPILOT_ROOT="$ROOT"
+    export EP_MODE=online EP_ASSUME_YES=1 EP_UPGRADE=1
+    . "$ROOT/lib/common.sh"
+    . "$ROOT/lib/platform.sh"
+    . "$ROOT/lib/shell.sh"
+    . "$ROOT/components/codex.sh"
+    export EP_OS=linux EP_ARCH=amd64 EP_LIBC=glibc EP_GLIBC_VERSION=2.17
+    ep_init
+    ep_report_start update codex
+    ep_codex_probe_path() { EP_CODEX_BIN="$1"; EP_CODEX_VERSION='codex-cli 0.153.0'; EP_CODEX_PROBE_STATE=ready; return 0; }
+    ep_install_codex_official() { printf 'unexpected standalone install\n' >&2; return 99; }
+    ep_install_codex_npm() { printf 'npm-update-called=%s\n' "$1"; EP_CODEX_VERSION='codex-cli 0.154.0'; }
+    ep_codex_configure_auth() { :; }
+    ep_install_codex
+) >"$codex_npm_update_output" 2>&1
+grep -q 'Preserving the existing npm installation method' "$codex_npm_update_output"
+grep -q '^npm-update-called=1$' "$codex_npm_update_output"
+! grep -q 'unexpected standalone install' "$codex_npm_update_output"
+rm -rf "$tmp_home" "$tmp_bin"
+
+echo "[TEST] failed standalone install does not silently fall back to npm"
+tmp_home="$(mktemp -d)"
+codex_no_fallback_output="$tmp_home/codex-no-fallback.out"
+set +e
+(
+    set -euo pipefail
+    export HOME="$tmp_home"
+    export PATH="/usr/bin:/bin"
+    export ENVPILOT_ROOT="$ROOT"
+    export EP_MODE=online EP_UPGRADE=0
+    . "$ROOT/lib/common.sh"
+    . "$ROOT/lib/platform.sh"
+    . "$ROOT/lib/shell.sh"
+    . "$ROOT/components/codex.sh"
+    export EP_OS=linux EP_ARCH=amd64 EP_LIBC=glibc EP_GLIBC_VERSION=2.17
+    ep_init
+    ep_report_start install codex
+    ep_confirm()
+    {
+        case "$1" in
+            'Install/update and configure Codex CLI?') return 0 ;;
+            'The official standalone installer failed.'*)
+                printf 'npm-fallback-default=%s\n' "$2"
+                return 1
+                ;;
+            *) return 1 ;;
+        esac
+    }
+    ep_install_codex_official() { printf 'standalone-install-failed\n' >&2; return 1; }
+    ep_install_codex_npm() { printf 'unexpected npm install\n' >&2; return 98; }
+    ep_codex_configure_auth() { :; }
+    ep_install_codex
+) >"$codex_no_fallback_output" 2>&1
+codex_no_fallback_status=$?
+set -e
+[ "$codex_no_fallback_status" -eq 1 ]
+grep -q '^npm-fallback-default=no$' "$codex_no_fallback_output"
+grep -q 'optional npm fallback was not selected' "$codex_no_fallback_output"
+! grep -q 'unexpected npm install' "$codex_no_fallback_output"
+rm -rf "$tmp_home"
+
+echo "[TEST] standalone wins coexistence updates and restores the remote wrapper"
+tmp_home="$(mktemp -d)"
+mkdir -p \
+    "$tmp_home/.codex/packages/standalone/releases/0.153.0/bin" \
+    "$tmp_home/.codex/packages/standalone" \
+    "$tmp_home/.local/bin" \
+    "$tmp_home/software/node22/bin"
+cat > "$tmp_home/.codex/packages/standalone/releases/0.153.0/bin/codex" <<'EOF'
+#!/usr/bin/env bash
+printf 'codex-cli 0.153.0\n'
+EOF
+chmod +x "$tmp_home/.codex/packages/standalone/releases/0.153.0/bin/codex"
+ln -sfn "$tmp_home/.codex/packages/standalone/releases/0.153.0" \
+    "$tmp_home/.codex/packages/standalone/current"
+cat > "$tmp_home/software/node22/bin/codex" <<'EOF'
+#!/usr/bin/env node
+EOF
+chmod +x "$tmp_home/software/node22/bin/codex"
+cp "$ROOT/templates/codex-wrapper.sh" "$tmp_home/.local/bin/codex"
+chmod +x "$tmp_home/.local/bin/codex"
+codex_coexist_output="$tmp_home/codex-coexist.out"
+(
+    set -euo pipefail
+    export HOME="$tmp_home"
+    export PATH="$tmp_home/.local/bin:$tmp_home/software/node22/bin:/usr/bin:/bin"
+    export ENVPILOT_ROOT="$ROOT"
+    export EP_MODE=online EP_ASSUME_YES=1 EP_UPGRADE=1
+    . "$ROOT/lib/common.sh"
+    . "$ROOT/lib/platform.sh"
+    . "$ROOT/lib/shell.sh"
+    . "$ROOT/components/codex.sh"
+    export EP_OS=linux EP_ARCH=amd64 EP_LIBC=glibc EP_GLIBC_VERSION=2.17
+    ep_init
+    ep_report_start update codex
+    ep_codex_probe_path()
+    {
+        EP_CODEX_BIN="$1"
+        EP_CODEX_VERSION='codex-cli 0.153.0'
+        EP_CODEX_PROBE_STATE=ready
+        return 0
+    }
+    ep_install_codex_official()
+    {
+        printf 'standalone-update-called\n'
+        rm -f "$HOME/.local/bin/codex"
+        ln -s "$HOME/.codex/packages/standalone/current/bin/codex" "$HOME/.local/bin/codex"
+        EP_CODEX_INSTALL_METHOD=standalone
+        EP_CODEX_STANDALONE_BIN="$HOME/.codex/packages/standalone/current/bin/codex"
+        EP_CODEX_INSTALLED_BIN="$EP_CODEX_STANDALONE_BIN"
+        EP_CODEX_VERSION='codex-cli 0.154.0'
+    }
+    ep_install_codex_npm() { printf 'unexpected npm install\n' >&2; return 98; }
+    ep_codex_configure_auth() { :; }
+    ep_install_codex
+) >"$codex_coexist_output" 2>&1
+grep -q 'Both standalone and npm-managed Codex installations were found' "$codex_coexist_output"
+grep -q '^standalone-update-called$' "$codex_coexist_output"
+grep -q 'Restored the envpilot Codex remote wrapper' "$codex_coexist_output"
+! grep -q 'unexpected npm install' "$codex_coexist_output"
+test -x "$tmp_home/software/node22/bin/codex"
+test -f "$tmp_home/.local/bin/codex"
+test ! -L "$tmp_home/.local/bin/codex"
+grep -q 'envpilot-managed-codex-wrapper' "$tmp_home/.local/bin/codex"
+rm -rf "$tmp_home"
+
+echo "[TEST] standalone coexistence detects an npm launcher from the current PATH"
+tmp_home="$(mktemp -d)"
+tmp_bin="$(mktemp -d)"
+mkdir -p "$tmp_home/.codex/packages/standalone/releases/0.153.0/bin" \
+    "$tmp_home/.codex/packages/standalone"
+printf '#!/usr/bin/env bash\n' > "$tmp_home/.codex/packages/standalone/releases/0.153.0/bin/codex"
+chmod +x "$tmp_home/.codex/packages/standalone/releases/0.153.0/bin/codex"
+ln -sfn "$tmp_home/.codex/packages/standalone/releases/0.153.0" \
+    "$tmp_home/.codex/packages/standalone/current"
+printf '#!/usr/bin/env node\n' > "$tmp_bin/codex"
+chmod +x "$tmp_bin/codex"
+(
+    set -euo pipefail
+    export HOME="$tmp_home"
+    export PATH="$tmp_bin:/usr/bin:/bin"
+    export ENVPILOT_ROOT="$ROOT"
+    . "$ROOT/lib/common.sh"
+    . "$ROOT/components/codex.sh"
+    ep_codex_detect_installation
+    [ "$EP_CODEX_INSTALL_METHOD" = "standalone" ]
+    [ "$EP_CODEX_NPM_BIN" = "$tmp_bin/codex" ]
+)
+rm -rf "$tmp_home" "$tmp_bin"
+
+echo "[TEST] standalone symlinks are never classified as managed wrappers"
+tmp_home="$(mktemp -d)"
+mkdir -p "$tmp_home/.local/bin" "$tmp_home/native"
+printf '\177ELFenvpilot-managed-codex-wrapper\000payload\n' > "$tmp_home/native/codex"
+chmod +x "$tmp_home/native/codex"
+ln -s "$tmp_home/native/codex" "$tmp_home/.local/bin/codex"
+(
+    set -euo pipefail
+    export HOME="$tmp_home"
+    export ENVPILOT_ROOT="$ROOT"
+    . "$ROOT/lib/common.sh"
+    . "$ROOT/components/codex.sh"
+    ! ep_codex_remote_is_managed_wrapper "$HOME/.local/bin/codex"
+    cp "$ROOT/templates/codex-wrapper.sh" "$HOME/.local/bin/codex.wrapper"
+    ep_codex_remote_is_managed_wrapper "$HOME/.local/bin/codex.wrapper"
+    status="$(
+        ENVPILOT_CODEX_SOURCE_BIN="$HOME/native" \
+        ENVPILOT_CODEX_RUNTIME_DIR="$HOME/runtime" \
+        bash "$ROOT/templates/codex-remote.sh" status || true
+    )"
+    printf '%s\n' "$status" | grep -q 'not enabled'
+)
+rm -rf "$tmp_home"
 
 echo "[TEST] legacy glibc selects the compatible Node.js 22 build"
 tmp_home="$(mktemp -d)"
@@ -641,6 +943,7 @@ chmod 700 "$tmp_slow_bin/codex"
     if ep_codex_probe; then
         exit 1
     fi
+    [ "$EP_CODEX_PROBE_STATE" = "timeout" ]
     printf '%s\n' "$EP_CODEX_PROBE_ERROR" | grep -q 'timed out after 1s'
 )
 rm -rf "$tmp_slow_home" "$tmp_slow_bin"

@@ -8,6 +8,10 @@
     "nvm"
   ],
   "official_installer": "https://chatgpt.com/codex/install.sh",
+  "official_installer_environment": {
+    "CODEX_NON_INTERACTIVE": "1"
+  },
+  "method_policy": "prefer standalone for new installs; preserve the detected method on update; npm fallback requires explicit confirmation",
   "legacy_node_fallback": {
     "when": "linux amd64 glibc 2.17-2.27",
     "line": 22,

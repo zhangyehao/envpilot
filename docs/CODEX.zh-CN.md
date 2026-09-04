@@ -7,9 +7,13 @@ bash envpilot.sh install codex
 bash envpilot.sh update codex
 ~~~
 
-普通 install codex 会先真正执行现有 codex --version：如果已有可执行 Codex，只更新配置和认证，不重新安装 Codex，也不会额外安装 Node.js/npm。需要重新解析稳定版本时使用 update codex。
+官方 standalone 是 Linux/macOS 的默认安装方式。它不依赖 Node.js/npm，envpilot 通过官方的 `CODEX_NON_INTERACTIVE=1` 模式调用安装器，因此不会出现 `Start Codex now?`，不会在安装流程中启动 Codex 登录界面，也不会提示卸载另一种安装。
 
-缺少 Codex 时，在线模式优先使用官方独立安装器，失败后才回退 npm；离线模式不会偷偷访问 npm。
+普通 `install codex` 会复用已有安装并更新配置和认证。`codex --version` 仍用于验证真实运行状态，但不再是判断安装产物是否存在的唯一依据：共享文件系统上超过 5 秒会被归类为“已安装、探测超时”，不会触发 Node.js/npm 回退。需要重新解析稳定版本时使用 `update codex`。
+
+更新会保持原安装方法：已有 standalone 使用官方 standalone 更新器；只有 npm 安装时继续使用 npm。两者同时存在时，envpilot 优先 standalone、保留 npm 副本并提示 PATH 顺序，不会自动在两种方式之间卸载和重装。
+
+缺少 Codex 时，在线模式先使用官方独立安装器。只有首次官方安装明确失败、且用户再次确认后，才尝试需要 Node.js 的旧 npm 路径；默认不回退。离线模式不会偷偷访问 npm。
 
 ## API key 和配置
 
@@ -39,13 +43,15 @@ api.env 可包含其他软件所需的环境变量。受管交互和非交互 sh
 
 ## 老 glibc 和 Node.js
 
-HPC 常见 glibc 2.17 主机不能运行官方 Node.js 22/24 Linux x64 预编译包。npm 回退时，envpilot 会为 Linux amd64 老 glibc 选择 Node.js 22 x64-glibc-217 用户态构建，默认路径：
+HPC 常见 glibc 2.17 主机不能运行官方 Node.js 22/24 Linux x64 预编译包，但官方 standalone Codex 是 musl 构建，不需要为它安装 Node.js 或升级 glibc。只有保留已有 npm 安装或用户明确选择 npm fallback 时，envpilot 才会为 Linux amd64 老 glibc 选择 Node.js 22 x64-glibc-217 用户态构建，默认路径：
 
 ~~~text
 $HOME/software/node22
 ~~~
 
 不要替换系统 glibc，也不要把无法执行的官方 Node.js 24 强行放到 PATH 前面。安装失败时保留 GLIBC_* not found 等原始诊断。
+
+`codex --version` 返回 137 若发生在 envpilot 的等待上限之后，会统一归类为探测超时；立即返回的 137 仍作为真实运行失败报告。
 
 ## 共享文件系统上的 Remote Runtime
 

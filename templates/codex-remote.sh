@@ -166,7 +166,11 @@ resolve_link()
 
 managed_wrapper()
 {
-    [ -f "$1" ] && grep -q 'envpilot-managed-codex-wrapper' "$1" 2>/dev/null
+    [ -f "$1" ] || return 1
+    [ ! -L "$1" ] || return 1
+    [ "$(LC_ALL=C head -c 2 "$1" 2>/dev/null || true)" = '#!' ] || return 1
+    LC_ALL=C head -c 512 "$1" 2>/dev/null |
+        grep -Fq 'envpilot-managed-codex-wrapper'
 }
 
 source_bin()
