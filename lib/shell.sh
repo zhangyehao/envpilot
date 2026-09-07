@@ -480,6 +480,7 @@ ep_apply_shell_profile()
         return 0
     fi
 
+    ep_setup_command
     ep_migrate_shell_local "$target"
     migration_source="${EP_SHELL_MIGRATION_SOURCE:-}"
     ep_backup_file "$target"
@@ -504,4 +505,57 @@ ep_apply_shell_profile()
     ep_warn "Silent/non-interactive/no-real-TTY shells do NOT source shell.local in full. Custom paths, aliases, functions, module commands, prompt settings, and tool initialization added there are interactive-only; protected api.env assignments and envpilot's small non-interactive whitelist are loaded separately."
     ep_log "Reload with: source $target"
     unset EP_SHELL_MIGRATION_SOURCE EP_LAST_BACKUP_FILE
+}
+
+ep_command_is_managed()
+{
+    [ -f "$1" ] && [ ! -L "$1" ] || return 1
+    head -c 128 "$1" 2>/dev/null | grep -Fxq '# envpilot-managed-command'
+}
+
+ep_setup_command()
+{
+    local target="$HOME/.local/bin/envpilot" registry="$HOME/.config/envpilot/command-root" tmp
+    [ -f "$ENVPILOT_ROOT/templates/envpilot-command.sh" ] || ep_die "Missing envpilot command template."
+    if [ -e "$target" ] || [ -L "$target" ]; then
+        if ! ep_command_is_managed "$target"; then
+            ep_warn "Existing non-envpilot command will not be overwritten: $target"
+            ep_warn "Move or rename it yourself, then run setup-command again."
+            return 1
+        fi
+    fi
+    mkdir -p "$HOME/.local/bin" "$(dirname "$registry")"
+    ep_backup_file "$registry"
+    ep_backup_file "$target"
+    tmp="$(mktemp "$registry.tmp.XXXXXX")" || return 1
+    printf '%s\n' "$ENVPILOT_ROOT" > "$tmp"
+    chmod 600 "$tmp"
+    mv -f "$tmp" "$registry"
+    tmp="$(mktemp "$target.tmp.XXXXXX")" || return 1
+    cp "$ENVPILOT_ROOT/templates/envpilot-command.sh" "$tmp"
+    chmod 700 "$tmp"
+    mv -f "$tmp" "$target"
+    ep_log "Installed envpilot command: $target (repository: $ENVPILOT_ROOT)"
+    case ":$PATH:" in
+        *":$HOME/.local/bin:"*) ;;
+        *) ep_log 'For this shell, run: export PATH="$HOME/.local/bin:$PATH"' ;;
+    esac
+}
+
+ep_doctor_command()
+{
+    local target="$HOME/.local/bin/envpilot" root="" visible
+    if ! ep_command_is_managed "$target"; then
+        ep_warn "envpilot command is missing or not managed; run: bash envpilot.sh setup-command"
+        return 0
+    fi
+    IFS= read -r root < "$HOME/.config/envpilot/command-root" 2>/dev/null || true
+    if [ ! -f "$root/envpilot.sh" ]; then
+        ep_warn "envpilot command registration is unavailable; run setup-command from the intended repository."
+    else
+        ep_log "envpilot command: $target (repository: $root)"
+    fi
+    visible="$(command -v envpilot 2>/dev/null || true)"
+    [ "$visible" = "$target" ] || ep_warn "PATH does not select $target; put $HOME/.local/bin first."
+    return 0
 }

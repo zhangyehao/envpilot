@@ -1,5 +1,11 @@
 # Codex
 
+## 重启 app-server（0.3.0）
+
+执行 `envpilot codex remote restart`（尚未登记入口时用 `bash envpilot.sh codex remote restart`）。命令会停止受管实例并确认新 PID，不只是检查 socket 或复用旧进程。无实例时直接启动；非受管实例占用时拒绝接管，不会自动 kill。
+
+请先保存任务，在独立 SSH 终端运行。重启可能中断请求与 Desktop 连接，不删除会话、认证、配置或强制清空 runtime 缓存。`ready` 允许复用已有服务；`repair` 强制重建 runtime；`restart` 用于真正新建 app-server。详见 [命令入口与重启](COMMAND.zh-CN.md)。
+
 ## 安装和更新
 
 ~~~bash

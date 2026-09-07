@@ -71,6 +71,9 @@ For an existing installation, prefer `git pull --ff-only`, `doctor`, `apply-shel
 
 ## Recovery and delivery
 
+- `setup-command` installs the Bash launcher in `~/.local/bin/envpilot`; confirmed `apply-shell` calls the same helper. Preserve caller cwd and arguments, refuse foreign launchers, and keep explicit `command-root` separate from last-run `repo-root`.
+- `codex remote restart` must verify a new managed PID under the startup lock. Never reuse an external instance and report it as restarted; warn about request interruption and preserve persistent auth, config and sessions.
+
 - `restore` returns to the latest doctor baseline; `rollback` restores the latest individual backup; `resume` continues stateful install; `reset` only clears state.
 - Test Bash, PowerShell, ShellCheck, and `git diff --check` after changes that touch templates or install flow.
 - The maintainer prefers direct commits to `main` when authorized, with matching GitHub/Gitee main and version tags. Confirm both remote refs and GitHub Actions/Release before reporting completion.

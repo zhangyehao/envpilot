@@ -30,8 +30,22 @@ bash envpilot.sh install mihomo
 bash envpilot.sh apply-shell
 source ~/.bashrc
 
-bash envpilot.sh install
+envpilot install
 ~~~
+
+从 0.3.0 起，确认执行 `apply-shell` 会安装 `~/.local/bin/envpilot`，此后可在任意目录运行 `envpilot ...`，与 `bash /仓库路径/envpilot.sh ...` 等价。命令入口目前用于 Bash 环境（Linux/macOS/WSL/Git Bash）；原生 PowerShell 入口保持不变。
+
+不想重新应用 profile 的老用户，可以只登记命令入口：
+
+~~~bash
+bash /实际仓库路径/envpilot.sh setup-command
+export PATH="$HOME/.local/bin:$PATH"
+envpilot doctor
+envpilot install mihomo
+envpilot codex remote restart
+~~~
+
+命令登记在 `~/.config/envpilot/command-root`，不会因临时运行另一份仓库而切换。仓库移动后在新位置重新执行 `setup-command`。它不修改 `.bashrc`，不会覆盖非 envpilot 的同名入口，不会更改调用者当前目录。详见 [命令入口](docs/COMMAND.zh-CN.md)。
 
 默认 profile 会在 `source ~/.bashrc` 时检查并启动已配置的 Mihomo，并仅在代理端口真实监听后为当前 Shell 启用代理，因此快速开始无需重复执行 `mihomo start`、`mihomo status` 或 `proxy_on`。这些命令仍可用于手动控制和排障。
 
@@ -206,6 +220,8 @@ command -v python3
 旧 glibc 主机不会盲目下载无法执行的最新版。不会删除或替换系统 Python。详情见 [docs/GIT-PYTHON.zh-CN.md](docs/GIT-PYTHON.zh-CN.md)。
 
 ## Codex
+
+`envpilot codex remote restart` 会在启动锁内停止受管 app-server，并验证新 PID；无进程时会新建。与 `ready` 不同，它不会把复用旧进程视为成功；与 `repair` 不同，它不强制删除 runtime 缓存。重启可能中断正在运行的请求，请先保存工作并退出对应连接。非 envpilot 实例或无法确认归属的 socket 不会被强制终止，而是明确报错。
 
 安装和更新：
 

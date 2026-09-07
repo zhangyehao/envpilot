@@ -971,12 +971,13 @@ ep_codex_remote_cli()
         remote:stage|remote:prepare) ep_codex_remote_invoke stage ;;
         remote:ready|remote:warm) ep_codex_remote_invoke ready ;;
         remote:stop) ep_codex_remote_invoke stop ;;
+        remote:restart) ep_codex_remote_invoke restart ;;
         remote:repair) ep_codex_remote_invoke repair ;;
         remote:disable) ep_codex_remote_disable ;;
-        status:*|stage:*|prepare:*|ready:*|warm:*|stop:*|repair:*)
+        status:*|stage:*|prepare:*|ready:*|warm:*|restart:*|stop:*|repair:*)
             ep_codex_remote_invoke "$action" ;;
         disable:*) ep_codex_remote_disable ;;
-        *) ep_die "Usage: bash envpilot.sh codex remote {status|enable|stage|ready|warm|stop|repair|disable}" ;;
+        *) ep_die "Usage: bash envpilot.sh codex remote {status|enable|stage|ready|warm|restart|stop|repair|disable}" ;;
     esac
 }
 

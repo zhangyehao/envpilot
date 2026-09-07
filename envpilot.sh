@@ -37,11 +37,12 @@ Usage:
                                        Re-check compatible latest versions and update existing envpilot components.
   bash envpilot.sh apply-shell [--yes]
                                       Back up and replace the active shell profile.
+  bash envpilot.sh setup-command      Install ~/.local/bin/envpilot without replacing the shell profile.
   bash envpilot.sh rollback           Restore the most recent envpilot-managed backup.
   bash envpilot.sh restore            Restore envpilot-managed changes to the latest doctor baseline.
   bash envpilot.sh mihomo [start|stop|status|port PORT|ports PROXY_PORT API_PORT|update-subscription [URL]]
                                       Manage Mihomo, its two local ports, and subscription config.
-  bash envpilot.sh codex remote [status|enable|stage|ready|warm|stop|repair|disable]
+  bash envpilot.sh codex remote [status|enable|stage|ready|warm|restart|stop|repair|disable]
                                       Stage Codex on node-local storage and manage app-server warmup.
   bash envpilot.sh resume             Continue an interrupted install using saved state.
   bash envpilot.sh reset              Clear saved state so install steps can run again.
@@ -169,6 +170,7 @@ run_doctor()
     ep_log "envpilot doctor"
     ep_platform_print
     ep_capture_doctor_baseline
+    ep_doctor_command
     ep_doctor_git
     ep_doctor_python
     ep_doctor_conda
@@ -378,6 +380,7 @@ main()
         install) run_install ;;
         update|upgrade) run_update ;;
         apply-shell) run_apply_shell ;;
+        setup-command) ep_init; ep_setup_command ;;
         rollback) ep_init; ep_rollback_latest ;;
         restore) run_restore ;;
         mihomo) run_mihomo ;;

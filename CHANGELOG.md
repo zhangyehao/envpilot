@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.0 - 2026-09-07
+
+### Added
+
+- Adds a user-space `envpilot` launcher via `setup-command` and confirmed `apply-shell`, preserving working directories, arguments and exit status.
+- Keeps explicit command registration separate from the last-run repository hint; refuses to overwrite unrelated commands and includes launcher files in doctor baselines.
+- Adds `codex remote restart` to stop a managed app-server and verify a new PID under the startup lock, without reusing or terminating an external app-server.
+
+### Fixed
+
+- Verifies managed app-server termination before removing its PID record or starting a replacement.
+
 ## 0.2.31 - 2026-09-04
 
 ### Fixed

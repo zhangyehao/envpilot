@@ -88,6 +88,8 @@ ep_capture_doctor_baseline()
     ep_baseline_record_file shell-profile "$shell_target"
     ep_baseline_record_file shell-local "$EP_CONFIG_DIR/shell.local"
     ep_baseline_record_file repo-root "$EP_REPO_ROOT_FILE"
+    ep_baseline_record_file envpilot-command "$HOME/.local/bin/envpilot"
+    ep_baseline_record_file command-root "$HOME/.config/envpilot/command-root"
     ep_baseline_record_file condarc "$HOME/.condarc"
     ep_baseline_record_file mihomo-config "$HOME/.config/mihomo/config.yaml"
     ep_baseline_record_file mihomo-subscription-url "$HOME/.config/mihomo/subscription.url"

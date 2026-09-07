@@ -509,9 +509,14 @@ wait_for_socket()
 
 start_server_locked()
 {
+    local require_new="${1:-0}"
     local pid existing_state=0 existing_pid log_start_lines=0 attempt_output=""
 
     if socket_ready; then
+        if [ "$require_new" = 1 ]; then
+            warn "Restart refused: a control socket is already active or cannot be inspected. Close its owning connection first."
+            return 1
+        fi
         log "Codex app-server is already ready: $SOCKET"
         return 0
     fi
@@ -526,6 +531,10 @@ start_server_locked()
 
     existing_pid="$(find_existing_server_pid 2>/dev/null || true)"
     if [ -n "$existing_pid" ]; then
+        if [ "$require_new" = 1 ]; then
+            warn "Restart refused: non-envpilot app-server PID $existing_pid is running. No process was taken over."
+            return 1
+        fi
         log "Waiting for existing Codex app-server PID $existing_pid to publish its control socket."
         if wait_for_socket "$existing_pid"; then
             log "Reusing existing Codex app-server PID $existing_pid on $SOCKET"
@@ -541,12 +550,14 @@ start_server_locked()
     if [ -S "$SOCKET" ]; then
         socket_listener_state || existing_state=$?
         if [ "$existing_state" = "1" ]; then
+            [ "$require_new" != 1 ] || return 1
             log "Reusing an existing Codex app-server on $SOCKET"
             return 0
         fi
         if [ "$existing_state" = "0" ]; then
             rm -f "$SOCKET"
         else
+            [ "$require_new" != 1 ] || return 1
             log "Cannot inspect the Unix socket listener; preserving the existing socket."
             return 0
         fi
@@ -562,6 +573,11 @@ start_server_locked()
     pid=$!
     printf '%s\n' "$pid" > "$PID_FILE"
     if wait_for_socket "$pid"; then
+        if [ "$require_new" = 1 ] && ! pid_is_server "$pid"; then
+            warn "Restart did not establish the new managed app-server; another process may own the socket."
+            rm -f "$PID_FILE"
+            return 1
+        fi
         log "Codex app-server is ready: $SOCKET"
         return 0
     fi
@@ -570,6 +586,10 @@ start_server_locked()
         attempt_output="$(tail -n "+$((log_start_lines + 1))" "$SERVER_LOG" 2>/dev/null || true)"
     fi
     if printf '%s\n' "$attempt_output" | grep -q 'control socket is already in use'; then
+        if [ "$require_new" = 1 ]; then
+            warn "Restart lost a startup race to another app-server; not reporting the old or competing instance as restarted."
+            return 1
+        fi
         log "Another Codex app-server won the control-socket startup race; checking it before reporting failure."
         if wait_for_socket "" 5; then
             log "Reusing the concurrent Codex app-server on $SOCKET"
@@ -622,6 +642,15 @@ stop_server()
     if pid_is_server "$pid"; then
         kill -KILL "$pid" 2>/dev/null || true
     fi
+    i=0
+    while pid_is_server "$pid" && [ "$i" -lt 20 ]; do
+        sleep 0.1
+        i=$((i + 1))
+    done
+    if pid_is_server "$pid"; then
+        warn "App-server PID $pid has not exited; preserving its PID file."
+        return 1
+    fi
     rm -f "$PID_FILE" "$CONTROL_DIR/envpilot-app-server.ready"
     printf 'Stopped envpilot-managed Codex app-server: %s\n' "$pid"
 }
@@ -636,6 +665,44 @@ repair_runtime()
     fi
     rm -rf "$(local_current_dir)"
     start_server
+}
+
+restart_server()
+{
+    local old_pid new_pid status=0
+    ensure_control_dir
+    # Stage before taking the start lock: stage_runtime owns its own EXIT trap.
+    stage_runtime 0
+    acquire_server_start_lock
+    trap release_server_start_lock EXIT
+    old_pid="$(read_server_pid 2>/dev/null || true)"
+    log "Restarting the managed app-server; connected clients and running requests may be interrupted."
+    if stop_server && start_server_locked 1; then
+        new_pid="$(read_server_pid 2>/dev/null || true)"
+        if [ -n "$new_pid" ] && [ "$new_pid" != "$old_pid" ]; then
+            log "New envpilot app-server PID $new_pid (previous: ${old_pid:-none})."
+        else
+            warn "Restart could not verify a new managed PID."
+            status=1
+        fi
+    else
+        status=1
+    fi
+    release_server_start_lock
+    trap - EXIT
+    return "$status"
+}
+
+stop_server_serialized()
+{
+    local status=0
+    ensure_control_dir
+    acquire_server_start_lock
+    trap release_server_start_lock EXIT
+    stop_server || status=$?
+    release_server_start_lock
+    trap - EXIT
+    return "$status"
 }
 
 clean_runtime()
@@ -733,7 +800,10 @@ case "$action" in
         status_report
         ;;
     stop)
-        stop_server
+        stop_server_serialized
+        ;;
+    restart)
+        restart_server
         ;;
     repair)
         repair_runtime
@@ -746,7 +816,7 @@ case "$action" in
         ;;
     help|-h|--help)
         cat <<'EOF'
-Usage: codex-remote {status|stage|ready|warm|stop|repair|exec [ARGS...]}
+Usage: codex-remote {status|stage|ready|warm|restart|stop|repair|exec [ARGS...]}
 EOF
         ;;
     *)
