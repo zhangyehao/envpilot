@@ -538,7 +538,10 @@ ep_setup_command()
     ep_log "Installed envpilot command: $target (repository: $ENVPILOT_ROOT)"
     case ":$PATH:" in
         *":$HOME/.local/bin:"*) ;;
-        *) ep_log 'For this shell, run: export PATH="$HOME/.local/bin:$PATH"' ;;
+        *)
+            # shellcheck disable=SC2016 # Print a command for the caller's shell.
+            ep_log 'For this shell, run: export PATH="$HOME/.local/bin:$PATH"'
+            ;;
     esac
 }
 
