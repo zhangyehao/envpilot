@@ -723,7 +723,7 @@ clean_unused_generations()
     [ -d /proc ] || return 0
     current="$(resolve_link "$(local_current_dir)")"
     for generation in "$RUNTIME_ROOT"/releases/*; do
-        [ -d "$generation" ] && [ ! -L "$generation" ] && [ -f "$generation/.source.signature" ] || continue
+        if [ ! -d "$generation" ] || [ -L "$generation" ] || [ ! -f "$generation/.source.signature" ]; then continue; fi
         [ "$generation" != "$current" ] || continue
         active=0
         while IFS= read -r pid; do
@@ -759,7 +759,7 @@ server_operation()
             log "Restarting Codex app-server; connected tasks may be interrupted."
             stop_server || status=$?
         fi
-        if [ "$status" = 0 ]; then start_server_locked || status=$?; fi
+        if [ "$status" = 0 ]; then start_server_locked 0 || status=$?; fi
         new_pid="$(read_server_pid 2>/dev/null || true)"
         if [ "$status" = 0 ] && { [ "$operation" = restart ] || [ "$operation" = repair ]; }; then
             if [ -z "$new_pid" ] || [ "$new_pid" = "$old_pid" ]; then status=1; warn "A new app-server process was not verified."; fi
