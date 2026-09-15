@@ -27,18 +27,32 @@ function Get-EnvpilotCore {
     if ($Mode -eq 'offline' -or (-not $Script:ExplicitParameters.ContainsKey('Mode') -and $env:ENVPILOT_MODE -eq 'offline')) { throw 'Offline configuration requires the complete envpilot platform package.' }
     $arch = if ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq 'Arm64') { 'arm64' } else { 'amd64' }
     $name = "envpilot-core-$version-windows-$arch.exe"
-    $base = if ($env:ENVPILOT_RELEASE_SOURCE -eq 'gitee') { "https://gitee.com/zhangyehao0422/envpilot/releases/download/v$version" } else { "https://github.com/zhangyehao/envpilot/releases/download/v$version" }
+    $base = "https://github.com/zhangyehao/envpilot/releases/download/v$version"
+    $binaryUrl = "$base/$name"
+    $checksumUrl = "$base/SHA256SUMS"
+    if ($env:ENVPILOT_RELEASE_SOURCE -eq 'gitee') {
+        $api = 'https://gitee.com/api/v5/repos/zhangyehao0422/envpilot'
+        $release = Invoke-RestMethod "$api/releases/tags/v$version"
+        if ($release.tag_name -ne "v$version") { throw 'Gitee release tag mismatch.' }
+        $assets = Invoke-RestMethod "$api/releases/$($release.id)/attach_files?per_page=100"
+        $binaryAsset = $assets | Where-Object { $_.name -eq $name } | Select-Object -First 1
+        $checksumAsset = $assets | Where-Object { $_.name -eq 'SHA256SUMS' } | Select-Object -First 1
+        if (-not $binaryAsset -or -not $checksumAsset) { throw 'Required Gitee release attachments are missing.' }
+        $binaryUrl = "$api/releases/$($release.id)/attach_files/$($binaryAsset.id)/download"
+        $checksumUrl = "$api/releases/$($release.id)/attach_files/$($checksumAsset.id)/download"
+    }
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $installed) | Out-Null
     $temp = "$installed.download-$([guid]::NewGuid().ToString('N'))"
     try {
-        Invoke-WebRequest "$base/$name" -OutFile $temp
-        $sums = (Invoke-WebRequest "$base/SHA256SUMS").Content
+        Invoke-WebRequest $binaryUrl -OutFile $temp
+        Invoke-WebRequest $checksumUrl -OutFile "$temp.sha256"
+        $sums = Get-Content -LiteralPath "$temp.sha256" -Raw
         $line = ($sums -split "`n" | Where-Object { ($_ -split '\s+')[1] -eq $name } | Select-Object -First 1)
         $expected = ($line -split '\s+')[0]
         if (-not $expected -or (Get-FileHash -LiteralPath $temp -Algorithm SHA256).Hash -ne $expected) { throw 'envpilot-core checksum verification failed.' }
         Move-Item -LiteralPath $temp -Destination $installed -Force
         if ((& $installed version) -ne $version) { throw 'envpilot-core version mismatch.' }
-    } finally { Remove-Item -LiteralPath $temp -ErrorAction SilentlyContinue }
+    } finally { Remove-Item -LiteralPath $temp,"$temp.sha256" -ErrorAction SilentlyContinue }
     return $installed
 }
 

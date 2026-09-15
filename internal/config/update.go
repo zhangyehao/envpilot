@@ -113,6 +113,7 @@ func BundleUpdate(c Config, root, configPath string) error {
 		return e
 	}
 	var release struct {
+		ID         int64  `json:"id"`
 		Tag        string `json:"tag_name"`
 		Draft      bool   `json:"draft"`
 		Prerelease bool   `json:"prerelease"`
@@ -141,7 +142,14 @@ func BundleUpdate(c Config, root, configPath string) error {
 		extension = ".zip"
 	}
 	name := fmt.Sprintf("envpilot-%s-%s-%s%s", version, runtime.GOOS, arch, extension)
-	sums, e := downloadBytes(base+release.Tag+"/SHA256SUMS", 1<<20)
+	packageURL, checksumURL := base+release.Tag+"/"+name, base+release.Tag+"/SHA256SUMS"
+	if c.Install.ReleaseSource == "gitee" {
+		packageURL, checksumURL, e = giteeAssetURLs(release.ID, name)
+		if e != nil {
+			return e
+		}
+	}
+	sums, e := downloadBytes(checksumURL, 1<<20)
 	if e != nil {
 		return e
 	}
@@ -155,7 +163,7 @@ func BundleUpdate(c Config, root, configPath string) error {
 	if len(expected) != 64 {
 		return fmt.Errorf("matching release checksum is missing")
 	}
-	archive, e := downloadBytes(base+release.Tag+"/"+name, 512<<20)
+	archive, e := downloadBytes(packageURL, 512<<20)
 	if e != nil {
 		return e
 	}
@@ -308,4 +316,38 @@ func extractPackage(path, destination, extension string) error {
 			return e
 		}
 	}
+}
+
+func giteeAssetURLs(releaseID int64, name string) (string, string, error) {
+	if releaseID <= 0 {
+		return "", "", fmt.Errorf("invalid Gitee release ID")
+	}
+	base := fmt.Sprintf("https://gitee.com/api/v5/repos/zhangyehao0422/envpilot/releases/%d/attach_files", releaseID)
+	data, err := downloadBytes(base+"?per_page=100", 4<<20)
+	if err != nil {
+		return "", "", err
+	}
+	var assets []struct {
+		ID   int64  `json:"id"`
+		Name string `json:"name"`
+	}
+	if err = json.Unmarshal(data, &assets); err != nil {
+		return "", "", err
+	}
+	packageURL, checksumURL := "", ""
+	for _, asset := range assets {
+		if asset.ID <= 0 {
+			continue
+		}
+		if asset.Name == name {
+			packageURL = fmt.Sprintf("%s/%d/download", base, asset.ID)
+		}
+		if asset.Name == "SHA256SUMS" {
+			checksumURL = fmt.Sprintf("%s/%d/download", base, asset.ID)
+		}
+	}
+	if packageURL == "" || checksumURL == "" {
+		return "", "", fmt.Errorf("required Gitee release attachments are missing")
+	}
+	return packageURL, checksumURL, nil
 }
