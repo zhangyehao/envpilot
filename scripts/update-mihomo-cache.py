@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+from http_utils import fetch_json, download as download_file, commit_files
 import re
 import shutil
 import sys
@@ -46,24 +48,6 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def request_json(url: str) -> Any:
-    req = urllib.request.Request(
-        url,
-        headers={
-            "Accept": "application/vnd.github+json",
-            "User-Agent": "envpilot-mihomo-cache-updater",
-        },
-    )
-    with urllib.request.urlopen(req, timeout=60) as response:
-        return response.read().decode("utf-8")
-
-
-def fetch_json(url: str) -> Any:
-    import json
-
-    return json.loads(request_json(url))
-
-
 def stable_release(releases: list[dict[str, Any]]) -> dict[str, Any]:
     for release in releases:
         tag = str(release.get("tag_name", ""))
@@ -83,18 +67,6 @@ def select_asset(assets: list[dict[str, Any]], pattern: re.Pattern[str]) -> dict
         if pattern.match(name):
             return asset
     raise RuntimeError(f"No stable asset matched {pattern.pattern}")
-
-
-def download_file(url: str, dest: Path) -> None:
-    req = urllib.request.Request(
-        url,
-        headers={"User-Agent": "envpilot-mihomo-cache-updater"},
-    )
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    with urllib.request.urlopen(req, timeout=120) as response, tempfile.NamedTemporaryFile(delete=False, dir=str(dest.parent), suffix=".tmp") as tmp:
-        shutil.copyfileobj(response, tmp)
-        tmp_path = Path(tmp.name)
-    tmp_path.replace(dest)
 
 
 def prune_old_assets(pattern: re.Pattern[str], keep: Path) -> None:
@@ -121,23 +93,38 @@ def refresh_cache() -> int:
     print(f"stable release: {tag}")
     DOWNLOADS.mkdir(parents=True, exist_ok=True)
 
-    for rule in RULES:
-        asset = select_asset(assets, rule["regex"])
-        name = str(asset.get("name", ""))
-        url = str(asset.get("browser_download_url", ""))
-        if not url:
-            raise RuntimeError(f"Asset missing download URL: {name}")
-        dest = DOWNLOADS / name
-        print(f"{rule['name']}: {name}")
-        download_file(url, dest)
-        prune_old_assets(rule["regex"], dest)
-
-    for item in GEO_ASSETS:
-        name = str(item["name"])
-        url = str(item["url"])
-        dest = DOWNLOADS / name
-        print(f"{item['label']}: {name}")
-        download_file(url, dest)
+    with tempfile.TemporaryDirectory(prefix=".envpilot-cache-", dir=DOWNLOADS) as work:
+        pending = []
+        keep = []
+        for rule in RULES:
+            asset = select_asset(assets, rule["regex"])
+            name = str(asset.get("name", ""))
+            if Path(name).name != name or not name:
+                raise RuntimeError("Invalid upstream asset name")
+            url = str(asset.get("browser_download_url", ""))
+            if not url:
+                raise RuntimeError(f"Asset missing download URL: {name}")
+            staged = Path(work) / name
+            print(f"{rule['name']}: {name}")
+            download_file(url, staged)
+            digest = str(asset.get("digest") or "")
+            if digest.startswith("sha256:") and hashlib.sha256(staged.read_bytes()).hexdigest() != digest[7:]:
+                raise RuntimeError(f"Checksum mismatch: {name}")
+            if asset.get("size") and staged.stat().st_size != asset["size"]:
+                raise RuntimeError(f"Asset size mismatch: {name}")
+            pending.append((staged, DOWNLOADS / name))
+            keep.append((rule["regex"], DOWNLOADS / name))
+        for item in GEO_ASSETS:
+            name = str(item["name"])
+            staged = Path(work) / name
+            print(f"{item['label']}: {name}")
+            download_file(str(item["url"]), staged)
+            if staged.stat().st_size == 0:
+                raise RuntimeError(f"Empty geodata: {name}")
+            pending.append((staged, DOWNLOADS / name))
+        commit_files(pending)
+        for pattern, dest in keep:
+            prune_old_assets(pattern, dest)
 
     print(f"updated_at: {now_iso()}")
     return 0

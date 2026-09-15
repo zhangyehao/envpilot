@@ -1,193 +1,45 @@
 # 扩展 envpilot
 
-本文面向维护者，说明如何新增组件、更新 manifest、维护缓存，以及支持 `doctor -> restore` 的状态闭环。
+[English](EXTENDING.md)
 
-## 核心原则
+## 组件接口
 
-- 默认走用户态安装。
-- 只有平台确实需要时才考虑管理员权限。
-- 安装前必须说清楚：装什么、为什么选这个版本、写到哪里、会不会改配置。
-- 不要把密钥、订阅链接、生成凭据写进受版本控制的 profile。
-- 非交互 shell 必须保持安静。
-- 任何默认服务启动都必须有明确文档、可关闭、等待有上限，并且只在受管程序和有效配置存在时执行；非交互就绪钩子必须保持安静并采用尽力而为策略。
+Bash 组件提供 `ep_doctor_<name>()` 和 `ep_install_<name>()`，PowerShell 提供对应适配。保留用户安装方式和系统工具，按 OS、架构、libc 选择兼容 stable 版本，排除 alpha、beta、rc、nightly。
 
-## 组件契约
+配置统一由 envpilot-core 的 YAML 库解析。新增选项须同步 schema、校验、适配器导出、文档和测试。常规设置、密钥引用、运行状态分开保存，不通过 Shell 执行配置。
 
-一个组件通常提供这些函数：
+安装器说明组件、来源、目标和结果。apply 统一确认，默认否的可选备用安装方式在非交互流程中仍不接受。缺少必要输入时直接报错，不等待 stdin。面向用户的消息使用共享中英文目录，机器字段稳定，上游原始诊断保留。
 
-- `ep_doctor_<name>()`
-- `ep_install_<name>()`
-- 可选的 `ep_restore_<name>()` 或通过 baseline 恢复逻辑处理
+## Shell 接入
 
-安装函数应该按这个顺序工作：
+apply-shell 保留原 profile，只更新受管加载块，逻辑存放在独立文件。新用户显式选择代理、Conda、module、历史和兼容别名；迁移保留旧开关。
 
-1. 先判断是否已经安装
-2. 再解析平台对应的安装源或包管理路径
-3. 下载或改文件前先打印简短计划
-4. 改写任何用户文件前先备份
-5. 成功后调用 `ep_state_mark_done <name>`
-6. 安装、跳过、失败都要写 report 事件
+不得执行旧 profile 来发现配置。只导入理解明确的字面赋值；仅精确匹配历史模板时自动替换旧受管 profile。自定义修改必须保留并提示核对。保留 shell.local 和密钥文件。
 
-如果组件需要 Windows 支持，要在 `envpilot.ps1` 里补对应实现。
+非交互 SSH/scp/rsync 不运行交互初始化。代理导出前须确认端口监听，保留 no_proxy。修改父 Shell 环境只能通过明确的 Shell 接入；envpilot run 只影响子进程。
 
-## Manifest 规则
+## Codex 生命周期
 
-每个 manifest 至少要说明：
+status、stop、ready、enable、restart 使用同一识别规则：当前用户、节点、CODEX_HOME/控制 socket 和进程启动身份。已确认匹配的 Desktop/SSH 实例可以管理；无关或归属不明的实例不能接管。
 
-- 上游来源
-- stable 版本选择规则
-- OS / 架构映射
-- 离线文件名模式
-- 需要排除的 prerelease 内容
-- 预期安装路径和配置文件行为
+生命周期操作串行化。认证、配置、sessions 和控制目录保留在持久存储；仅可重建的二进制及必要 helper 放入版本化本地缓存。不可复制 PATH 命中目录的全部内容。停止正常服务前先校验新文件，restart 必须确认新进程和协议就绪。原生 daemon 除命令能力外，还须满足固定安装路径要求。
 
-resolver 可以在运行时查询上游 API，但如果无法安全判断具体版本，就必须停下来并明确提示，不能猜。
+普通 install 保留已有或版本探测较慢的安装。update 保持 standalone/npm 方式，刷新并重启原先运行的服务；原先停止则不自动启动。官方安装器使用 CODEX_NON_INTERACTIVE=1，npm 备用方式为显式选择。
 
-## Workflow 规则
+## 恢复与数据
 
-- `test.yml`：语法检查和快速回归测试。
-- `update-manifests.yml`：刷新上游 stable 元数据并自动开 PR。
-- `update-mihomo-cache.yml`：刷新 `downloads/` 里的 mihomo 缓存和 GeoIP 侧车数据，再自动开 PR。
-- `release-assets.yml`：只打包 envpilot 自己的 release 产物，不上传第三方安装包。
+Doctor 只诊断。修改受管文件前创建新快照，不覆盖旧恢复点；已有目录中的新增文件也须记录。兼容旧 baseline.tsv。文件快照不承诺回退所有包管理事务，也不改变会话历史。
 
-## 仓库镜像
+订阅、API key、认证文件和运行日志不进入 Git。Unix 密钥文件属于当前用户，权限 600/400。测试使用隔离 HOME 和虚构凭据。
 
-GitHub 是主仓库，Gitee 是国内镜像。维护者本地应配置：
+Mihomo 优先安装，保留已选端口和受管配置；更新后恢复原运行状态。仓库只保留既有 Linux/Windows amd64 Mihomo 及 country.mmdb、geoip.metadb 缓存。其他离线资源由用户提供。
 
-```bash
-git remote add gitee https://gitee.com/zhangyehao0422/envpilot.git
-git remote set-url --add --push gitee git@gitee.com:zhangyehao0422/envpilot.git
-```
+Conda 默认 Miniconda，在旧 glibc 使用兼容安装器并保留环境。Mamba 保留 .condarc，使用隔离频道和求解器。Git/Python/tmux 优先复用兼容工具，升级写入用户目录，不替换系统 glibc。
 
-发布前确认工作区干净且位于 `main`，同步更新 `VERSION` 和 `CHANGELOG.md`，创建不可移动的版本标签，再运行 `scripts/push-mirrors.sh` 或 `scripts/push-mirrors.ps1`。禁止对任一镜像强推，也不要移动已经发布的标签。
+## 测试和发布
 
-## 缓存与 downloads
+运行 Go、Bash、PowerShell、Python 测试，以及 ShellCheck、actionlint、git diff --check。覆盖新装、旧配置、复杂 profile、静默模式、无效配置、真实 socket/进程和网络事务失败。
 
-`downloads/` 是本地缓存目录，用来放安装包和其他想保留的 payload。大多数文件仍然默认忽略。
+PR 测试使用只读权限。更新任务暂存并校验完整结果后提交，使用仅安装到 envpilot 的 GitHub App。配置 ENVPILOT_APP_ID 变量和 ENVPILOT_APP_PRIVATE_KEY Secret，不提交密钥或令牌。
 
-当前例外：
-
-- `mihomo-linux-amd64-compatible-*.gz`
-- `mihomo-windows-amd64-compatible-*.zip`
-- `country.mmdb`
-- `geoip.metadb`
-
-如果要新增缓存文件，先更新 `.gitignore`，再更新对应的刷新脚本，并在这里写清楚原因。
-
-## 状态、resume、rollback、restore
-
-- 状态文件：`~/.config/envpilot/state`
-- 备份日志：`~/.config/envpilot/rollback.log`
-- doctor baseline：`~/.config/envpilot/baseline/baseline.tsv`
-- baseline 快照文件：`~/.config/envpilot/baseline/files/`
-
-`rollback` 只恢复最近一条备份记录，不是整机回滚。
-`restore` 则按 doctor baseline 恢复 envpilot 管理的文件、目录和部分工具状态。如果组件会在可能已经存在的目录里创建受管理文件，必须在 baseline 里显式记录这个文件，不能只依赖目录是否存在。
-
-子进程不能清理父 shell 中已经导出的代理变量，所以 shell 模板提供 `envpilot_restore`，用于执行 restore 后顺手清掉当前 shell 代理变量。
-
-如果组件会写用户配置文件，必须先备份；如果一次要写多个文件，就分别备份。建议把用户最常恢复的那个文件放在最后备份，这样 `rollback` 默认恢复最后一条记录时更符合直觉。
-
-## Shell profile 规则
-
-Shell 模板必须：
-
-- 在非交互 shell 中保持安静
-- 默认开启 Conda 集成、module 加载、受管 Mihomo 启动、可用代理导出、受保护变量加载和历史同步，并允许每项在 shell.local 中设 0 关闭
-- 没有 modules.list 时 module 默认加载必须静默跳过；缺少受管脚本或有效配置时 Mihomo 默认启动必须静默跳过
-- 非交互 Mihomo 预启动必须可关闭、有超时、保持安静，并且只有存在有效配置时才执行
-- 默认不自动激活 Conda base
-- 允许从 `~/.config/envpilot/shell.local` 读取用户自定义内容
-
-apply-shell 迁移必须保留已有 shell.local 和 api.env 内容，不覆盖同名标量变量，不 source 或执行旧 profile，也不在日志中输出受保护值。只允许迁移严格的单行 export、按顺序保留的 PATH 类赋值、安全 alias 和简单 module load；命令替换、控制操作符、重定向、函数、循环和条件必须拒绝。当前 profile 已受管时，只能从最新的非受管备份迁移，避免复制模板自身。命令结束前必须醒目提示用户对照迁移来源和 shell.local，列出可以人工补回的交互式配置，并明确静默 shell 不会完整加载 shell.local。
-
-代理辅助函数必须先检查目标端口正在监听，再导出代理变量；默认只启用 HTTP/HTTPS，SOCKS 必须显式开启；只能向已有 `no_proxy` 追加本地地址，关闭代理时不得清空 `no_proxy`。
-
-### 非交互 SSH 与 Codex 启动
-
-Unix shell 模板必须把一段安静、尽力而为的准备逻辑放在非交互 TTY `return` 之前。这段逻辑可以创建节点本地 `TMPDIR`、读取持久化 Mihomo 端口、在存在有效配置时启动 envpilot 管理的 Mihomo，并且只在代理端口真实监听后导出 HTTP/HTTPS。启动等待必须有上限；它不能输出常规日志、让 shell 失败，或导出一个不可用的代理地址。
-
-进程模型是“用户 + 节点”级别：同一用户在同一主机上的多个 SSH 窗口共享一个 envpilot Mihomo 运行实例，启动锁必须放在运行目录外。代理环境变量则是当前 shell 级别，所以 `proxy_on` 和 `proxy_off` 只影响当前窗口。不要把完整的 `~/.codex` 或 SQLite/会话状态迁移到 `/tmp`，这里只放临时文件、Mihomo 节点本地运行副本和启动锁。
-
-Codex app-server 也必须使用持久启动锁串行化 Desktop SSH、不同终端和 envpilot 的并发启动。检测到非 envpilot app-server 时只能等待和复用，不能自动 kill；只有 PID 文件明确记录的 envpilot 进程可以由 stop/repair 停止。socket 冲突后必须二次检查监听状态，并在失败时输出 status、用户进程、`/proc/net/unix`/`ss` 和日志路径。Codex 版本探测必须提取 `codex-cli VERSION` 行，不能把 stderr 警告当版本。
-
-不是所有远程启动器都会读取 `.bashrc`。测试和文档要分别覆盖 `bash -lc`、`BASH_ENV` 以及 supervisor/app-server 的直接启动；当 Mihomo 缺失、没有配置或健康检查失败时，非交互 profile 仍必须安静返回。
-
-## 组件升级契约
-
-`install` 可以遵循已完成状态；`update` / `upgrade` 必须绕过已完成状态并重新检查目标组件，用户不需要先执行 `reset`。
-
-每个组件的升级路径必须：
-
-- 根据 OS、架构、libc/runtime 和现有环境选择可兼容的最新 stable 版本
-- 报告当前版本、目标版本、来源、路径以及更新或跳过原因
-- 无法确认所有权时，不覆盖管理员维护的系统工具
-- 更新 envpilot 已管理服务时保留用户配置，并恢复升级前的运行状态
-- 同时覆盖 Unix 和 PowerShell 入口的 install/update 测试
-
-Mihomo 升级必须保留已有 envpilot `config.yaml`，并且只在升级前本来就在运行时自动重启。`install all` 必须先准备 Mihomo，再处理 Git/Python/Conda/Mamba/Codex 等网络依赖，确保后续下载有机会使用代理。Conda 和 Mamba 由当前 Conda 求解器选择兼容版本。tmux 将当前命令与 `manifests/tmux.json` 比较，系统或 module 版本过低时构建用户态目标版本。Codex 默认使用官方独立安装器；只有首次安装明确失败且用户再次确认后才允许 npm 回退。GitHub CLI 在 Unix 上只更新 envpilot 管理的副本，Windows 上优先交给 winget。
-
-每次初始化都会把仓库实际位置记录到 `~/.config/envpilot/repo-root`。Shell 模板可以默认使用 `$HOME/envpilot`，但必须在该目录无效时读取记录路径，确保仓库 clone 到其他位置后仍可升级和管理。
-
-## 测试
-
-新增组件时，至少补这些 fixture：
-
-- 已安装时的跳过行为
-- 离线缺包的错误提示
-- resolver 的 prerelease 过滤
-- report 生成
-- rollback 记录生成
-- baseline 捕获与 restore
-- mihomo 本地缓存优先选择
-
-优先写快速测试，不要默认下载大文件。真正依赖网络的检查放到定时 CI 或 release workflow 里。
-
-## 维护建议
-
-- 只要行为变了，就同步更新 README、manifest 和测试。
-- 默认行为要保守。
-- Windows PowerShell 和 Unix-like shell 要当成两条不同执行面来看。
-- 新增组件或缓存策略时，代码和刷新 workflow 要一起改。
-- `update-mihomo-cache` 是维护本地和 CI 里 mihomo 缓存文件的统一入口。
-- `doctor` 负责记录 baseline，`restore` 负责用这个 baseline 回到初始状态。
-
-## Mihomo GeoIP 数据
-
-Mihomo 在受限服务器上启动时，如果必须先从网络拉 GeoIP 数据，可能会因为代理还没起来而失败。envpilot 因此把它们当成 sidecar 资产：
-
-- `downloads/country.mmdb` -> `~/.config/mihomo/country.mmdb`
-- `downloads/geoip.metadb` -> `~/.config/mihomo/geoip.metadb`
-
-`install mihomo` 会先从 `downloads/` 取这些文件，只有缺失时才回退到上游。离线模式下如果本地侧车文件缺失，就直接明确失败。
-
-## Mihomo 运行与端口扩展约束
-
-Mihomo 的 Unix 实现采用“家目录持久化、节点本地运行”模型。修改 Mihomo 时必须同时检查：
-
-- `components/mihomo.sh` 负责解析平台、缓存、双端口和仓库入口。
-- `templates/mihomo_common.sh` 是 start/stop/status/update-subscription 的共享契约。
-- `templates/start_mihomo.sh` 只从 `~/software/mihomo` 和 `~/.config/mihomo` 复制到 `/tmp/${USER}_mihomo_${HOSTNAME}` 后运行。
-- `MIHOMO_PROXY_PORT` 和 `MIHOMO_API_PORT` 必须贯穿安装、配置、启动、状态、代理变量和订阅更新。
-- 新增运行文件时必须加入 doctor baseline、restore 和 Bash 语法/ShellCheck 测试。
-- 订阅 URL、API secret 和生成的 `config.yaml` 不得进入测试 fixture 或 Git 历史。
-
-`bootstrap.sh` / `bootstrap.ps1` 使用 partial clone + sparse checkout 按架构选择 `downloads/` 缓存。新增缓存平台时，需要同步更新 bootstrap 选择规则、manifest、更新 Action 和测试。
-
-## Git / Python 组件约定
-
-Git 组件的最低版本是 2.30，Python 组件的最低版本是 3.9。doctor 和 install 必须先验证现有命令的真实版本，不能只用 command -v 判断。达标的系统命令直接复用；低版本系统命令不能被删除或覆盖，新的用户态版本应安装到 prefix/git/current 或 prefix/python/current，并由 shell 模板在非交互 TTY 守卫之前加入 PATH。
-
-Git 的 Linux/macOS 兜底路径是用户态源码构建，因此 manifest 必须记录稳定源码版本、离线文件名和构建依赖检查。Python 优先使用系统或 Conda 解释器，兜底资产必须同时匹配 OS、架构和 libc。新增版本下限时，要同步修改组件、manifest、doctor 输出、README、PowerShell 实现和 fixture 测试。
-
-Codex 组件不得把密钥写入日志。`~/.codex/config.toml` 只保存 `env_key = "OPENAI_API_KEY"`；实际密钥放在权限为 600 的 `~/.config/secrets/api.env`。`apply-shell` 和 `install codex` 可以创建不含密钥的安全模板，获得密钥后必须单独确认是否持久化。已有 `~/.codex/auth.json` 属于用户认证状态，普通 install/configure 必须原样保留，不能重新提示、删除或覆盖；只有文件不存在时，才依次从当前 `OPENAI_API_KEY`、受保护的密钥文件和交互输入获取密钥，并提供创建权限为 600 的明文兼容副本。新增敏感配置文件时要加入 doctor baseline、备份、rollback/restore 和 gitignore 规则。
-
-### Codex 与 Node.js resolver
-
-Codex 组件必须把“安装产物存在”与“`codex --version` 在限定时间内完成”分开。普通 `install` 遇到已有产物且探测成功或超时时都必须复用它；超时不是缺失，不能因此安装 Node.js、npm 或 nvm。只有立即执行失败才进入修复逻辑，`update codex` 或 `--upgrade` 才是主动替换 CLI 的明确路径。
-
-官方独立安装器必须使用 `CODEX_NON_INTERACTIVE=1`，不得启动 Codex、登录界面或自动卸载已有 npm/brew/bun 安装。官方安装器成功且 standalone 产物存在时，即使后续版本探测超时或失败，也保留该安装并禁止自动 npm fallback。首次官方安装明确失败后只能在第二次、默认否的确认下选择 npm。更新必须保持检测到的安装方法；两种方法共存时优先 standalone、保留另一份并告警。
-
-npm 回退 resolver 必须检查 OS、架构、libc 和真实的 Node.js 执行结果。Linux amd64 且 glibc 2.17-2.27 时选择 unofficial-builds 的 Node.js 22 `x64-glibc-217`，并把其 `bin` 放在 nvm 前面；glibc >= 2.28 才允许使用官方 nvm 二进制。架构不支持或 libc 无法确认时必须停止并说明如何提供兼容 runtime，不能错误下载 x64。`node -v` 失败时必须保留 stderr，让 `GLIBC_2.28 not found` 等动态链接器诊断可见。
-
-`manifests/codex.json` 中的独立安装器 URL、最低 Node 主版本和旧 glibc fallback 规则必须与 `components/codex.sh` 同步。resolver 改动至少要补充已有 Codex 复用、旧 glibc 选择、不支持平台停止和 Node 失败诊断 fixture。
+更新 VERSION 和 CHANGELOG，验收确切提交后发布不可变标签、平台包和 SHA256SUMS。验证 GitHub/Gitee main 和标签一致，不强推、不移动已发布标签。推送脚本必须验证远程引用，不能只根据“已尝试推送”报告成功。

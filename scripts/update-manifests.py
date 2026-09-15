@@ -7,6 +7,8 @@ import argparse
 import json
 import re
 import sys
+import tempfile
+from http_utils import fetch_json, commit_files
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -35,18 +37,6 @@ def write_json(path: Path, data: dict[str, Any]) -> None:
         path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
     except OSError as exc:
         raise RuntimeError(f"Could not write {path}: {exc}") from exc
-
-
-def fetch_json(url: str) -> Any:
-    req = urllib.request.Request(
-        url,
-        headers={
-            "Accept": "application/vnd.github+json",
-            "User-Agent": "envpilot-manifest-updater",
-        },
-    )
-    with urllib.request.urlopen(req, timeout=60) as response:
-        return json.load(response)
 
 
 def validate_manifest(path: Path, data: dict[str, Any]) -> None:
@@ -219,7 +209,7 @@ def update_git_manifest(data: dict[str, Any]) -> bool:
     }
     return True
 
-def update_manifest(path: Path) -> bool:
+def update_manifest(path: Path, destination: Path | None = None) -> bool:
     original = load_json(path)
     validate_manifest(path, original)
     data = json.loads(json.dumps(original))
@@ -241,7 +231,7 @@ def update_manifest(path: Path) -> bool:
         routed = True
     if not routed or strip_volatile(original) == strip_volatile(data):
         return False
-    write_json(path, data)
+    write_json(destination or path, data)
     return True
 
 
@@ -271,19 +261,31 @@ def main() -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
-    for path in paths:
-        try:
-            data = load_json(path)
-            validate_manifest(path, data)
-            if args.check:
-                print(f"valid: {path.relative_to(ROOT)} ({data.get('name', path.stem)})")
-                continue
-            changed = update_manifest(path)
-            status = "updated" if changed else "unchanged"
-            print(f"{status}: {path.relative_to(ROOT)}")
-        except (json.JSONDecodeError, re.error, urllib.error.URLError, TimeoutError, RuntimeError) as exc:
-            print(f"error: {path.relative_to(ROOT)}: {exc}", file=sys.stderr)
+    with tempfile.TemporaryDirectory(prefix=".envpilot-manifests-", dir=MANIFEST_DIR) as work:
+        pending = []
+        failures = []
+        for path in paths:
+            try:
+                data = load_json(path)
+                validate_manifest(path, data)
+                if args.check:
+                    print(f"valid: {path.relative_to(ROOT)} ({data.get('name', path.stem)})")
+                    continue
+                staged = Path(work) / path.name
+                changed = update_manifest(path, staged)
+                if changed:
+                    validate_manifest(staged, load_json(staged))
+                    pending.append((staged, path))
+                print(f"{'updated' if changed else 'unchanged'}: {path.relative_to(ROOT)}")
+            except (json.JSONDecodeError, re.error, urllib.error.URLError, TimeoutError, RuntimeError, OSError) as exc:
+                failures.append(f"{path.relative_to(ROOT)}: {exc}")
+        if failures:
+            for failure in failures:
+                print(f"error: {failure}", file=sys.stderr)
+            print("No manifests were replaced.", file=sys.stderr)
             return 1
+        commit_files(pending)
+
     return 0
 
 

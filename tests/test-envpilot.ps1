@@ -20,15 +20,11 @@ try {
         if ($parseErrors) { throw $parseErrors }
     }
 
-    Write-Host "[TEST] doctor captures baseline"
+    Write-Host "[TEST] doctor preserves recovery baselines"
     $doctorOutput = (& (Join-Path $Root "envpilot.ps1") doctor 6>&1 | Out-String)
     Assert-Match $doctorOutput "OS:" "doctor output did not include OS"
     $baseline = Join-Path $env:ENVPILOT_CONFIG_DIR "baseline/baseline.tsv"
-    if (-not (Test-Path -LiteralPath $baseline)) { throw "baseline file was not created" }
-    $baselineText = Get-Content -LiteralPath $baseline -Raw
-    Assert-Match $baselineText "powershell-profile" "baseline missing PowerShell profile entry"
-    Assert-Match $baselineText "repo-root" "baseline missing repository location entry"
-    Assert-Match $baselineText "mihomo-bin" "baseline missing mihomo binary entry"
+    if (Test-Path $baseline) { throw "doctor created a baseline" }
 
     Write-Host "[TEST] mihomo status command"
     $mihomoStatus = (& (Join-Path $Root "envpilot.ps1") mihomo status 6>&1 | Out-String)

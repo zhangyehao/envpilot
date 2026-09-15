@@ -48,27 +48,22 @@ if [ "$(uname -s)" != Linux ]; then
     echo '[TEST] real restart PID/socket integration requires Linux'
     exit 0
 fi
-echo '[TEST] restart creates a different PID and refuses an external server'
+echo '[TEST] restart replaces the matching Desktop server and preserves unrelated servers'
 source_dir="$fixture/source"
 runtime="/tmp/envpilot-restart-test-$$"
 mkdir -p "$source_dir"
 export CODEX_HOME="$HOME/.codex" ENVPILOT_CODEX_SOURCE_BIN="$source_dir"
 export ENVPILOT_CODEX_RUNTIME_DIR="$runtime" ENVPILOT_CODEX_REMOTE_READY_TIMEOUT=5
 export ENVPILOT_TEST_PYTHON="$(command -v python3)"
+export ENVPILOT_CORE="$ROOT/bin/envpilot-core"
+export ENVPILOT_TEST_SERVER="$ROOT/tests/fake-codex-server.py"
 cat > "$source_dir/codex" <<'EOF'
 #!/usr/bin/env bash
-if [ "${1:-}" = --version ]; then echo 'codex-cli 0.153.0'; exit 0; fi
-exec -a codex "$ENVPILOT_TEST_PYTHON" - "$CODEX_HOME/app-server-control/app-server-control.sock" app-server --listen unix:// <<'PY'
-import os, socket, sys, time
-path = sys.argv[1]
-if os.path.exists(path):
-    os.unlink(path)
-s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-s.bind(path)
-s.listen(1)
-time.sleep(120)
-PY
+if [ "${1:-}" = --version ]; then echo "codex-cli ${FAKE_CODEX_VERSION:-0.153.0}"; exit 0; fi
+if [ "${2:-}" = daemon ]; then exit 2; fi
+exec -a codex "$ENVPILOT_TEST_PYTHON" "$ENVPILOT_TEST_SERVER" app-server --listen unix://
 EOF
+
 chmod 700 "$source_dir/codex"
 manager="$ROOT/templates/codex-remote.sh"
 external=""
@@ -85,7 +80,80 @@ bash "$manager" stop
 "$source_dir/codex" app-server --listen unix:// &
 external=$!
 sleep 1
-if bash "$manager" restart; then exit 1; fi
+bash "$manager" restart
+wait "$external" 2>/dev/null || true
+! kill -0 "$external" 2>/dev/null
+[ -s "$pid_file" ]
+other_home="$fixture/other-codex"
+CODEX_HOME="$other_home" "$source_dir/codex" app-server --listen unix:// &
+external=$!
+sleep 1
+bash "$manager" restart
 kill -0 "$external"
-test ! -f "$pid_file"
+bash "$manager" stop
+kill -0 "$external"
+bash "$manager" ready
+rm -f "$pid_file" "$pid_file.identity"
+bash "$manager" stop
+! ENVPILOT_CODEX_REMOTE_QUIET=1 bash "$manager" running
+# Two simultaneous requests serialize and leave one healthy instance.
+bash "$manager" ready &
+first=$!
+bash "$manager" ready &
+second=$!
+wait "$first"
+wait "$second"
+bash "$manager" running
+echo '[TEST] updates invalidate runtime and restart repairs a corrupt cache'
+before="$(cat "$pid_file")"
+sed 's/0.153.0/0.154.0/g' "$source_dir/codex" > "$source_dir/codex.new"
+mv "$source_dir/codex.new" "$source_dir/codex"
+chmod 700 "$source_dir/codex"
+export FAKE_CODEX_VERSION=0.154.0
+bash "$manager" ready
+[ "$(cat "$pid_file")" != "$before" ]
+[ "$("$runtime/current/bin/codex" --version)" = 'codex-cli 0.154.0' ]
+before="$(cat "$pid_file")"
+printf '#!/bin/sh\nexit 1\n' > "$runtime/current/bin/codex"
+bash "$manager" restart
+[ "$(cat "$pid_file")" != "$before" ]
+[ "$("$runtime/current/bin/codex" --version)" = 'codex-cli 0.154.0' ]
+echo '[TEST] an invalid new source preserves the healthy running server'
+mkdir -p "$fixture/bad-source"
+printf '#!/bin/sh\nexit 1\n' > "$fixture/bad-source/codex"
+chmod 700 "$fixture/bad-source/codex"
+before="$(cat "$pid_file")"
+if ENVPILOT_CODEX_SOURCE_BIN="$fixture/bad-source" bash "$manager" restart; then exit 1; fi
+kill -0 "$before"
+[ "$(cat "$pid_file")" = "$before" ]
+bash "$manager" stop
+echo '[TEST] native lifecycle adapter is used when its fixed path matches the runtime'
+export FAKE_NATIVE_STATE="$fixture/native"
+mkdir -p "$CODEX_HOME/packages/standalone/current"
+ln -s "$runtime/current/bin/codex" "$CODEX_HOME/packages/standalone/current/codex"
+cat > "$source_dir/codex" <<'EOF'
+#!/usr/bin/env bash
+if [ "${1:-}" = --version ]; then echo 'codex-cli 0.154.0'; exit 0; fi
+if [ "${2:-}" = daemon ]; then
+    case "${3:-}" in
+        --help) echo 'start stop restart version'; exit 0 ;;
+        start)
+            echo start >> "$FAKE_NATIVE_STATE.calls"
+            nohup "$0" app-server --listen unix:// >/dev/null 2>&1 < /dev/null &
+            echo "$!" > "$FAKE_NATIVE_STATE.pid"
+            exit 0 ;;
+        stop)
+            echo stop >> "$FAKE_NATIVE_STATE.calls"
+            if [ -f "$FAKE_NATIVE_STATE.pid" ]; then kill -TERM "$(cat "$FAKE_NATIVE_STATE.pid")" 2>/dev/null || true; fi
+            exit 0 ;;
+    esac
+fi
+exec -a codex "$ENVPILOT_TEST_PYTHON" "$ENVPILOT_TEST_SERVER" app-server --listen unix://
+EOF
+chmod 700 "$source_dir/codex"
+bash "$manager" ready
+bash "$manager" restart
+bash "$manager" stop
+grep -q '^start$' "$FAKE_NATIVE_STATE.calls"
+grep -q '^stop$' "$FAKE_NATIVE_STATE.calls"
 test ! -d "$CODEX_HOME/app-server-control/.envpilot-app-server-start.lock"

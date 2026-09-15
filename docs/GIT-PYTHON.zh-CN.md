@@ -12,11 +12,11 @@ envpilot 不会因为命令存在就盲目覆盖系统软件：
 ## 命令
 
 ~~~bash
-bash envpilot.sh doctor
-bash envpilot.sh install git
-bash envpilot.sh update git
-bash envpilot.sh install python
-bash envpilot.sh update python
+envpilot doctor
+envpilot install git
+envpilot update git
+envpilot install python
+envpilot update python
 ~~~
 
 Git 的用户态安装位置：

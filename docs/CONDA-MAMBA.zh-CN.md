@@ -3,11 +3,11 @@
 ## 安装命令
 
 ~~~bash
-bash envpilot.sh install conda
-bash envpilot.sh install conda --conda-distribution anaconda
-bash envpilot.sh update conda
-bash envpilot.sh install mamba
-bash envpilot.sh update mamba
+envpilot install conda
+envpilot install conda --conda-distribution anaconda
+envpilot update conda
+envpilot install mamba
+envpilot update mamba
 ~~~
 
 默认选择官方 Miniconda，不使用 Miniforge。Linux 会根据架构、libc 和 glibc 版本选择仍可运行的官方安装器；CentOS 7 等 glibc 2.17 主机使用官方归档的 Miniconda 24.11.1，而不是要求 glibc 2.28 的最新版安装器。
@@ -151,7 +151,7 @@ BASHRC_CONDA_PRIMARY_PREFIX="/work/home/your-user/miniconda3"
 ## Shell 初始化和 base
 
 ~~~bash
-bash envpilot.sh apply-shell
+envpilot apply-shell
 source ~/.bashrc
 ~~~
 

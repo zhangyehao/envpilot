@@ -352,7 +352,7 @@ ep_migrate_shell_local()
     fi
 
     source="$(ep_shell_migration_source "$old_profile" 2>/dev/null || true)"
-    EP_SHELL_MIGRATION_SOURCE="$source"
+    export EP_SHELL_MIGRATION_SOURCE="$source"
     if [ -n "$source" ]; then
         while IFS= read -r line || [ -n "$line" ]; do
             normalized="$(ep_shell_trim_line "$line")"
@@ -467,44 +467,18 @@ ep_ensure_secrets_file()
 ep_apply_shell_profile()
 {
     ep_require_unix_runtime
-    local target template migration_source profile_backup review_source
+    local target shell
     target="$(ep_shell_profile_target)"
-    template="$(ep_shell_template)"
-    [ -f "$template" ] || ep_die "Shell template missing: $template"
-
-    ep_log "Shell profile target: $target"
-    ep_log "Template: $template"
-    ep_log "Existing profile will be backed up before replacement."
-    if ! ep_confirm "Apply envpilot shell profile now?" "no"; then
-        ep_warn "Shell profile unchanged."
-        return 0
+    shell="$EP_SHELL_NAME"
+    case "$shell" in bash|zsh) ;; *) shell=bash ;; esac
+    ep_log "Shell integration: $target (original content is preserved)"
+    if [ "${EP_CONFIG_APPLY:-0}" != 1 ]; then
+        if [ "${EP_ASSUME_YES:-0}" != 1 ]; then ep_confirm "Install the envpilot shell loading block?" no || return 0; fi
+        ep_snapshot
     fi
-
     ep_setup_command
-    ep_migrate_shell_local "$target"
-    migration_source="${EP_SHELL_MIGRATION_SOURCE:-}"
-    ep_backup_file "$target"
-    profile_backup="${EP_LAST_BACKUP_FILE:-}"
-    cp "$template" "$target.tmp"
-    mv "$target.tmp" "$target"
-    ep_log "Applied shell profile: $target"
-
-    review_source="$migration_source"
-    if [ "$review_source" = "$target" ]; then
-        review_source="$profile_backup"
-    fi
-    ep_warn "REQUIRED REVIEW: immediately check shell.local for important settings missing from the previous profile."
-    if [ -n "$review_source" ]; then
-        ep_warn "Compare the previous profile with the migrated settings: $review_source -> $EP_CONFIG_DIR/shell.local"
-        ep_warn "Suggested review command: less '$review_source' '$EP_CONFIG_DIR/shell.local'"
-    else
-        ep_warn "No unmanaged previous profile was available for automatic migration; inspect your older profile backups manually."
-    fi
-    ep_warn "You may manually restore reviewed interactive settings in shell.local: missing PATH/PYTHONPATH/library paths, aliases, shell functions, EDITOR/LANG/tool variables, prompt/history settings, custom module commands, and tool initialization."
-    ep_warn "Do not copy API keys or tokens there (use $HOME/.config/secrets/api.env), and do not blindly restore old Conda initialization, proxy exports, or Mihomo startup blocks managed by envpilot."
-    ep_warn "Silent/non-interactive/no-real-TTY shells do NOT source shell.local in full. Custom paths, aliases, functions, module commands, prompt settings, and tool initialization added there are interactive-only; protected api.env assignments and envpilot's small non-interactive whitelist are loaded separately."
+    ep_core shell --shell "$shell" --target "$target"
     ep_log "Reload with: source $target"
-    unset EP_SHELL_MIGRATION_SOURCE EP_LAST_BACKUP_FILE
 }
 
 ep_command_is_managed()
@@ -535,6 +509,7 @@ ep_setup_command()
     cp "$ENVPILOT_ROOT/templates/envpilot-command.sh" "$tmp"
     chmod 700 "$tmp"
     mv -f "$tmp" "$target"
+    if command -v ep_core >/dev/null 2>&1; then ep_core install-core; fi
     ep_log "Installed envpilot command: $target (repository: $ENVPILOT_ROOT)"
     case ":$PATH:" in
         *":$HOME/.local/bin:"*) ;;
@@ -549,7 +524,7 @@ ep_doctor_command()
 {
     local target="$HOME/.local/bin/envpilot" root="" visible
     if ! ep_command_is_managed "$target"; then
-        ep_warn "envpilot command is missing or not managed; run: bash envpilot.sh setup-command"
+        ep_warn "envpilot command is missing or not managed; run: envpilot setup-command"
         return 0
     fi
     IFS= read -r root < "$HOME/.config/envpilot/command-root" 2>/dev/null || true

@@ -6,22 +6,48 @@ on:
     - cron: "17 3 * * 1"
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
+
+concurrency:
+  group: update-manifests
+  cancel-in-progress: false
 
 jobs:
   update:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - name: Require the repository automation app
+        env:
+          APP_ID: ${{ vars.ENVPILOT_APP_ID }}
+          APP_KEY: ${{ secrets.ENVPILOT_APP_PRIVATE_KEY }}
+        run: |
+          test -n "$APP_ID" && test -n "$APP_KEY" || {
+            echo '::error::Configure ENVPILOT_APP_ID and ENVPILOT_APP_PRIVATE_KEY for the envpilot-only GitHub App.'
+            exit 1
+          }
+      - uses: actions/create-github-app-token@v2
+        id: app
+        with:
+          app-id: ${{ vars.ENVPILOT_APP_ID }}
+          private-key: ${{ secrets.ENVPILOT_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: envpilot
       - name: Validate current manifests
         run: python scripts/update-manifests.py --check
       - name: Update upstream latest stable metadata
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: bash envpilot.sh update-manifests
       - name: Open PR if manifests changed
         uses: peter-evans/create-pull-request@v8
         with:
+          token: ${{ steps.app.outputs.token }}
+          add-paths: manifests/*.json
           commit-message: update envpilot manifests
           title: "[envpilot] update manifests"
           body: "Automated manifest refresh. Review asset rules before merging."
           branch: codex/update-manifests
+      - name: Report failure
+        if: failure()
+        run: echo 'Manifest refresh failed; existing manifests were preserved. Inspect the failed step before retrying.' >> "$GITHUB_STEP_SUMMARY"

@@ -6,22 +6,48 @@ on:
     - cron: "23 4 * * 1"
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
+
+concurrency:
+  group: update-mihomo-cache
+  cancel-in-progress: false
 
 jobs:
   update:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - name: Require the repository automation app
+        env:
+          APP_ID: ${{ vars.ENVPILOT_APP_ID }}
+          APP_KEY: ${{ secrets.ENVPILOT_APP_PRIVATE_KEY }}
+        run: |
+          test -n "$APP_ID" && test -n "$APP_KEY" || {
+            echo '::error::Configure ENVPILOT_APP_ID and ENVPILOT_APP_PRIVATE_KEY for the envpilot-only GitHub App.'
+            exit 1
+          }
+      - uses: actions/create-github-app-token@v2
+        id: app
+        with:
+          app-id: ${{ vars.ENVPILOT_APP_ID }}
+          private-key: ${{ secrets.ENVPILOT_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: envpilot
       - name: Validate cache refresh script
         run: python scripts/update-mihomo-cache.py --check
       - name: Refresh bundled mihomo cache
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: python scripts/update-mihomo-cache.py
       - name: Open PR if cache changed
         uses: peter-evans/create-pull-request@v8
         with:
+          token: ${{ steps.app.outputs.token }}
+          add-paths: downloads/*
           commit-message: refresh bundled mihomo cache
           title: "[envpilot] refresh bundled mihomo cache"
           body: "Automated refresh of the bundled stable mihomo Linux/Windows amd64 cache files plus country.mmdb and geoip.metadb."
           branch: codex/update-mihomo-cache
+      - name: Report failure
+        if: failure()
+        run: echo 'Cache refresh failed; the previous complete cache remains available. Inspect the failed step before retrying.' >> "$GITHUB_STEP_SUMMARY"

@@ -17,6 +17,8 @@ ENVPILOT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$ENVPILOT_ROOT/lib/rollback.sh"
 # shellcheck source=lib/baseline.sh
 . "$ENVPILOT_ROOT/lib/baseline.sh"
+# shellcheck source=lib/config.sh
+. "$ENVPILOT_ROOT/lib/config.sh"
 
 for __envpilot_component in "$ENVPILOT_ROOT"/components/*.sh; do
     # shellcheck source=/dev/null
@@ -26,30 +28,64 @@ unset __envpilot_component
 
 usage()
 {
+    if [ "${ENVPILOT_LANG:-${LANG:-}}" = zh-CN ] || [[ "${ENVPILOT_LANG:-${LANG:-}}" == zh_* ]]; then
+        cat <<'EOF'
+envpilot — 用户态环境安装与维护
+
+  envpilot init                         创建统一配置
+  envpilot config edit|validate|show     编辑、校验或查看配置
+  envpilot plan                         查看拟议变更
+  envpilot apply [--yes --non-interactive] 应用配置
+  envpilot install|update [组件]         安装或更新组件
+  envpilot doctor                       只诊断，不覆盖恢复点
+  envpilot snapshot                     创建恢复快照
+  envpilot restore [快照路径]            恢复快照（兼容旧 baseline）
+  envpilot apply-shell                  接入 Shell，保留原 profile
+  envpilot shell remove                 移除受管加载块
+  envpilot run -- 命令 参数              在选定环境中运行子进程
+  envpilot codex remote status|enable|ready|restart|stop|repair|disable
+  envpilot mihomo start|stop|status|ports|update-subscription
+  envpilot self-update                  更新 envpilot 和受管脚本
+
+通用选项：--config 路径，--lang auto|en|zh-CN，--mode online|offline，
+          --prefix 路径，--yes，--non-interactive，--help
+EOF
+        return
+    fi
     cat <<'EOF'
 envpilot - cross-platform user-space environment bootstrapper
 
+Configuration workflow:
+  envpilot init                         Create configuration without overwriting it.
+  envpilot config edit|validate|show     Edit, validate or inspect configuration.
+  envpilot plan                         Preview changes.
+  envpilot apply [--yes --non-interactive] Apply configured components and integration.
+  envpilot snapshot                     Create an immutable recovery point.
+  envpilot shell remove                 Remove only the managed profile block.
+  envpilot run -- COMMAND [ARGS...]      Run a child with the configured environment.
+  envpilot self-update                  Update envpilot and installed management scripts.
+
 Usage:
-  bash envpilot.sh doctor             Show status and capture a restore baseline.
-  bash envpilot.sh install [all|git|python|mihomo|conda|mamba|codex|github|tmux] [--mode online|offline] [--prefix PATH] [--asset-path PATH] [--upgrade] [--yes]
+  envpilot doctor             Show status and capture a restore baseline.
+  envpilot install [all|git|python|mihomo|conda|mamba|codex|github|tmux] [--mode online|offline] [--prefix PATH] [--asset-path PATH] [--upgrade] [--yes]
                                       Install the selected component(s). Online is the default.
-  bash envpilot.sh update [all|git|python|mihomo|conda|mamba|codex|github|tmux]
+  envpilot update [all|git|python|mihomo|conda|mamba|codex|github|tmux]
                                        Re-check compatible latest versions and update existing envpilot components.
-  bash envpilot.sh apply-shell [--yes]
+  envpilot apply-shell [--yes]
                                       Back up and replace the active shell profile.
-  bash envpilot.sh setup-command      Install ~/.local/bin/envpilot without replacing the shell profile.
-  bash envpilot.sh rollback           Restore the most recent envpilot-managed backup.
-  bash envpilot.sh restore            Restore envpilot-managed changes to the latest doctor baseline.
-  bash envpilot.sh mihomo [start|stop|status|port PORT|ports PROXY_PORT API_PORT|update-subscription [URL]]
+  envpilot setup-command      Install ~/.local/bin/envpilot without replacing the shell profile.
+  envpilot rollback           Restore the most recent envpilot-managed backup.
+  envpilot restore            Restore envpilot-managed changes to the latest doctor baseline.
+  envpilot mihomo [start|stop|status|port PORT|ports PROXY_PORT API_PORT|update-subscription [URL]]
                                       Manage Mihomo, its two local ports, and subscription config.
-  bash envpilot.sh codex remote [status|enable|stage|ready|warm|restart|stop|repair|disable]
+  envpilot codex remote [status|enable|stage|ready|warm|restart|stop|repair|disable]
                                       Stage Codex on node-local storage and manage app-server warmup.
-  bash envpilot.sh resume             Continue an interrupted install using saved state.
-  bash envpilot.sh reset              Clear saved state so install steps can run again.
-  bash envpilot.sh update-manifests   Refresh manifest latest metadata from upstream.
-  bash envpilot.sh update-mihomo-cache
+  envpilot resume             Continue an interrupted install using saved state.
+  envpilot reset              Clear saved state so install steps can run again.
+  envpilot update-manifests   Refresh manifest latest metadata from upstream.
+  envpilot update-mihomo-cache
                                       Refresh the bundled stable mihomo assets in downloads/.
-  bash envpilot.sh self-test          Run the repo test suite.
+  envpilot self-test          Run the repo test suite.
 
 Options:
   --mode online|offline   Prefer live downloads or local downloads/ assets. Default: online.
@@ -71,6 +107,12 @@ parse_args()
     shift || true
 
     EP_COMPONENT="all"
+    EP_ACTION=""
+    EP_RUN_ARGS=()
+    case "$EP_COMMAND" in
+        config|shell|restore)
+            if [ -n "${1:-}" ] && [[ "$1" != -* ]]; then EP_ACTION="$1"; shift; fi ;;
+    esac
     if { [ "$EP_COMMAND" = "install" ] || [ "$EP_COMMAND" = "update" ] || [ "$EP_COMMAND" = "upgrade" ]; } && [ "${1:-}" != "" ]; then
         arg="${1%$'\r'}"
         if [ "${arg#-}" = "$arg" ]; then
@@ -121,12 +163,16 @@ parse_args()
                 EP_MODE="${2:-}"
                 EP_MODE="${EP_MODE%$'\r'}"
                 [ "$EP_MODE" = "online" ] || [ "$EP_MODE" = "offline" ] || ep_die "--mode must be online or offline"
+                export ENVPILOT_MODE="$EP_MODE"
+                unset ENVPILOT_MANAGED_ENVPILOT_MODE
                 shift 2
                 ;;
             --prefix)
                 EP_PREFIX="${2:-}"
                 EP_PREFIX="${EP_PREFIX%$'\r'}"
                 [ -n "$EP_PREFIX" ] || ep_die "--prefix requires a path"
+                export ENVPILOT_PREFIX="$EP_PREFIX"
+                unset ENVPILOT_MANAGED_ENVPILOT_PREFIX
                 shift 2
                 ;;
             --asset-path)
@@ -142,6 +188,8 @@ parse_args()
                     miniconda|anaconda) ;;
                     *) ep_die "--conda-distribution must be miniconda or anaconda" ;;
                 esac
+                export ENVPILOT_CONDA_DISTRIBUTION="$EP_CONDA_DISTRIBUTION"
+                unset ENVPILOT_MANAGED_ENVPILOT_CONDA_DISTRIBUTION
                 shift 2
                 ;;
             --upgrade|-u)
@@ -152,6 +200,16 @@ parse_args()
                 EP_ASSUME_YES="1"
                 shift
                 ;;
+            --lang)
+                [ -n "${2:-}" ] || ep_die '--lang requires a value'
+                export ENVPILOT_LANG="$2"; unset ENVPILOT_MANAGED_ENVPILOT_LANG; shift 2 ;;
+            --config)
+                [ -n "${2:-}" ] || ep_die '--config requires a path'
+                EP_CONFIG_FILE="$2"; shift 2 ;;
+            --non-interactive)
+                EP_NON_INTERACTIVE=1; export EP_NON_INTERACTIVE; shift ;;
+            --)
+                shift; EP_RUN_ARGS=("$@"); break ;;
             -h|--help)
                 usage
                 exit 0
@@ -169,7 +227,6 @@ run_doctor()
     ep_platform_detect
     ep_log "envpilot doctor"
     ep_platform_print
-    ep_capture_doctor_baseline
     ep_doctor_command
     ep_doctor_git
     ep_doctor_python
@@ -255,6 +312,7 @@ run_install()
     [ "$EP_UPGRADE" = "1" ] && action="update"
     ep_init
     ep_platform_detect
+    if [ "${EP_CONFIG_APPLY:-0}" != 1 ]; then ep_snapshot; fi
     ep_report_start "$action" "$EP_COMPONENT"
 
     case "$EP_COMPONENT" in
@@ -326,14 +384,22 @@ run_restore()
 {
     ep_init
     ep_platform_detect
-    ep_restore_doctor_baseline
+    if [ -n "${EP_ACTION:-}" ] || [ -r "$EP_CONFIG_DIR/latest-snapshot" ]; then
+        ep_core restore ${EP_ACTION:+"$EP_ACTION"}
+    else
+        ep_restore_doctor_baseline
+    fi
 }
 
 run_mihomo()
 {
     ep_init
     ep_platform_detect
-    ep_mihomo_cli "$EP_MIHOMO_ACTION" "$EP_MIHOMO_PORT" "$EP_MIHOMO_VALUE2"
+    if [ "${ENVPILOT_LANG:-auto}" = zh-CN ]; then
+        ep_mihomo_cli "$EP_MIHOMO_ACTION" "$EP_MIHOMO_PORT" "$EP_MIHOMO_VALUE2" | "$(ep_core_path)" message --stream --lang zh-CN
+    else
+        ep_mihomo_cli "$EP_MIHOMO_ACTION" "$EP_MIHOMO_PORT" "$EP_MIHOMO_VALUE2"
+    fi
 }
 
 run_codex()
@@ -376,6 +442,29 @@ main()
 {
     parse_args "$@"
     case "$EP_COMMAND" in
+        help|-h|--help|self-test|update-manifests|update-mihomo-cache) ;;
+        init) ep_ensure_core; ep_core init --lang "${ENVPILOT_LANG:-auto}"; return ;;
+        config)
+            if [ "${EP_ACTION:-show}" = edit ]; then "${EDITOR:-vi}" "${EP_CONFIG_FILE:-${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}/config.yaml}"; return; fi
+            case "${EP_ACTION:-show}" in validate|show) ep_core "${EP_ACTION:-show}" ;; *) ep_die "Use envpilot config edit, validate or show." ;; esac
+            return ;;
+        plan) ep_core plan; return ;;
+
+        *) ep_config_load || return ;;
+    esac
+    case "$EP_COMMAND" in
+        config)
+            case "${EP_ACTION:-show}" in
+                edit) "${EDITOR:-vi}" "${EP_CONFIG_FILE:-${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}/config.yaml}" ;;
+                validate|show) ep_core "${EP_ACTION:-show}" ;;
+                *) ep_die 'Use envpilot config edit, validate or show.' ;;
+            esac ;;
+        plan) ep_core plan ;;
+        apply) ep_apply_config ;;
+        snapshot) ep_snapshot ;;
+        run) "$(ep_core_path)" run --config "${EP_CONFIG_FILE:-${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}/config.yaml}" -- "${EP_RUN_ARGS[@]}" ;;
+        shell) ep_init; ep_platform_detect; ep_core shell "${EP_ACTION:-install}" --shell "$(basename "${SHELL:-bash}")" ;;
+        self-update) ep_self_update ;;
         doctor) run_doctor ;;
         install) run_install ;;
         update|upgrade) run_update ;;

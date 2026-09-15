@@ -7,74 +7,32 @@ metadata:
 
 # envpilot HPC operations
 
-Use this skill for the `zhangyehao/envpilot` repository or a host already managed by envpilot. Keep repository changes separate from files under the user's home directory, and preserve existing state unless the requested operation explicitly takes it over.
+Maintain the envpilot repository and user-space installations without discarding user-owned configuration. Read docs/CONFIG.md, docs/UPGRADE.md and docs/EXTENDING.md when the task touches those areas.
 
-## Working boundaries
+## Default workflow
 
-- Repository source is normally `~/envpilot`; when it differs, use `~/.config/envpilot/repo-root` or the path reported by `doctor`.
-- User-managed files outside the repository include `~/.bashrc`, `~/.zshrc`, `~/.config/envpilot/shell.local`, `~/.config/secrets/api.env`, `~/.condarc`, `~/.config/mihomo/`, `~/.codex/`, `$HOME/software/`, and node-local `/tmp` runtime directories.
-- Never print or commit subscription URLs, API keys, `auth.json`, protected environment files, or their contents. Report only path, mode, owner, and presence.
-- Before modifying a user file, use envpilot's backup path or create an equivalent timestamped backup. Do not reset or delete unrelated user changes.
-- On shared servers, never replace system glibc or system tools. Prefer user-space, module, or platform-compatible assets.
+1. Diagnose with `envpilot doctor`; it does not replace recovery points.
+2. For a new configuration, run `envpilot init`, review YAML and protected references, then `envpilot plan`.
+3. Apply selected settings with `envpilot apply`. Prepare Mihomo before network-dependent components.
+4. Verify configured services, actual listening ports and command resolution.
+5. For upgrades use `envpilot self-update`; update components separately with `envpilot update COMPONENT`.
 
-## Default sequence
+Create immutable snapshots before modifying managed user files. Preserve shell.local, authentication and sessions. Never print or commit credentials, subscription URLs or protected file contents. Use synthetic secrets and isolated homes for tests.
 
-For a new or uncertain host:
+## Shell and configuration
 
-1. Run `bash envpilot.sh doctor` first to capture the restore baseline.
-2. Install or take over Mihomo and verify both proxy and API ports.
-3. Run `bash envpilot.sh apply-shell`, then source the relevant profile.
-4. Verify `mihomo status`, `proxy_status`, and the real HTTP/HTTPS proxy variables.
-5. Install the remaining components with the working proxy.
-6. Run focused status checks and report the install-report path.
+Install a short marked profile loader and independent implementation files. Preserve user profile content, functions and aliases. New users explicitly opt in to automatic integrations; legacy settings are imported only from understood literal values. Modified legacy profiles remain available for review. Do not execute old profiles to migrate them.
 
-For an existing installation, prefer `git pull --ff-only`, `doctor`, `apply-shell`, profile reload, and `update`; do not assume `reset` is required.
+Keep non-interactive startup quiet. Load only explicitly configured environment settings; do not initialize Conda or modules there. Parent-shell environment changes require shell integration; `envpilot run` modifies only a child.
 
-## Mihomo invariants
+## Services and compatibility
 
-- Use `MIHOMO_PROXY_HOST`, `MIHOMO_PROXY_PORT`, and `MIHOMO_API_PORT` consistently. Proxy and API ports must be distinct and available.
-- For a fresh install without explicit or persisted ports, scan upward independently from proxy 42290 and API 60290, preferring `nc`; preserve user-selected and existing managed ports during updates.
-- Treat the full-config subscription URL as sensitive. Save a successfully used URL only in protected `~/.config/mihomo/subscription.url`, never print it, and distinguish cron-driven full-config refresh from Mihomo `proxy-providers.interval`.
-- Prefer the architecture-matched `downloads/` asset before a network download.
-- List and explicitly take over a user-owned existing Mihomo before stopping it. Preserve an envpilot-managed config and restore a runtime that was running before an update.
-- `mihomo status` must check real listening sockets and API health, not just process existence.
-- `proxy_on` must refuse to export a dead proxy. `proxy_off` affects only the current shell.
-- Multiple SSH windows for the same user and node share one managed Mihomo process, while shell proxy variables remain per-process.
+For Codex, match user, node, CODEX_HOME/control socket and process start identity consistently across status/stop/ready/enable/restart. Matching Desktop/SSH services can be managed; unidentified or unrelated processes cannot. Serialize changes and verify a new process and protocol handshake after restart. Native daemon commands require both capability and a compatible installation layout.
 
-## Conda and Mamba invariants
+Keep persistent auth, sessions, configuration and control state separate from versioned node-local runtime files. Validate a staged version before stopping a working server. Updates restart a previously running target; stopped targets remain stopped. Preserve standalone/npm methods and do not mistake a slow version probe for a missing installation.
 
-- Default to Miniconda. On old glibc, select the newest compatible official archive rather than an unusable latest installer.
-- When Anaconda and Miniconda coexist, the managed interactive profile selects Miniconda, clears inherited Conda state, and adds Anaconda environment directories to `CONDA_ENVS_PATH`.
-- `templates/condarc` is the repository source of truth for Conda install/update. Back up and rewrite user `~/.condarc` through those Conda operations, then verify with `conda config --show-sources`.
-- Before Mamba bootstrap, upgrade a standard Miniconda base below Conda 24.11.1 in place with the compatible official installer; preserve existing env directories.
-- Mamba install/update must preserve the existing `~/.condarc`; bootstrap from TUNA conda-forge only with explicit `--override-channels` and `--solver libmamba` when the plugin is present, otherwise `--solver classic`.
-- Do not auto-activate base. Non-interactive shells must not load `conda.sh`.
+Mihomo ports must be distinct and real listeners must be checked before exporting proxies. Preserve no_proxy, subscription files and configured ports. Conda upgrades preserve environments; Mamba preserves .condarc. Never replace system glibc or unrelated system tools.
 
-## Codex and secrets
+## Delivery
 
-- Treat installation artifacts and bounded `codex --version` readiness as separate states. Reuse an existing artifact for ordinary install when the probe succeeds or times out; a shared-filesystem timeout is not a missing executable.
-- Use the official standalone installer by default with `CODEX_NON_INTERACTIVE=1`. Do not launch Codex, remove another install method, or start Node.js/npm fallback after the installer succeeds and the standalone artifact exists.
-- Preserve the detected installation method during updates. Prefer standalone when standalone and npm coexist, preserve both copies, and restore an enabled envpilot remote wrapper after a standalone update.
-- `OPENAI_API_KEY` is the real variable. Preserve existing `~/.codex/auth.json`; create a missing auth file only from a detected environment key, protected `api.env`, or explicit user input.
-- On glibc 2.17 through 2.27, use the compatible Node.js 22 glibc-217 build only for an existing npm installation or an explicitly accepted npm fallback. Standalone Codex does not require Node.js or a system glibc replacement.
-- On slow shared storage, keep Codex config, auth, sessions, and app-server control in `~/.codex`; stage only reconstructible runtime files under node-local `/tmp`.
-- Verify Codex Desktop SSH paths with `codex remote status` or `ready`; serialize app-server starts with the persistent control-directory lock, reuse existing Desktop app-servers, and never kill unknown app-server processes.
-- Parse the `codex-cli VERSION` line from mixed probe output. Treat missing `bubblewrap` as a sandbox prerequisite warning distinct from socket ownership; do not install or replace system sandbox components without administrator policy.
-- Identify npm launchers and envpilot wrappers from a bounded script header only. Do not scan native Codex binaries or follow a standalone symlink while looking for wrapper markers.
-
-## Shell profile rules
-
-- `BASHRC_PROFILE_ACTIVE` and `ENVPILOT_LAST_*` are internal markers that distinguish envpilot-managed values from external overrides. Do not ask users to edit them.
-- `apply-shell` backs up the profile, preserves `shell.local` and `api.env`, migrates ordered PATH-like assignments and safe aliases without executing the old profile, and installs the current template. Before returning, it must tell the user to compare the previous profile with `shell.local` and explain what silent shells do not inherit.
-- `api.env` is assignment-only and may contain variables for multiple applications. `shell.local` is for user overrides and safe PATH/module additions. Enforce owner and mode checks for secrets.
-- Keep non-interactive shells quiet. Load protected variables and bounded proxy preparation before the TTY guard, but skip interactive Conda, modules, history, and functions with side effects.
-
-## Recovery and delivery
-
-- `setup-command` installs the Bash launcher in `~/.local/bin/envpilot`; confirmed `apply-shell` calls the same helper. Preserve caller cwd and arguments, refuse foreign launchers, and keep explicit `command-root` separate from last-run `repo-root`.
-- `codex remote restart` must verify a new managed PID under the startup lock. Never reuse an external instance and report it as restarted; warn about request interruption and preserve persistent auth, config and sessions.
-
-- `restore` returns to the latest doctor baseline; `rollback` restores the latest individual backup; `resume` continues stateful install; `reset` only clears state.
-- Test Bash, PowerShell, ShellCheck, and `git diff --check` after changes that touch templates or install flow.
-- The maintainer prefers direct commits to `main` when authorized, with matching GitHub/Gitee main and version tags. Confirm both remote refs and GitHub Actions/Release before reporting completion.
-- Keep README command-oriented and put detailed component procedures under `docs/`.
+Verify Bash, PowerShell, Go, Python, ShellCheck and workflow checks. Publish only verified immutable tags, source/platform packages and checksums. Confirm matching GitHub/Gitee remote refs and actual Actions/Release results. The maintenance GitHub App is repository-scoped; credentials belong only in protected local storage and repository Secrets.

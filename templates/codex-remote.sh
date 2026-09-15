@@ -15,8 +15,15 @@ START_LOCK="$CONTROL_DIR/.envpilot-app-server-start.lock"
 READY_TIMEOUT="${ENVPILOT_CODEX_REMOTE_READY_TIMEOUT:-60}"
 RUNTIME_ROOT="${ENVPILOT_CODEX_RUNTIME_DIR:-}"
 QUIET="${ENVPILOT_CODEX_REMOTE_QUIET:-0}"
+CORE_BIN="${ENVPILOT_CORE:-$HOME/.local/lib/envpilot/0.4.0/envpilot-core}"
+SOURCE_RECORD="${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}/codex-source"
+if [ -z "${ENVPILOT_CORE:-}" ] && [ -r "${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}/core-path" ]; then
+    IFS= read -r CORE_BIN < "${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}/core-path" || true
+fi
 SECRETS_FILE="${ENVPILOT_CODEX_SECRETS_FILE:-$HOME/.config/secrets/api.env}"
 LOAD_SECRETS="${ENVPILOT_CODEX_LOAD_SECRETS:-${ENVPILOT_CODEX_LOAD_API_KEY:-1}}"
+MANAGER_LANGUAGE="${ENVPILOT_LANG:-auto}"
+if [ "$MANAGER_LANGUAGE" = auto ]; then MANAGER_LANGUAGE="${LC_ALL:-${LC_MESSAGES:-${LANG:-en}}}"; fi
 
 safe_component()
 {
@@ -41,23 +48,32 @@ if [ -z "$RUNTIME_ROOT" ]; then
     runtime_host="$(current_host)"
     safe_component "$runtime_user" || runtime_user="user"
     safe_component "$runtime_host" || runtime_host="host"
-    RUNTIME_ROOT="/tmp/${runtime_user}-envpilot-codex-${runtime_host}"
+    runtime_home_id="$(printf '%s' "$CODEX_HOME_DIR" | cksum | awk '{print $1}')"
+    RUNTIME_ROOT="/tmp/${runtime_user}-envpilot-codex-${runtime_host}-${runtime_home_id}"
 fi
+
+translate_message()
+{
+    case "$MANAGER_LANGUAGE" in
+        zh*) if [ -x "$CORE_BIN" ]; then printf '%s' "$*" | "$CORE_BIN" message --lang zh-CN; return; fi ;;
+    esac
+    printf '%s' "$*"
+}
 
 log()
 {
     [ "$QUIET" = "1" ] && return 0
-    printf '[envpilot-codex] %s\n' "$*" >&2
+    printf '[envpilot-codex] %s\n' "$(translate_message "$*")" >&2
 }
 
 warn()
 {
-    printf '[envpilot-codex] WARNING: %s\n' "$*" >&2
+    printf '[envpilot-codex] WARNING: %s\n' "$(translate_message "$*")" >&2
 }
 
 die()
 {
-    printf '[envpilot-codex] ERROR: %s\n' "$*" >&2
+    printf '[envpilot-codex] ERROR: %s\n' "$(translate_message "$*")" >&2
     exit 1
 }
 
@@ -87,28 +103,26 @@ secret_file_is_safe()
 
 load_codex_environment()
 {
-    local allexport_was_set=0 status=0
-    local openai_was_set="${OPENAI_API_KEY+x}" openai_value="${OPENAI_API_KEY:-}"
-    [ "$LOAD_SECRETS" = "1" ] || return 0
-    secret_file_is_safe "$SECRETS_FILE" || return 0
-    case $- in
-        *a*) allexport_was_set=1 ;;
-        *) set -a ;;
-    esac
-    # The user-owned file is loaded only after ownership and mode checks.
-    # shellcheck disable=SC1090
-    . "$SECRETS_FILE" >/dev/null 2>&1 || status=$?
-    [ "$allexport_was_set" = "1" ] || set +a
-    if [ -n "$openai_was_set" ]; then
-        export OPENAI_API_KEY="$openai_value"
+    local safe_file="" key_env="" key_file=""
+    if [ "$LOAD_SECRETS" = 1 ]; then
+        if secret_file_is_safe "$SECRETS_FILE"; then safe_file="$SECRETS_FILE"; fi
+        key_env="${ENVPILOT_API_KEY_ENV:-}"
+        key_file="${ENVPILOT_API_KEY_FILE:-}"
     fi
-    return "$status"
+    __envpilot_exec_args=("$CORE_BIN" exec-with-env --env-file "$safe_file" --key-env "$key_env" --key-file "$key_file" --target "$(local_bin)")
 }
 
 validate_runtime_root()
 {
+    local physical_home physical_tmp
+    physical_home="$(cd -P "$HOME" 2>/dev/null && pwd)"
+    physical_tmp="$(cd -P /tmp 2>/dev/null && pwd)"
+    case "$RUNTIME_ROOT" in *'/../'*|*/..|*/.|/tmp|"$HOME"|/)
+        die "Unsafe Codex runtime directory: $RUNTIME_ROOT" ;;
+    esac
+    [ ! -L "$RUNTIME_ROOT" ] || die "Codex runtime root must not be a symlink: $RUNTIME_ROOT"
     case "$RUNTIME_ROOT" in
-        /tmp/*|"$HOME"/*) ;;
+        /tmp/*|"$HOME"/*|"$physical_home"/*|"$physical_tmp"/*) ;;
         *) die "ENVPILOT_CODEX_RUNTIME_DIR must be under /tmp or HOME: $RUNTIME_ROOT" ;;
     esac
 }
@@ -117,6 +131,8 @@ ensure_runtime_root()
 {
     validate_runtime_root
     mkdir -p "$RUNTIME_ROOT"
+    RUNTIME_ROOT="$(cd -P "$RUNTIME_ROOT" && pwd)"
+    validate_runtime_root
     chmod 700 "$RUNTIME_ROOT" 2>/dev/null || true
 }
 
@@ -183,6 +199,9 @@ source_bin()
     fi
 
     candidate="$CODEX_HOME_DIR/packages/standalone/current/bin/codex"
+    if [ -x "$CODEX_HOME_DIR/packages/standalone/current/codex" ]; then
+        candidate="$CODEX_HOME_DIR/packages/standalone/current/codex"
+    fi
     if [ -x "$candidate" ]; then
         printf '%s' "$(dirname "$candidate")"
         return 0
@@ -197,25 +216,66 @@ source_bin()
         fi
     fi
 
+    if [ -r "$SOURCE_RECORD" ]; then
+        candidate="$(sed -n '1p' "$SOURCE_RECORD")"
+        if [ -x "$candidate/codex" ]; then printf '%s' "$candidate"; return 0; fi
+    fi
+
     candidate="$(command -v codex 2>/dev/null || true)"
     if [ -n "$candidate" ] && [ -x "$candidate" ] && ! managed_wrapper "$candidate"; then
         resolved="$(resolve_link "$candidate" 2>/dev/null || true)"
         [ -n "$resolved" ] && candidate="$resolved"
+        if [ "$(LC_ALL=C head -c 2 "$candidate" 2>/dev/null || true)" = '#!' ] && LC_ALL=C head -c 256 "$candidate" | grep -Eq '^#!.*node'; then
+            local package vendor native triple
+            package="$(dirname "$(dirname "$candidate")")"
+            case "$(uname -s):$(uname -m)" in
+                Linux:x86_64) triple=x86_64-unknown-linux-musl ;;
+                Linux:aarch64) triple=aarch64-unknown-linux-musl ;;
+                Darwin:x86_64) triple=x86_64-apple-darwin ;;
+                Darwin:arm64) triple=aarch64-apple-darwin ;;
+                *) return 1 ;;
+            esac
+            for vendor in "$package/vendor" "$package"/../codex-*/vendor; do
+                native="$vendor/$triple/codex/codex"
+                if [ -x "$native" ]; then printf '%s' "$(dirname "$native")"; return 0; fi
+            done
+            return 1
+        fi
         [ -x "$candidate" ] && printf '%s' "$(dirname "$candidate")" && return 0
     fi
 
     return 1
 }
 
+runtime_files()
+{
+    local source="$1" file
+    for file in "$source"/codex "$source"/codex-* "$source"/rg "$source"/bwrap; do
+        [ -f "$file" ] && printf '%s\n' "$file"
+    done
+}
+
+source_metadata()
+{
+    local file
+    while IFS= read -r file; do
+        resolve_link "$file"
+        stat -Lc '%s|%y|%z|%i' "$file" 2>/dev/null || stat -Lf '%z|%m|%c|%i' "$file"
+    done < <(runtime_files "$1")
+}
+
 source_signature()
 {
-    local bin="$1"
-    local file="$bin/codex"
-    local metadata
-    [ -x "$file" ] || return 1
-    metadata="$(stat -c '%s|%Y|%i' "$file" 2>/dev/null || stat -f '%z|%m|%i' "$file" 2>/dev/null || true)"
-    [ -n "$metadata" ] || return 1
-    printf '%s|%s' "$bin" "$metadata"
+    local bin="$1" file
+    [ -x "$bin/codex" ] || return 1
+    while IFS= read -r file; do
+        printf '%s|' "$(basename "$file")"
+        if command_exists sha256sum; then sha256sum "$file" | awk '{print $1}'
+        else shasum -a 256 "$file" | awk '{print $1}'; fi
+    done < <(runtime_files "$bin") | {
+        if command_exists sha256sum; then sha256sum | awk '{print $1}'
+        else shasum -a 256 | awk '{print $1}'; fi
+    }
 }
 
 kill_process_tree()
@@ -328,63 +388,130 @@ socket_ready()
     esac
 }
 
-pid_is_server()
+process_identity()
 {
     local pid="$1"
-    local args
-    case "$pid" in
-        ''|*[!0-9]*) return 1 ;;
-    esac
+    if [ -r "/proc/$pid/stat" ]; then
+        sed 's/.*) //' "/proc/$pid/stat" | awk '{print $20}'
+    else
+        ps -p "$pid" -o lstart= 2>/dev/null
+    fi
+}
+
+pid_owns_socket()
+{
+    local pid="$1" inode fd
+    if [ -r /proc/net/unix ]; then
+        inode="$(awk -v socket="$SOCKET" '$8 == socket && $6 == "01" {print $7;exit}' /proc/net/unix)"
+        [ -n "$inode" ] || return 1
+        for fd in /proc/"$pid"/fd/*; do
+            [ "$(readlink "$fd" 2>/dev/null || true)" != "socket:[$inode]" ] || return 0
+        done
+        return 1
+    fi
+    command_exists lsof || return 1
+    run_bounded 2 lsof -nP -a -p "$pid" -U 2>/dev/null | grep -Fq -- "$SOCKET"
+}
+
+pid_is_server()
+{
+    local pid="$1" args uid state home inode fd target
+    case "$pid" in ''|*[!0-9]*) return 1 ;; esac
     kill -0 "$pid" 2>/dev/null || return 1
+    uid="$(ps -p "$pid" -o uid= 2>/dev/null | tr -d ' ')"
+    [ "$uid" = "$(id -u)" ] || return 1
+    state="$(ps -p "$pid" -o stat= 2>/dev/null)"
+    case "$state" in Z*|'') return 1 ;; esac
     args="$(ps -p "$pid" -o args= 2>/dev/null || true)"
-    case "$args" in
-        codex\ *|*/codex\ *) ;;
-        *) return 1 ;;
-    esac
-    case "$args" in
-        *app-server*--listen*unix://*) return 0 ;;
-        *) return 1 ;;
-    esac
+    case "$args" in codex\ *|*/codex\ *) ;; *) return 1 ;; esac
+    case "$args" in *app-server*) ;; *) return 1 ;; esac
+    if [ -r /proc/net/unix ]; then
+        inode="$(awk -v socket="$SOCKET" '$8 == socket && $6 == "01" {print $7;exit}' /proc/net/unix)"
+        if [ -n "$inode" ]; then
+            for fd in /proc/"$pid"/fd/*; do
+                target="$(readlink "$fd" 2>/dev/null || true)"
+                [ "$target" != "socket:[$inode]" ] || return 0
+            done
+        fi
+        # Before a new server binds, require its exact home and default endpoint.
+        home="$(tr '\0' '\n' < "/proc/$pid/environ" 2>/dev/null | sed -n 's/^CODEX_HOME=//p' | head -n 1)"
+        [ "$home" = "$CODEX_HOME_DIR" ] || return 1
+        case "$args " in *'--listen unix:// '*) return 0 ;; esac
+        return 1
+    fi
+    if command_exists lsof; then
+        lsof -nP -a -p "$pid" -U 2>/dev/null | awk -v socket="$SOCKET" '$NF == socket {found=1} END {exit !found}' && return 0
+    fi
+    [ "$(sed -n '1p' "$PID_FILE" 2>/dev/null)" = "$pid" ] &&
+        [ "$(cat "$PID_FILE.identity" 2>/dev/null)" = "$(process_identity "$pid")" ]
 }
 
 find_existing_server_pid()
 {
-    local pid uid
-    uid="$(id -u)"
-    if command_exists pgrep; then
-        while IFS= read -r pid; do
-            pid_is_server "$pid" && {
-                printf '%s' "$pid"
-                return 0
-            }
-        done < <(pgrep -u "$uid" -f '[a]pp-server' 2>/dev/null || true)
-    fi
+    local pid
     while IFS= read -r pid; do
-        pid="${pid#"${pid%%[![:space:]]*}"}"
-        pid_is_server "$pid" && {
-            printf '%s' "$pid"
-            return 0
-        }
-    done < <(ps -u "$uid" -o pid= 2>/dev/null || true)
+        pid="$(printf '%s' "$pid" | tr -d ' ')"
+        pid_is_server "$pid" && { printf '%s' "$pid"; return 0; }
+    done < <(ps -u "$(id -u)" -o pid= 2>/dev/null)
     return 1
 }
 
 read_server_pid()
 {
-    local pid
-    [ -r "$PID_FILE" ] || return 1
+    local pid saved
     pid="$(sed -n '1p' "$PID_FILE" 2>/dev/null || true)"
-    pid_is_server "$pid" || return 1
-    printf '%s' "$pid"
+    saved="$(cat "$PID_FILE.identity" 2>/dev/null || true)"
+    if pid_is_server "$pid" && { [ -z "$saved" ] || [ "$saved" = "$(process_identity "$pid")" ]; }; then
+        printf '%s' "$pid"
+    else
+        find_existing_server_pid
+    fi
+}
+
+record_server()
+{
+    printf '%s\n' "$1" > "$PID_FILE"
+    process_identity "$1" > "$PID_FILE.identity"
+    cat "$(signature_file)" > "$PID_FILE.signature"
+    current_host > "$PID_FILE.host"
+}
+
+native_daemon()
+{
+    run_bounded 5 "$(local_bin)" app-server daemon --help 2>/dev/null | grep -q 'restart'
+}
+
+protocol_ready()
+{
+    local expected actual
+    [ -x "$CORE_BIN" ] || { warn "envpilot-core is required to verify the app-server protocol."; return 1; }
+    expected="$(cat "$(local_current_dir)/.version" 2>/dev/null || true)"
+    [ -n "$expected" ] || expected="$(local_version | awk '{print $2}')"
+    actual="$("$CORE_BIN" probe --socket "$SOCKET" --format version 2>/dev/null)" || return 1
+    [ -n "$expected" ] && [ "$actual" = "$expected" ]
+}
+
+runtime_matches_server()
+{
+    local pid="$1" exe expected
+    if [ -r "/proc/$pid/exe" ]; then
+        exe="$(readlink "/proc/$pid/exe" 2>/dev/null || true)"
+        expected="$(resolve_link "$(local_bin)")"
+        [ "$exe" = "$expected" ] && return 0
+        case "$(basename "$exe")" in codex|codex\ \(deleted\)) return 1 ;; esac
+    fi
+    [ -f "$PID_FILE.signature" ] && [ "$(cat "$PID_FILE.signature")" = "$(cat "$(signature_file)")" ] &&
+        [ "$(cat "$PID_FILE.identity" 2>/dev/null)" = "$(process_identity "$pid")" ]
 }
 
 acquire_server_start_lock()
 {
-    local attempts=0 lock_pid max
+    local attempts=0 lock_pid max lock_host
     max=$((READY_TIMEOUT * 5))
     while ! mkdir "$START_LOCK" 2>/dev/null; do
         lock_pid="$(sed -n '1p' "$START_LOCK/pid" 2>/dev/null || true)"
-        if [ -n "$lock_pid" ] && ! kill -0 "$lock_pid" 2>/dev/null; then
+        lock_host="$(cat "$START_LOCK/host" 2>/dev/null || true)"
+        if [ "$lock_host" = "$(current_host)" ] && [ -n "$lock_pid" ] && ! kill -0 "$lock_pid" 2>/dev/null; then
             rm -rf "$START_LOCK"
             continue
         fi
@@ -393,6 +520,7 @@ acquire_server_start_lock()
         sleep 0.2
     done
     printf '%s\n' "$$" > "$START_LOCK/pid"
+    current_host > "$START_LOCK/host"
 }
 
 release_server_start_lock()
@@ -430,75 +558,78 @@ release_stage_lock()
 }
 
 stage_runtime()
-{
-    local force="${1:-0}"
-    local source signature current existing staged previous
-
+(
+    local force="${1:-0}" source signature current staged generation file metadata needs_copy=0 probe
     ensure_runtime_root
     acquire_stage_lock
     trap release_stage_lock EXIT
-
     source="$(source_bin 2>/dev/null || true)"
-    if [ -z "$source" ]; then
-        existing="$(local_bin)"
-        if [ -x "$existing" ] && [ -f "$(signature_file)" ]; then
-            log "Persistent source is unavailable; using the existing node-local Codex runtime."
-            trap - EXIT
-            release_stage_lock
-            return 0
-        fi
-        trap - EXIT
-        release_stage_lock
-        die "No persistent Codex executable was found under $CODEX_HOME_DIR/packages/standalone or PATH."
+    [ -n "$source" ] || die "Persistent Codex source is unavailable; refusing to silently reuse an unverified cache."
+    metadata="$(source_metadata "$source")"
+    if [ "$force" = 0 ] && [ -s "$RUNTIME_ROOT/.source-digest" ] && [ "$metadata" = "$(cat "$RUNTIME_ROOT/.source-metadata" 2>/dev/null || true)" ]; then
+        signature="$(cat "$RUNTIME_ROOT/.source-digest" 2>/dev/null || true)"
+    else
+        signature="$(source_signature "$source")"
     fi
-    signature="$(source_signature "$source" || true)"
-    [ -n "$signature" ] || {
-        trap - EXIT
-        release_stage_lock
-        die "Codex source is not executable: $source/codex"
-    }
-
+    [ -n "$signature" ] || die "Could not fingerprint the Codex source."
+    case "$signature" in *[!0-9a-f]*|'') die 'Invalid runtime digest.' ;; esac
+    [ "${#signature}" = 64 ] || die 'Invalid runtime digest.'
     current="$(local_current_dir)"
-    if [ "$force" != "1" ] && [ -x "$(local_bin)" ] && [ -f "$(signature_file)" ] &&
-        [ "$(cat "$(signature_file)")" = "$signature" ]; then
-        trap - EXIT
-        release_stage_lock
-        return 0
+    generation="$RUNTIME_ROOT/releases/$signature"
+    if [ -r "$current/.source.signature" ] && [ "$(cat "$current/.source.signature")" = "$signature" ]; then
+        generation="$(resolve_link "$current")"
     fi
-
-    staged="$RUNTIME_ROOT/.staging.$$"
-    previous="$RUNTIME_ROOT/.previous.$$"
-    rm -rf "$staged" "$previous"
-    mkdir -p "$staged/bin"
-    chmod 700 "$staged" "$staged/bin" 2>/dev/null || true
-    log "Staging Codex runtime from $source to $RUNTIME_ROOT"
-    cp -a "$source/." "$staged/bin/"
-    [ -x "$staged/bin/codex" ] || {
-        rm -rf "$staged"
-        trap - EXIT
-        release_stage_lock
-        die "Staged Codex runtime has no executable bin/codex."
-    }
-    printf '%s\n' "$signature" > "$staged/.source.signature"
-    if [ -e "$current" ] || [ -L "$current" ]; then
-        mv "$current" "$previous"
+    if [ "$force" = 1 ] || [ ! -x "$generation/bin/codex" ]; then
+        needs_copy=1
+    elif [ "$(source_metadata "$generation/bin")" != "$(cat "$generation/.runtime-metadata" 2>/dev/null || true)" ]; then
+        needs_copy=1
+    elif [ "$force" != 0 ] && [ "$(source_signature "$generation/bin")" != "$signature" ]; then
+        needs_copy=1
     fi
-    mv "$staged" "$current"
-    rm -rf "$previous"
-    trap - EXIT
-    release_stage_lock
-}
+    if [ "$needs_copy" = 1 ]; then
+        staged="$(mktemp -d "$RUNTIME_ROOT/.staging.XXXXXX")"
+        mkdir -p "$staged/bin"
+        log "Staging Codex runtime from $source to $generation"
+        while IFS= read -r file; do cp -pL "$file" "$staged/bin/"; done < <(runtime_files "$source")
+        [ -x "$staged/bin/codex" ] || die "Staged runtime has no executable codex."
+        if [ "$(source_signature "$staged/bin")" != "$signature" ] || [ "$(source_metadata "$source")" != "$metadata" ]; then
+            rm -rf "$staged"
+            die "Codex source changed while staging; retry after the installer finishes."
+        fi
+        if ! probe="$(run_bounded 5 "$staged/bin/codex" --version 2>&1)" || ! printf '%s\n' "$probe" | grep -q '^codex-cli '; then
+            rm -rf "$staged"
+            die 'The staged Codex executable failed its version probe; the running server was preserved.'
+        fi
+        printf '%s\n' "$probe" | awk '/^codex-cli / {print $2;exit}' > "$staged/.version"
+        printf '%s\n' "$signature" > "$staged/.source.signature"
+        mkdir -p "$RUNTIME_ROOT/releases"
+        if [ -d "$generation" ]; then generation="$generation-repair-$$"; fi
+        mv "$staged" "$generation"
+        source_metadata "$generation/bin" > "$generation/.runtime-metadata"
+    fi
+    if [ -d "$current" ] && [ ! -L "$current" ]; then mv "$current" "$RUNTIME_ROOT/releases/legacy-$(date +%s)-$$"; fi
+    ln -s "$generation" "$RUNTIME_ROOT/.current.$$"
+    # mv must replace the symlink itself, not move into its target directory.
+    if [ -L "$current" ]; then
+        if [ "$(uname -s)" = Darwin ]; then mv -fh "$RUNTIME_ROOT/.current.$$" "$current"
+        else mv -fT "$RUNTIME_ROOT/.current.$$" "$current"; fi
+    else mv "$RUNTIME_ROOT/.current.$$" "$current"; fi
+    printf '%s\n' "$metadata" > "$RUNTIME_ROOT/.source-metadata.tmp.$$"
+    printf '%s\n' "$signature" > "$RUNTIME_ROOT/.source-digest.tmp.$$"
+    mv "$RUNTIME_ROOT/.source-metadata.tmp.$$" "$RUNTIME_ROOT/.source-metadata"
+    mv "$RUNTIME_ROOT/.source-digest.tmp.$$" "$RUNTIME_ROOT/.source-digest"
+)
 
 wait_for_socket()
 {
     local pid="${1:-}" seconds="${2:-$READY_TIMEOUT}" i=0 max
     max=$((seconds * 5))
     while [ "$i" -lt "$max" ]; do
-        if socket_ready; then
+        if socket_ready && protocol_ready && { [ -z "$pid" ] || pid_owns_socket "$pid"; }; then
             printf '%s\n' "$(date '+%F %T')" > "$CONTROL_DIR/envpilot-app-server.ready"
             return 0
         fi
-        if [ -n "$pid" ] && ! pid_is_server "$pid"; then
+        if [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then
             return 1
         fi
         sleep 0.2
@@ -509,182 +640,131 @@ wait_for_socket()
 
 start_server_locked()
 {
-    local require_new="${1:-0}"
-    local pid existing_state=0 existing_pid log_start_lines=0 attempt_output=""
-
-    if socket_ready; then
-        if [ "$require_new" = 1 ]; then
-            warn "Restart refused: a control socket is already active or cannot be inspected. Close its owning connection first."
-            return 1
-        fi
-        log "Codex app-server is already ready: $SOCKET"
-        return 0
-    fi
+    local require_new="${1:-0}" pid state=0 attempts=0
     pid="$(read_server_pid 2>/dev/null || true)"
     if [ -n "$pid" ]; then
-        if wait_for_socket "$pid"; then
-            log "Codex app-server became ready: $SOCKET"
+        if [ "$require_new" != 1 ] && runtime_matches_server "$pid" && wait_for_socket "$pid"; then
+            log "Codex app-server is ready: PID $pid"
             return 0
         fi
-        rm -f "$PID_FILE"
+        stop_server || return 1
     fi
-
-    existing_pid="$(find_existing_server_pid 2>/dev/null || true)"
-    if [ -n "$existing_pid" ]; then
-        if [ "$require_new" = 1 ]; then
-            warn "Restart refused: non-envpilot app-server PID $existing_pid is running. No process was taken over."
-            return 1
-        fi
-        log "Waiting for existing Codex app-server PID $existing_pid to publish its control socket."
-        if wait_for_socket "$existing_pid"; then
-            log "Reusing existing Codex app-server PID $existing_pid on $SOCKET"
-            return 0
-        fi
-        if pid_is_server "$existing_pid"; then
-            warn "Existing Codex app-server PID $existing_pid is still running but did not make the control socket ready within ${READY_TIMEOUT}s."
-            warn "envpilot will not kill an app-server it did not start. Close the owning Desktop connection or stop that PID safely, then run: bash envpilot.sh codex remote repair"
-            return 1
-        fi
-    fi
-
     if [ -S "$SOCKET" ]; then
-        socket_listener_state || existing_state=$?
-        if [ "$existing_state" = "1" ]; then
-            [ "$require_new" != 1 ] || return 1
-            log "Reusing an existing Codex app-server on $SOCKET"
-            return 0
-        fi
-        if [ "$existing_state" = "0" ]; then
-            rm -f "$SOCKET"
-        else
-            [ "$require_new" != 1 ] || return 1
-            log "Cannot inspect the Unix socket listener; preserving the existing socket."
-            return 0
-        fi
+        socket_listener_state || state=$?
+        if [ "$state" != 0 ]; then warn "Cannot verify the owner of the active control socket: $SOCKET"; return 1; fi
+        rm -f "$SOCKET"
     fi
-
-    rm -f "$CONTROL_DIR/envpilot-app-server.ready"
-    log "Starting Codex app-server; cold start may take several seconds."
-    load_codex_environment || true
-    [ -f "$SERVER_LOG" ] && log_start_lines="$(wc -l < "$SERVER_LOG" 2>/dev/null || printf '0')"
-    nohup env CODEX_HOME="$CODEX_HOME_DIR" "$(local_bin)" \
-        -c features.code_mode_host=true app-server --listen unix:// \
-        >>"$SERVER_LOG" 2>&1 < /dev/null &
-    pid=$!
-    printf '%s\n' "$pid" > "$PID_FILE"
-    if wait_for_socket "$pid"; then
-        if [ "$require_new" = 1 ] && ! pid_is_server "$pid"; then
-            warn "Restart did not establish the new managed app-server; another process may own the socket."
-            rm -f "$PID_FILE"
+    load_codex_environment
+    log "Starting Codex app-server from the verified runtime."
+    if native_daemon && [ "$(resolve_link "$CODEX_HOME_DIR/packages/standalone/current/codex" 2>/dev/null || true)" = "$(resolve_link "$(local_bin)")" ]; then
+        if ! CODEX_HOME="$CODEX_HOME_DIR" run_bounded "$READY_TIMEOUT" "${__envpilot_exec_args[@]}" -- app-server daemon start >>"$SERVER_LOG" 2>&1; then
+            warn "Native daemon start failed; see $SERVER_LOG"
             return 1
         fi
-        log "Codex app-server is ready: $SOCKET"
-        return 0
-    fi
-    rm -f "$PID_FILE"
-    if [ -f "$SERVER_LOG" ]; then
-        attempt_output="$(tail -n "+$((log_start_lines + 1))" "$SERVER_LOG" 2>/dev/null || true)"
-    fi
-    if printf '%s\n' "$attempt_output" | grep -q 'control socket is already in use'; then
-        if [ "$require_new" = 1 ]; then
-            warn "Restart lost a startup race to another app-server; not reporting the old or competing instance as restarted."
-            return 1
-        fi
-        log "Another Codex app-server won the control-socket startup race; checking it before reporting failure."
-        if wait_for_socket "" 5; then
-            log "Reusing the concurrent Codex app-server on $SOCKET"
-            return 0
-        fi
-    fi
-    warn "Codex app-server did not become ready within ${READY_TIMEOUT}s."
-    if printf '%s\n' "$attempt_output" | grep -q 'could not find bubblewrap on PATH'; then
-        warn "System bubblewrap is missing. Codex reports that it will try its bundled helper; this warning is separate from a control-socket conflict."
-    fi
-    if [ -n "$attempt_output" ]; then
-        printf '%s\n' "$attempt_output" | tail -n 30 >&2 || true
-    fi
-    warn "Diagnostics: bash envpilot.sh codex remote status"
-    warn "Processes: ps -o pid,ppid,stat,etime,args -u \"\$USER\" | grep -E '[c]odex|[a]pp-server'"
-    warn "Socket: grep -F '$SOCKET' /proc/net/unix 2>/dev/null || ss -xlpn | grep -F '$SOCKET'"
-    warn "Log: tail -100 '$SERVER_LOG'"
-    return 1
-}
-
-start_server()
-{
-    local status=0
-    ensure_control_dir
-    stage_runtime 0
-    acquire_server_start_lock
-    if start_server_locked; then
-        status=0
+        while [ "$attempts" -lt "$((READY_TIMEOUT * 5))" ]; do
+            pid="$(find_existing_server_pid 2>/dev/null || true)"
+            [ -z "$pid" ] || break
+            sleep 0.2
+            attempts=$((attempts + 1))
+        done
     else
-        status=$?
+        CODEX_HOME="$CODEX_HOME_DIR" nohup "${__envpilot_exec_args[@]}" -- app-server --listen unix:// >>"$SERVER_LOG" 2>&1 < /dev/null &
+        pid=$!
+        printf '%s\n' "$pid" > "$PID_FILE"
+        process_identity "$pid" > "$PID_FILE.identity"
     fi
-    release_server_start_lock
-    return "$status"
+    if [ -n "$pid" ] && wait_for_socket "$pid"; then
+        record_server "$pid"
+        if runtime_matches_server "$pid"; then
+            log "Codex app-server is ready: PID $pid ($(local_version))"
+            return 0
+        fi
+    fi
+    warn "App-server startup or version verification failed; see $SERVER_LOG"
+    return 1
 }
 
 stop_server()
 {
-    local pid i=0
-    pid="$(sed -n '1p' "$PID_FILE" 2>/dev/null || true)"
-    if ! pid_is_server "$pid"; then
-        rm -f "$PID_FILE"
-        printf '%s\n' 'No envpilot-managed Codex app-server is running.'
+    local pid identity i=0 state=0
+    pid="$(read_server_pid 2>/dev/null || true)"
+    if [ -z "$pid" ]; then
+        if [ -S "$SOCKET" ]; then
+            socket_listener_state || state=$?
+            [ "$state" = 0 ] || { warn "Control socket owner is unknown; no process was stopped."; return 1; }
+        fi
+        rm -f "$PID_FILE" "$PID_FILE.identity" "$PID_FILE.signature" "$PID_FILE.host"
+        log "No matching Codex app-server is running."
         return 0
     fi
-    kill -TERM "$pid" 2>/dev/null || true
-    while pid_is_server "$pid" && [ "$i" -lt 50 ]; do
-        sleep 0.1
-        i=$((i + 1))
-    done
-    if pid_is_server "$pid"; then
-        kill -KILL "$pid" 2>/dev/null || true
+    identity="$(process_identity "$pid")"
+    if [ -x "$(local_bin)" ] && native_daemon; then
+        run_bounded 10 env CODEX_HOME="$CODEX_HOME_DIR" "$(local_bin)" app-server daemon stop >>"$SERVER_LOG" 2>&1 || true
     fi
+    if pid_is_server "$pid" && [ "$(process_identity "$pid")" = "$identity" ]; then kill -TERM "$pid" 2>/dev/null || true; fi
+    while pid_is_server "$pid" && [ "$i" -lt 50 ]; do sleep 0.1; i=$((i+1)); done
+    if pid_is_server "$pid" && [ "$(process_identity "$pid")" = "$identity" ]; then kill -KILL "$pid" 2>/dev/null || true; fi
     i=0
-    while pid_is_server "$pid" && [ "$i" -lt 20 ]; do
-        sleep 0.1
-        i=$((i + 1))
-    done
-    if pid_is_server "$pid"; then
-        warn "App-server PID $pid has not exited; preserving its PID file."
+    while pid_is_server "$pid" && [ "$i" -lt 20 ]; do sleep 0.1; i=$((i+1)); done
+    if [ -n "$(find_existing_server_pid 2>/dev/null || true)" ]; then
+        warn "A matching app-server is still running or its supervisor restarted it; preserving state."
         return 1
     fi
-    rm -f "$PID_FILE" "$CONTROL_DIR/envpilot-app-server.ready"
-    printf 'Stopped envpilot-managed Codex app-server: %s\n' "$pid"
+    rm -f "$PID_FILE" "$PID_FILE.identity" "$PID_FILE.signature" "$PID_FILE.host" "$CONTROL_DIR/envpilot-app-server.ready"
+    state=0
+    socket_listener_state || state=$?
+    [ "$state" != 0 ] || rm -f "$SOCKET"
+    log "Stopped Codex app-server: PID $pid"
 }
 
-repair_runtime()
+clean_unused_generations()
 {
-    local state=0
-    stop_server >/dev/null
-    if [ -S "$SOCKET" ]; then
-        socket_listener_state || state=$?
-        [ "$state" = "0" ] && rm -f "$SOCKET"
-    fi
-    rm -rf "$(local_current_dir)"
-    start_server
+    local generation current pid executable active
+    [ -d /proc ] || return 0
+    current="$(resolve_link "$(local_current_dir)")"
+    for generation in "$RUNTIME_ROOT"/releases/*; do
+        [ -d "$generation" ] && [ ! -L "$generation" ] && [ -f "$generation/.source.signature" ] || continue
+        [ "$generation" != "$current" ] || continue
+        active=0
+        while IFS= read -r pid; do
+            pid="$(printf '%s' "$pid" | tr -d ' ')"
+            executable="$(readlink "/proc/$pid/exe" 2>/dev/null || true)"
+            case "$executable" in "$generation"/*) active=1; break ;; esac
+        done < <(ps -u "$(id -u)" -o pid= 2>/dev/null)
+        [ "$active" != 0 ] || rm -rf -- "$generation"
+    done
 }
 
-restart_server()
+server_operation()
 {
-    local old_pid new_pid status=0
+    local operation="$1" old_pid new_pid status=0 stage_mode=0
     ensure_control_dir
-    # Stage before taking the start lock: stage_runtime owns its own EXIT trap.
-    stage_runtime 0
     acquire_server_start_lock
     trap release_server_start_lock EXIT
+    if [ -r "$PID_FILE.host" ] && [ "$(cat "$PID_FILE.host")" != "$(current_host)" ]; then
+        die 'The control directory belongs to another node; select a node-specific CODEX_HOME before changing its service.'
+    fi
     old_pid="$(read_server_pid 2>/dev/null || true)"
-    log "Restarting the managed app-server; connected clients and running requests may be interrupted."
-    if stop_server && start_server_locked 1; then
-        new_pid="$(read_server_pid 2>/dev/null || true)"
-        if [ -n "$new_pid" ] && [ "$new_pid" != "$old_pid" ]; then
-            log "New envpilot app-server PID $new_pid (previous: ${old_pid:-none})."
-        else
-            warn "Restart could not verify a new managed PID."
-            status=1
+    case "$operation" in restart) stage_mode=verify ;; repair) stage_mode=1 ;; esac
+    if [ "$operation" = stop ]; then
+        stop_server || status=$?
+    elif stage_runtime "$stage_mode"; then
+        load_codex_environment
+        if ! CODEX_HOME="$CODEX_HOME_DIR" "${__envpilot_exec_args[@]}" --check; then
+            release_server_start_lock
+            trap - EXIT
+            return 1
         fi
+        if [ "$operation" = restart ] || [ "$operation" = repair ]; then
+            log "Restarting Codex app-server; connected tasks may be interrupted."
+            stop_server || status=$?
+        fi
+        if [ "$status" = 0 ]; then start_server_locked || status=$?; fi
+        new_pid="$(read_server_pid 2>/dev/null || true)"
+        if [ "$status" = 0 ] && { [ "$operation" = restart ] || [ "$operation" = repair ]; }; then
+            if [ -z "$new_pid" ] || [ "$new_pid" = "$old_pid" ]; then status=1; warn "A new app-server process was not verified."; fi
+        fi
+        [ "$status" != 0 ] || clean_unused_generations
     else
         status=1
     fi
@@ -692,18 +772,10 @@ restart_server()
     trap - EXIT
     return "$status"
 }
-
-stop_server_serialized()
-{
-    local status=0
-    ensure_control_dir
-    acquire_server_start_lock
-    trap release_server_start_lock EXIT
-    stop_server || status=$?
-    release_server_start_lock
-    trap - EXIT
-    return "$status"
-}
+start_server() { server_operation ready; }
+restart_server() { server_operation restart; }
+repair_runtime() { server_operation repair; }
+stop_server_serialized() { server_operation stop; }
 
 clean_runtime()
 {
@@ -730,7 +802,7 @@ status_report()
     printf 'Control directory:\n  %s\n' "$CONTROL_DIR"
     if [ -L "$CONTROL_DIR" ]; then
         printf '  ERROR: symlink; keep this directory on persistent storage\n'
-    elif [ -S "$SOCKET" ] && socket_ready; then
+    elif [ -S "$SOCKET" ] && socket_ready && protocol_ready; then
         printf '  socket: READY (%s)\n' "$SOCKET"
     else
         printf '  socket: NOT READY (%s)\n' "$SOCKET"
@@ -738,10 +810,15 @@ status_report()
     pid="$(read_server_pid 2>/dev/null || true)"
     if [ -n "$pid" ]; then
         printf 'App-server:\n  managed PID %s\n' "$pid"
+        if [ -f "$(signature_file)" ] && ! runtime_matches_server "$pid"; then
+            printf '  VERSION MISMATCH: run envpilot codex remote restart\n'
+        elif [ -n "$source" ] && [ -f "$RUNTIME_ROOT/.source-metadata" ] && [ "$(source_metadata "$source")" != "$(cat "$RUNTIME_ROOT/.source-metadata")" ]; then
+            printf '  SOURCE UPDATED: run envpilot codex remote restart\n'
+        fi
     else
         existing_pid="$(find_existing_server_pid 2>/dev/null || true)"
         if [ -n "$existing_pid" ]; then
-            printf 'App-server:\n  existing non-envpilot PID %s\n' "$existing_pid"
+            printf 'App-server:\n  matching Desktop/SSH PID %s\n' "$existing_pid"
         else
             printf 'App-server:\n  not running or not detectable\n'
         fi
@@ -767,8 +844,8 @@ exec_codex()
 {
     QUIET=1
     stage_runtime 0
-    load_codex_environment || true
-    exec "$(local_bin)" "$@"
+    load_codex_environment
+    CODEX_HOME="$CODEX_HOME_DIR" exec "${__envpilot_exec_args[@]}" -- "$@"
 }
 
 plan_report()
@@ -781,9 +858,20 @@ plan_report()
     printf 'Codex secret file: %s (load-all=%s)\n' "$SECRETS_FILE" "$LOAD_SECRETS"
 }
 
+if [ -d "$CODEX_HOME_DIR" ]; then
+    CODEX_HOME_DIR="$(cd -P "$CODEX_HOME_DIR" && pwd)"
+    CONTROL_DIR="$CODEX_HOME_DIR/app-server-control"
+    SOCKET="$CONTROL_DIR/app-server-control.sock"
+    PID_FILE="$CONTROL_DIR/envpilot-app-server.pid"
+    SERVER_LOG="$CONTROL_DIR/app-server.log"
+    START_LOCK="$CONTROL_DIR/.envpilot-app-server-start.lock"
+fi
 action="${1:-status}"
 shift || true
 case "$action" in
+    running)
+        read_server_pid >/dev/null
+        ;;
     source)
         source_bin
         ;;
@@ -797,7 +885,10 @@ case "$action" in
         start_server
         ;;
     status)
-        status_report
+        case "$MANAGER_LANGUAGE" in
+            zh*) status_report | "$CORE_BIN" message --stream --lang zh-CN ;;
+            *) status_report ;;
+        esac
         ;;
     stop)
         stop_server_serialized

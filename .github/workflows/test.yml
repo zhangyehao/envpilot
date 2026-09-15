@@ -3,14 +3,39 @@ name: test
 on:
   push:
   pull_request:
+  workflow_call:
+    inputs:
+      ref:
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   linux:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.1'
+      - name: Build configuration tool and test Go
+        run: |
+          go test ./...
+          CGO_ENABLED=0 go build -o bin/envpilot-core ./cmd/envpilot-core
+      - name: Test maintenance transactions
+        run: python -m unittest discover -s tests -p 'test_*.py'
       - name: Run shell tests
-        run: bash tests/run-tests.sh
+        run: |
+          bash tests/run-tests.sh
+          bash tests/test-config.sh
       - name: ShellCheck
         run: |
           sudo apt-get update
@@ -21,13 +46,40 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.1'
+      - name: Build configuration tool and test Go
+        run: |
+          go test ./...
+          CGO_ENABLED=0 go build -o bin/envpilot-core ./cmd/envpilot-core
       - name: Bash syntax
-        run: bash tests/run-tests.sh
+        run: |
+          bash tests/run-tests.sh
+          bash tests/test-config.sh
 
   windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.1'
+      - name: Build configuration tool and test Go
+        shell: pwsh
+        run: |
+          go test ./...
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          go build -o bin/envpilot-core.exe ./cmd/envpilot-core
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: PowerShell tests
         shell: pwsh
-        run: ./tests/test-envpilot.ps1
+        env:
+          ENVPILOT_LANG: en
+        run: |
+          ./tests/test-envpilot.ps1
+          ./tests/test-config.ps1

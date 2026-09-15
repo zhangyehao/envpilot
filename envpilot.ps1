@@ -1,7 +1,7 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [Parameter(Position=0)]
-    [ValidateSet("doctor","install","update","upgrade","apply-shell","rollback","restore","mihomo","codex","resume","reset","update-manifests","update-mihomo-cache","self-test","help")]
+    [ValidateSet("init","config","plan","apply","snapshot","shell","run","self-update","setup-command","doctor","install","update","upgrade","apply-shell","rollback","restore","mihomo","codex","resume","reset","update-manifests","update-mihomo-cache","self-test","help")]
     [string]$Command = "help",
 
     [Parameter(Position=1)]
@@ -18,8 +18,13 @@ param(
 
     [string]$Prefix = (Join-Path $HOME "software"),
     [string]$AssetPath,
+    [Alias("-yes")]
     [switch]$Yes,
-    [switch]$Upgrade
+    [switch]$Upgrade,
+    [Alias("-lang")][string]$Lang,
+    [Alias("-config")][string]$Config,
+    [Alias("-non-interactive")][switch]$NonInteractive,
+    [Parameter(ValueFromRemainingArguments=$true)][string[]]$CommandArgs
 )
 
 $Script:Root = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -32,12 +37,16 @@ $Script:RepoRootFile = Join-Path $Script:ConfigDir "repo-root"
 $Script:ReportFile = Join-Path $Script:ConfigDir "install-report.json"
 $Script:RunId = Get-Date -Format "yyyyMMddHHmmss"
 $Script:Upgrade = $Upgrade.IsPresent
+$Script:ExplicitParameters = @{} + $PSBoundParameters
+$Script:PreviousEnv = @{}
+$Script:PreviousOverrides = $env:ENVPILOT_OVERRIDES
+$Script:ConfigApply = $env:EP_CONFIG_APPLY -eq "1"
 $Script:Events = @()
 $Script:Platform = $null
 
-function Write-Info { param([string]$Message) Write-Host "[INFO] $Message" }
-function Write-Warn { param([string]$Message) Write-Warning $Message }
-function Stop-Envpilot { param([string]$Message) throw "[ERROR] $Message" }
+function Write-Info { param([string]$Message) Write-Host "[INFO] $(Convert-EnvpilotMessage $Message)" }
+function Write-Warn { param([string]$Message) Write-Warning (Convert-EnvpilotMessage $Message) }
+function Stop-Envpilot { param([string]$Message) throw "[ERROR] $(Convert-EnvpilotMessage $Message)" }
 
 function Initialize-Envpilot {
     New-Item -ItemType Directory -Force -Path $Script:ConfigDir | Out-Null
@@ -67,14 +76,17 @@ function Get-EnvpilotPlatform {
 
 function Confirm-Step {
     param([string]$Prompt, [bool]$DefaultYes = $false)
+    if ($Script:ConfigApply) { return $DefaultYes }
+    if ($NonInteractive -and -not ($Yes -and $DefaultYes)) { throw "E_INPUT_REQUIRED: $Prompt" }
     if ($Yes -and $DefaultYes) { return $true }
+    $Prompt = Convert-EnvpilotMessage $Prompt
     $suffix = if ($DefaultYes) { "[Y/n]" } else { "[y/N]" }
     while ($true) {
         $answer = Read-Host "$Prompt $suffix"
         if ([string]::IsNullOrWhiteSpace($answer)) { return $DefaultYes }
         switch -Regex ($answer) {
-            "^(y|yes)$" { return $true }
-            "^(n|no)$" { return $false }
+            "^(y|yes|是)$" { return $true }
+            "^(n|no|否)$" { return $false }
             default { Write-Host "Please answer yes or no." }
         }
     }
@@ -532,8 +544,8 @@ function Set-MihomoPort {
 
 function Update-MihomoSubscription {
     param([string]$Url)
-    if ([string]::IsNullOrWhiteSpace($Url)) { $Url = $env:ENVPILOT_MIHOMO_SUBSCRIPTION_URL }
-    if ([string]::IsNullOrWhiteSpace($Url)) { $Url = Read-Host "Paste Clash/Mihomo subscription URL" }
+    if ([string]::IsNullOrWhiteSpace($Url)) { $Url = Get-EnvpilotSubscription }
+    if ([string]::IsNullOrWhiteSpace($Url)) { if ($NonInteractive -or $Script:ConfigApply) { throw "E_INPUT_REQUIRED: mihomo.subscription" }; $Url = Read-Host (Convert-EnvpilotMessage "Paste Clash/Mihomo subscription URL") }
     if ($Url -notmatch '^https?://') { Stop-Envpilot "Provide a Clash/Mihomo subscription URL beginning with http:// or https://." }
     $config = Get-MihomoConfigPath
     $configDir = Split-Path -Parent $config
@@ -542,7 +554,7 @@ function Update-MihomoSubscription {
     $backup = $null
     $wasRunning = @(Get-Process -Name "mihomo" -ErrorAction SilentlyContinue | Where-Object { try { $_.Path -like "*\software\mihomo\mihomo.exe" } catch { $false } }).Count -gt 0
     try {
-        Invoke-EnvpilotDownload $Url $newConfig
+        $Url | Invoke-EnvpilotProtectedDownload -Destination $newConfig
         if ((Get-Item -LiteralPath $newConfig).Length -eq 0) { Stop-Envpilot "Downloaded subscription config is empty." }
         if ((Get-Content -LiteralPath $newConfig -TotalCount 1) -match '^\s*<(?:html|!doctype)') { Stop-Envpilot "Downloaded content looks like HTML, not a Mihomo configuration." }
         if (Test-Path -LiteralPath $config) {
@@ -567,6 +579,7 @@ function Update-MihomoSubscription {
                 throw
             }
         }
+        [IO.File]::WriteAllText((Join-Path $configDir "subscription.url"), $Url + "`n", [Text.UTF8Encoding]::new($false))
         Write-Info "Mihomo subscription updated."
     } finally {
         Remove-Item -LiteralPath $newConfig -Force -ErrorAction SilentlyContinue
@@ -652,7 +665,6 @@ function Restore-Baseline {
 }
 function Show-Doctor {
     $Script:Platform = Get-EnvpilotPlatform
-    Save-Baseline
     Write-Info "OS: $($Script:Platform.OS)"
     Write-Info "Architecture: $($Script:Platform.Arch)"
     Write-Info "Administrator: $($Script:Platform.IsRoot)"
@@ -812,10 +824,10 @@ function Install-Mihomo {
         if (Test-MihomoPort -Port $apiPort) { Stop-Envpilot "Target API port 127.0.0.1:$apiPort is still occupied after stopping managed Mihomo." }
         Copy-Item -LiteralPath $exe.FullName -Destination $bin -Force
         Install-MihomoDataAssets -ConfigDir $configDir
-        $subscription = $env:ENVPILOT_MIHOMO_SUBSCRIPTION_URL
+        $subscription = Get-EnvpilotSubscription
         if ([string]::IsNullOrWhiteSpace($subscription) -and $Script:Upgrade -and $configBefore) {
             Write-Info "Existing envpilot Mihomo config detected; update will preserve it without requesting the subscription again."
-        } elseif ([string]::IsNullOrWhiteSpace($subscription) -and -not $Yes) {
+        } elseif ([string]::IsNullOrWhiteSpace($subscription) -and -not $Yes -and -not $NonInteractive -and -not $Script:ConfigApply) {
             $subscription = Read-Host "Paste Clash/Mihomo subscription URL (press Enter to skip)"
         }
         if (-not [string]::IsNullOrWhiteSpace($subscription)) {
@@ -877,6 +889,7 @@ function Get-CodexApiKey {
 }
 
 function Write-CodexAuth {
+    if ($Script:ConfigApply -or $NonInteractive) { Write-Info "Codex authentication preserved; use codex login or an API-key reference."; return }
     $candidate = Get-CodexApiKey
     if (-not $candidate) {
         Write-Warn "No OPENAI_API_KEY was detected. Obtain an OpenAI-compatible key from your provider, for example YanHuoAPI."
@@ -928,7 +941,7 @@ function Install-Codex {
     $codexDir = Join-Path $HOME ".codex"
     New-Item -ItemType Directory -Force -Path $codexDir | Out-Null
     $config = Join-Path $codexDir "config.toml"
-    Backup-File $config
+    if (-not (Test-Path -LiteralPath $config)) {
     @'
 model_provider = "codex"
 model = "gpt-5.5"
@@ -943,6 +956,7 @@ base_url = "https://yanhuoapi.com/v1"
 wire_api = "responses"
 env_key = "OPENAI_API_KEY"
 '@ | Set-Content -LiteralPath $config -Encoding UTF8
+    }
     Write-CodexAuth
     $codexCommand = Get-Command codex -ErrorAction SilentlyContinue
     $version = if ($codexCommand) { (& codex --version 2>$null | Out-String).Trim() } else { "" }
@@ -1095,17 +1109,14 @@ function Invoke-Install {
 }
 
 function Apply-ShellProfile {
-    $profilePath = $PROFILE.CurrentUserCurrentHost
-    $template = Join-Path $Script:Root "templates/Microsoft.PowerShell_profile.ps1"
-    Write-Info "PowerShell profile target: $profilePath"
-    if (-not (Confirm-Step "Replace PowerShell profile with envpilot template?" $false)) {
-        Write-Warn "PowerShell profile unchanged."
-        return
+    $profilePath = Get-EnvpilotProfileTarget
+    if (-not $Script:ConfigApply) {
+        if (-not $Yes -and -not (Confirm-Step "Install the envpilot shell loading block?" $false)) { return }
+        Save-EnvpilotSnapshot
     }
-    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $profilePath) | Out-Null
-    Backup-File $profilePath
-    Copy-Item -LiteralPath $template -Destination $profilePath -Force
-    Write-Info "Applied PowerShell profile: $profilePath"
+    Install-EnvpilotCommand
+    Invoke-EnvpilotCore shell --shell powershell --target $profilePath
+    Write-Info "Shell integration installed; original profile content preserved: $profilePath"
 }
 
 function Rollback-Latest {
@@ -1136,8 +1147,34 @@ function Update-MihomoCache {
 }
 
 function Show-Usage {
+    $language = if ($Lang) { $Lang } elseif ($env:ENVPILOT_LANG -and $env:ENVPILOT_LANG -ne 'auto') { $env:ENVPILOT_LANG } else { [Globalization.CultureInfo]::CurrentUICulture.Name }
+    if ($language -like 'zh*') {
+@"
+envpilot — 用户态环境安装与维护
+
+  envpilot init -Lang zh-CN               创建主配置
+  envpilot config edit|validate|show      编辑、校验或查看配置
+  envpilot plan                          查看拟议变更
+  envpilot apply [-Yes -NonInteractive]   应用配置
+  envpilot install|update [组件]          安装或更新组件
+  envpilot doctor                        只诊断，不覆盖恢复点
+  envpilot snapshot                      创建文件恢复快照
+  envpilot restore                       恢复快照或旧 baseline
+  envpilot apply-shell                   接入 Shell，保留原 profile
+  envpilot shell remove                  移除受管加载块
+  envpilot run -- 命令 参数               在配置环境中运行子进程
+  envpilot self-update                   更新 envpilot 和管理脚本
+
+选项：-Config 路径，-Lang auto|en|zh-CN，-Mode online|offline，-Prefix 路径。
+"@
+        return
+    }
+
 @"
 envpilot - cross-platform user-space environment bootstrapper
+
+Configuration: envpilot init; envpilot config edit; envpilot plan; envpilot apply
+Recovery: envpilot snapshot; envpilot restore; envpilot self-update
 
 Usage:
   .\envpilot.ps1 doctor
@@ -1166,17 +1203,37 @@ Usage:
       Refresh the bundled stable mihomo assets in downloads/.
 "@
 }
+. (Join-Path $Script:Root "lib/config.ps1")
+
 try {
-    if ($Command -notin @("help")) {
+    if ($Command -notin @("help","self-test","update-manifests","update-mihomo-cache","init","config","plan")) { Import-EnvpilotConfig }
+    if ($Command -notin @("help","doctor","plan","config","init")) {
         Initialize-Envpilot
     }
     switch ($Command) {
+        "init" { Invoke-EnvpilotCore init --lang $(if ($Lang) { $Lang } else { "auto" }) }
+        "config" {
+            if ($Component -eq "edit") { & $(if ($env:EDITOR) { $env:EDITOR } else { "notepad.exe" }) $(if ($Config) { $Config } else { Join-Path $Script:ConfigDir 'config.yaml' }) }
+            elseif ($Component -in @('show','validate','all')) { Invoke-EnvpilotCore $(if ($Component -eq 'all') { 'show' } else { $Component }) }
+            else { throw 'Use config edit, validate or show.' }
+        }
+        "plan" { Invoke-EnvpilotCore plan }
+        "apply" { Apply-EnvpilotConfig }
+        "snapshot" { Save-EnvpilotSnapshot }
+        "setup-command" { Install-EnvpilotCommand }
+        "shell" { Invoke-EnvpilotCore shell $Component --shell powershell --target (Get-EnvpilotProfileTarget) }
+        "self-update" { Update-EnvpilotSelf }
+        "run" {
+            $runArgs = @($Component,$Value,$Value2) + @($CommandArgs) | Where-Object { $null -ne $_ -and $_ -ne '--' }
+            & (Get-EnvpilotCore) run --config $(if ($Config) { $Config } else { Join-Path $Script:ConfigDir 'config.yaml' }) -- @runArgs
+            exit $LASTEXITCODE
+        }
         "doctor" { Show-Doctor }
-        "install" { Invoke-Install }
-        { $_ -in @("update","upgrade") } { $Script:Upgrade = $true; Invoke-Install }
+        "install" { Save-EnvpilotSnapshot; Invoke-Install }
+        { $_ -in @("update","upgrade") } { Save-EnvpilotSnapshot; $Script:Upgrade = $true; Invoke-Install }
         "apply-shell" { Apply-ShellProfile }
         "rollback" { Rollback-Latest }
-        "restore" { Restore-Baseline }
+        "restore" { if (Test-Path -LiteralPath (Join-Path $Script:ConfigDir "latest-snapshot")) { Invoke-EnvpilotCore restore } else { Restore-Baseline } }
         "mihomo" { Invoke-MihomoCommand }
         "codex" { Invoke-CodexCommand }
         "resume" { if (Test-Path $Script:StateFile) { Get-Content $Script:StateFile }; $Component = "all"; Invoke-Install }
@@ -1189,4 +1246,9 @@ try {
 } catch {
     Write-Error $_
     exit 1
+}
+
+finally {
+    foreach ($entry in $Script:PreviousEnv.GetEnumerator()) { if ($null -eq $entry.Value) { Remove-Item -LiteralPath ("Env:" + $entry.Key) -ErrorAction SilentlyContinue } else { [Environment]::SetEnvironmentVariable($entry.Key, $entry.Value) } }
+    $env:ENVPILOT_OVERRIDES = $Script:PreviousOverrides
 }

@@ -23,3 +23,11 @@ install-report.json
 Thumbs.db
 .idea/
 .vscode/
+
+# Built release tools and artifacts
+/bin/
+/dist/
+/work/
+
+__pycache__/
+*.pyc

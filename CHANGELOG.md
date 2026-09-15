@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.4.0 - 2026-09-15
+
+### Added
+
+- Adds a shared Go configuration tool, strict versioned YAML, protected credential references, configuration previews and non-interactive application for Bash and PowerShell.
+- Adds independent shell integration files, immutable managed-file snapshots, configuration-aware command execution and versioned self-update packages.
+- Adds Chinese and English documentation and shared translations for installation, configuration and service messages.
+
+### Changed
+
+- Preserves existing profiles and adds a marked loading block. Fresh installations require explicit configuration for proxy, Conda, modules, history and compatibility aliases.
+- Keeps modified legacy profiles available for review, imports recognized legacy settings, and refreshes installed management scripts during upgrades.
+- Makes doctor diagnostic-only; snapshots no longer overwrite earlier recovery points. Legacy baseline restoration remains supported.
+- Uses a repository-scoped GitHub App for maintenance PRs and read-only PR test permissions. Releases verify the target tag and run tests before packaging.
+
+### Fixed
+
+- Unifies Codex service discovery and stop/restart handling across envpilot and matching Desktop/SSH instances, including missing PID files. Verifies process identity and protocol readiness.
+- Refreshes versioned node-local runtime files and restarts previously running Codex services after updates while preserving configuration, authentication and sessions.
+- Retries transient upstream failures and stages manifest/cache updates before transactional replacement, preventing partial updates after HTTP errors.
+
+### Migration / 升级说明
+
+- Run `envpilot init` once to create YAML, then `envpilot plan` and `envpilot apply`. Existing YAML is never overwritten.
+- 首次升级请创建并核对统一配置，再应用。修改过的旧 profile 会保留并标记待处理；`doctor` 不再覆盖恢复点。
+- Snapshots restore managed files; external package-manager transactions and session data are outside their rollback scope.
+
 ## 0.3.0 - 2026-09-07
 
 ### Added

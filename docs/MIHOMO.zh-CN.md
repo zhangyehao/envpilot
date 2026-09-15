@@ -25,10 +25,10 @@
 ## 安装和更新
 
 ~~~bash
-bash envpilot.sh install mihomo
-bash envpilot.sh update mihomo
-bash envpilot.sh install mihomo --mode offline
-bash envpilot.sh install mihomo --asset-path downloads/mihomo-linux-amd64-compatible-v1.19.29.gz
+envpilot install mihomo
+envpilot update mihomo
+envpilot install mihomo --mode offline
+envpilot install mihomo --asset-path downloads/mihomo-linux-amd64-compatible-v1.19.29.gz
 ~~~
 
 安装源的优先级为：当前 OS/架构匹配的 downloads 缓存、最新 stable GitHub Release。alpha、beta、rc 和其他 prerelease 不会被选择。
@@ -75,7 +75,7 @@ mihomo port 42291
 未执行 apply-shell 时，可以直接从仓库执行：
 
 ~~~bash
-bash envpilot.sh mihomo ports 42290 60290
+envpilot mihomo ports 42290 60290
 ~~~
 
 envpilot 只修改本地顶层监听项 `mixed-port`、`external-controller`、`allow-lan` 和 `bind-address`，不会改订阅节点的远端 `server`、`port`、`uuid`、`public-key` 或 `short-id`。因此 `MIHOMO_PROXY_PORT` 和 `MIHOMO_API_PORT` 不是机场节点端口。
@@ -113,7 +113,7 @@ mihomo update-subscription
 
 ~~~bash
 mihomo update-subscription 'https://example.invalid/clash-meta'
-bash envpilot.sh mihomo update-subscription 'https://example.invalid/clash-meta'
+envpilot mihomo update-subscription 'https://example.invalid/clash-meta'
 ~~~
 
 首次成功下载后，链接会保存到：
@@ -175,7 +175,7 @@ downloads/geoip.metadb
 可手动刷新：
 
 ~~~bash
-bash envpilot.sh update-mihomo-cache
+envpilot update-mihomo-cache
 ~~~
 
 仓库的 update-mihomo-cache.yml 定时检查 stable 版本和 geodata，并通过 PR 更新缓存。普通用户安装时始终优先使用本地匹配架构的缓存。

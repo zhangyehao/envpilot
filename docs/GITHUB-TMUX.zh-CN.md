@@ -3,8 +3,8 @@
 ## GitHub CLI
 
 ~~~bash
-bash envpilot.sh install github
-bash envpilot.sh update github
+envpilot install github
+envpilot update github
 gh --version
 ~~~
 
@@ -13,8 +13,8 @@ envpilot 只更新自己安装的用户态副本，不强制覆盖管理员提�
 ## tmux
 
 ~~~bash
-bash envpilot.sh install tmux
-bash envpilot.sh update tmux
+envpilot install tmux
+envpilot update tmux
 tmux -V
 ~~~
 

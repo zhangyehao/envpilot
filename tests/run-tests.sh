@@ -12,6 +12,25 @@ if [ -z "$PYTHON_BIN" ]; then
     exit 1
 fi
 
+# Isolate subscription HTTP in legacy process/config fixtures. The actual Go
+# downloader is covered independently by its transport and validation tests.
+private_mock="$(mktemp -d)"
+export ENVPILOT_TEST_REAL_CORE="$ROOT/bin/envpilot-core"
+case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) ENVPILOT_TEST_REAL_CORE="$ROOT/bin/envpilot-core.exe" ;; esac
+cat > "$private_mock/envpilot-core" <<'EOF'
+#!/usr/bin/env bash
+if [ "${1:-}" = protected-download ]; then
+    destination=""
+    while [ "$#" -gt 0 ]; do case "$1" in --target) destination="$2"; shift 2 ;; *) shift ;; esac; done
+    url="$(cat)"
+    exec curl -fsSL "$url" -o "$destination"
+fi
+exec "$ENVPILOT_TEST_REAL_CORE" "$@"
+EOF
+chmod 700 "$private_mock/envpilot-core"
+export ENVPILOT_CORE="$private_mock/envpilot-core"
+trap 'rm -rf "$private_mock"' EXIT
+
 echo "[TEST] bash syntax"
 bash -n "$ROOT/envpilot.sh"
 for file in "$ROOT"/lib/*.sh "$ROOT"/components/*.sh "$ROOT"/scripts/*.sh "$ROOT"/templates/*.sh "$ROOT"/templates/bashrc "$ROOT"/templates/zshrc "$ROOT/bootstrap.sh"; do
@@ -31,7 +50,7 @@ grep -q 'softprops/action-gh-release@v3' "$ROOT/.github/workflows/release-assets
 grep -q 'push:' "$ROOT/.github/workflows/release-assets.yml"
 grep -q 'tags:' "$ROOT/.github/workflows/release-assets.yml"
 grep -q 'generate_release_notes: true' "$ROOT/.github/workflows/release-assets.yml"
-grep -q 'refs/tags/v' "$ROOT/.github/workflows/release-assets.yml"
+grep -q 'refs/tags/' "$ROOT/.github/workflows/release-assets.yml"
 grep -q 'scripts/\*.sh' "$ROOT/.github/workflows/test.yml"
 grep -q 'actions/checkout@v7' "$ROOT/.github/workflows/update-manifests.yml"
 grep -q 'scripts/update-manifests.py --check' "$ROOT/.github/workflows/update-manifests.yml"
@@ -795,129 +814,7 @@ case "$(uname -s)" in
 esac
 rm -rf "$tmp_remote_home" "$tmp_remote_runtime"
 
-case "$(uname -s)" in
-    Linux)
-        echo "[TEST] Codex remote reuses a concurrently started app-server"
-        tmp_remote_home="$(mktemp -d)"
-        tmp_remote_source="$tmp_remote_home/.codex/packages/standalone/releases/0.147.0/bin"
-        tmp_remote_runtime="/tmp/envpilot-codex-race-test-$$"
-        mkdir -p "$tmp_remote_source" "$tmp_remote_home/.codex/app-server-control"
-        cat > "$tmp_remote_source/codex" <<'EOF'
-#!/usr/bin/env bash
-if [ "${1:-}" = "--version" ]; then
-    printf 'codex-cli 0.147.0\n'
-    exit 0
-fi
-socket="${CODEX_HOME:?}/app-server-control/app-server-control.sock"
-python="$(command -v python3 || command -v python)"
-exec -a codex "$python" - "$socket" app-server --listen unix:// <<'PY'
-import os
-import socket
-import sys
-import time
-
-path = sys.argv[1]
-try:
-    os.unlink(path)
-except FileNotFoundError:
-    pass
-server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-server.bind(path)
-server.listen(1)
-time.sleep(30)
-PY
-EOF
-        chmod 700 "$tmp_remote_source/codex"
-        (
-            HOME="$tmp_remote_home"
-            CODEX_HOME="$tmp_remote_home/.codex"
-            ENVPILOT_CODEX_SOURCE_BIN="$tmp_remote_source"
-            ENVPILOT_CODEX_RUNTIME_DIR="$tmp_remote_runtime"
-            ENVPILOT_CODEX_REMOTE_READY_TIMEOUT=5
-            export HOME CODEX_HOME ENVPILOT_CODEX_SOURCE_BIN ENVPILOT_CODEX_RUNTIME_DIR
-            export ENVPILOT_CODEX_REMOTE_READY_TIMEOUT
-            bash "$ROOT/templates/codex-remote.sh" stage
-            test -x "$tmp_remote_runtime/current/bin/codex"
-            CODEX_HOME="$CODEX_HOME" "$tmp_remote_runtime/current/bin/codex" app-server --listen unix:// >/dev/null 2>&1 &
-            competing_pid=$!
-            trap 'kill -TERM "$competing_pid" 2>/dev/null || true; wait "$competing_pid" 2>/dev/null || true' EXIT
-            output="$(bash "$ROOT/templates/codex-remote.sh" ready 2>&1)"
-            if ! printf '%s\n' "$output" | grep -Eq 'Codex app-server is already ready|Reusing existing Codex app-server PID'; then
-                printf 'Unexpected concurrent app-server result:\n%s\n' "$output" >&2
-                exit 1
-            fi
-            status="$(bash "$ROOT/templates/codex-remote.sh" status)"
-            printf '%s\n' "$status" | grep -q "existing non-envpilot PID $competing_pid"
-            kill -TERM "$competing_pid" 2>/dev/null || true
-            wait "$competing_pid" 2>/dev/null || true
-            trap - EXIT
-        )
-        rm -rf "$tmp_remote_home" "$tmp_remote_runtime"
-        ;;
-    MINGW*|MSYS*|CYGWIN*)
-        echo "[TEST] Codex remote concurrent app-server fixture via Linux-compatible fakes"
-        tmp_remote_home="$(mktemp -d)"
-        tmp_remote_source="$tmp_remote_home/.codex/packages/standalone/releases/0.147.0/bin"
-        tmp_remote_runtime="/tmp/envpilot-codex-race-test-$$"
-        tmp_remote_bin="$(mktemp -d)"
-        tmp_remote_manager="$tmp_remote_home/codex-remote.fixture.sh"
-        mkdir -p "$tmp_remote_source" "$tmp_remote_home/.codex/app-server-control"
-        sed 's/\[ -S "$SOCKET" \]/[ -e "$SOCKET" ]/g' \
-            "$ROOT/templates/codex-remote.sh" > "$tmp_remote_manager"
-        cat > "$tmp_remote_source/codex" <<'EOF'
-#!/usr/bin/env bash
-[ "${1:-}" = "--version" ] && { printf 'codex-cli 0.147.0\n'; exit 0; }
-sleep 30
-EOF
-        cat > "$tmp_remote_bin/ss" <<'EOF'
-#!/usr/bin/env bash
-[ -e "${ENVPILOT_TEST_SOCKET_MARKER:?}" ] && printf 'u_str LISTEN 0 128 %s 12345 * 0 users:(("codex",pid=12345,fd=9))\n' "${ENVPILOT_TEST_SOCKET:?}"
-EOF
-        cat > "$tmp_remote_bin/pgrep" <<'EOF'
-#!/usr/bin/env bash
-cat "${ENVPILOT_TEST_SERVER_PID_FILE:?}" 2>/dev/null || true
-EOF
-        cat > "$tmp_remote_bin/ps" <<'EOF'
-#!/usr/bin/env bash
-case " $* " in
-    *' args= '*) printf 'codex app-server --listen unix://\n' ;;
-    *' pid= '*) cat "${ENVPILOT_TEST_SERVER_PID_FILE:?}" 2>/dev/null || true ;;
-    *) exec /usr/bin/ps "$@" ;;
-esac
-EOF
-        chmod 700 "$tmp_remote_source/codex" "$tmp_remote_bin/ss" "$tmp_remote_bin/pgrep" "$tmp_remote_bin/ps"
-        (
-            HOME="$tmp_remote_home"
-            CODEX_HOME="$tmp_remote_home/.codex"
-            ENVPILOT_CODEX_SOURCE_BIN="$tmp_remote_source"
-            ENVPILOT_CODEX_RUNTIME_DIR="$tmp_remote_runtime"
-            ENVPILOT_CODEX_REMOTE_READY_TIMEOUT=5
-            ENVPILOT_TEST_SOCKET="$CODEX_HOME/app-server-control/app-server-control.sock"
-            ENVPILOT_TEST_SOCKET_MARKER="$tmp_remote_home/socket-ready"
-            ENVPILOT_TEST_SERVER_PID_FILE="$tmp_remote_home/server.pid"
-            PATH="$tmp_remote_bin:$PATH"
-            export HOME CODEX_HOME ENVPILOT_CODEX_SOURCE_BIN ENVPILOT_CODEX_RUNTIME_DIR
-            export ENVPILOT_CODEX_REMOTE_READY_TIMEOUT ENVPILOT_TEST_SOCKET
-            export ENVPILOT_TEST_SOCKET_MARKER ENVPILOT_TEST_SERVER_PID_FILE PATH
-            bash "$tmp_remote_manager" stage
-            sleep 30 &
-            competing_pid=$!
-            printf '%s\n' "$competing_pid" > "$ENVPILOT_TEST_SERVER_PID_FILE"
-            : > "$ENVPILOT_TEST_SOCKET"
-            : > "$ENVPILOT_TEST_SOCKET_MARKER"
-            trap 'kill -TERM "$competing_pid" 2>/dev/null || true; wait "$competing_pid" 2>/dev/null || true' EXIT
-            output="$(bash "$tmp_remote_manager" ready 2>&1)"
-            if ! printf '%s\n' "$output" | grep -Eq 'Codex app-server is already ready|Reusing existing Codex app-server PID'; then
-                printf 'Unexpected concurrent app-server result:\n%s\n' "$output" >&2
-                exit 1
-            fi
-            kill -TERM "$competing_pid" 2>/dev/null || true
-            wait "$competing_pid" 2>/dev/null || true
-            trap - EXIT
-        )
-        rm -rf "$tmp_remote_home" "$tmp_remote_runtime" "$tmp_remote_bin"
-        ;;
-esac
+# Concurrent startup and matching Desktop ownership are covered by test-command-restart.sh.
 
 echo "[TEST] Codex probe is bounded on a slow shared-filesystem executable"
 tmp_slow_home="$(mktemp -d)"
@@ -1206,78 +1103,21 @@ case "$dual_conda_result" in
 esac
 rm -rf "$tmp_dual_conda_home"
 
-echo "[TEST] repeated apply-shell merges an unmanaged backup without overwriting existing values"
+echo "[TEST] modified legacy profiles and credentials are preserved for review"
 tmp_apply_shell_home="$(mktemp -d)"
-mkdir -p "$tmp_apply_shell_home/.config/envpilot"
+mkdir -p "$tmp_apply_shell_home/.config/envpilot" "$tmp_apply_shell_home/.config/secrets"
 cp "$ROOT/templates/bashrc" "$tmp_apply_shell_home/.bashrc"
-printf '%s\n' 'export NVM_DIR="$HOME/.nvm"' >> "$tmp_apply_shell_home/.bashrc"
-cat > "$tmp_apply_shell_home/.bashrc.bak.20260801000000" <<'EOF'
-export PATH="$HOME/from-backup/bin:$PATH"
-export BACKUP_TOOL_HOME="$HOME/from-backup"
-export OPENAI_API_KEY=backup-openai-key
-export NCBI_API_KEY=must-not-overwrite
-export COMMAND_OUTPUT="$(touch profile-was-executed)"
-export http_proxy=http://127.0.0.1:7890
-module load compiler/cmake/3.23.3
-EOF
-cat > "$tmp_apply_shell_home/.config/envpilot/shell.local" <<'EOF'
-# envpilot shell.local
-BASHRC_ENVPILOT_ROOT=/old/repo
-export PATH="$HOME/custom/bin:$PATH"
-export CUSTOM_TOOL_HOME="$HOME/tool"
-export NVM_DIR="$HOME/.nvm"
-export VISUAL="${VISUAL:-${EDITOR:-vi}}"
-module load "$module_name" || return 1
-EOF
-cat > "$tmp_apply_shell_home/.config/secrets-before" <<'EOF'
-export NCBI_API_KEY=keep-this-file
-EOF
-mkdir -p "$tmp_apply_shell_home/.config/secrets"
-cp "$tmp_apply_shell_home/.config/secrets-before" "$tmp_apply_shell_home/.config/secrets/api.env"
-apply_shell_local="$tmp_apply_shell_home/.config/envpilot/shell.local"
-(
-    HOME="$tmp_apply_shell_home"
-    ENVPILOT_ROOT="$ROOT"
-    . "$ROOT/lib/common.sh"
-    . "$ROOT/lib/shell.sh"
-    EP_CONFIG_DIR="$tmp_apply_shell_home/.config/envpilot"
-    EP_SHELL_NAME=bash
-    EP_ROLLBACK_LOG="$tmp_apply_shell_home/.config/envpilot/rollback.log"
-    ep_require_unix_runtime() { return 0; }
-    ep_confirm() { return 0; }
-    ep_apply_shell_profile >"$tmp_apply_shell_home/apply-shell.out" 2>"$tmp_apply_shell_home/apply-shell.warn"
-)
-grep -q 'export PATH="\$HOME/custom/bin:\$PATH"' "$apply_shell_local"
-grep -q 'export CUSTOM_TOOL_HOME=' "$apply_shell_local"
-grep -q 'export NVM_DIR="\$HOME/.nvm"' "$apply_shell_local"
-grep -q 'BASHRC_ENVPILOT_ROOT=/old/repo' "$apply_shell_local"
-grep -q 'export BACKUP_TOOL_HOME="\$HOME/from-backup"' "$apply_shell_local"
-grep -q '^module load compiler/cmake/3.23.3$' "$apply_shell_local"
-! grep -q 'COMMAND_OUTPUT' "$apply_shell_local"
-! grep -q 'module load "\$module_name"' "$apply_shell_local"
-! grep -q 'export VISUAL="\${VISUAL:-\${EDITOR:-vi}}"' "$apply_shell_local"
-grep -q '^export NCBI_API_KEY=keep-this-file$' "$tmp_apply_shell_home/.config/secrets/api.env"
-grep -q '^export OPENAI_API_KEY=backup-openai-key$' "$tmp_apply_shell_home/.config/secrets/api.env"
-! grep -q 'must-not-overwrite' "$tmp_apply_shell_home/.config/secrets/api.env"
-test ! -e "$tmp_apply_shell_home/profile-was-executed"
-grep -q 'REQUIRED REVIEW: immediately check shell.local' "$tmp_apply_shell_home/apply-shell.warn"
-grep -q 'Silent/non-interactive/no-real-TTY shells do NOT source shell.local in full' "$tmp_apply_shell_home/apply-shell.warn"
-cp "$apply_shell_local" "$tmp_apply_shell_home/shell.local.after-first"
-cp "$tmp_apply_shell_home/.config/secrets/api.env" "$tmp_apply_shell_home/api.env.after-first"
-(
-    HOME="$tmp_apply_shell_home"
-    ENVPILOT_ROOT="$ROOT"
-    . "$ROOT/lib/common.sh"
-    . "$ROOT/lib/shell.sh"
-    EP_CONFIG_DIR="$tmp_apply_shell_home/.config/envpilot"
-    EP_SHELL_NAME=bash
-    EP_ROLLBACK_LOG="$tmp_apply_shell_home/.config/envpilot/rollback.log"
-    ep_require_unix_runtime() { return 0; }
-    ep_confirm() { return 0; }
-    ep_apply_shell_profile >/dev/null 2>&1
-)
-cmp -s "$tmp_apply_shell_home/shell.local.after-first" "$apply_shell_local"
-cmp -s "$tmp_apply_shell_home/api.env.after-first" "$tmp_apply_shell_home/.config/secrets/api.env"
+printf '%s\n' 'custom_function() { printf custom; }' >> "$tmp_apply_shell_home/.bashrc"
+cp "$tmp_apply_shell_home/.bashrc" "$tmp_apply_shell_home/original-profile"
+printf '%s\n' 'export NCBI_API_KEY=fixture-secret' > "$tmp_apply_shell_home/.config/secrets/api.env"
+cp "$tmp_apply_shell_home/.config/secrets/api.env" "$tmp_apply_shell_home/original-secrets"
+if HOME="$tmp_apply_shell_home" SHELL=/bin/bash bash "$ROOT/envpilot.sh" apply-shell --yes >"$tmp_apply_shell_home/apply.out" 2>&1; then
+    echo 'A modified legacy profile was unexpectedly replaced' >&2
+    exit 1
+fi
+cmp "$tmp_apply_shell_home/original-profile" "$tmp_apply_shell_home/.bashrc"
+cmp "$tmp_apply_shell_home/original-secrets" "$tmp_apply_shell_home/.config/secrets/api.env"
+test -s "$tmp_apply_shell_home/.config/envpilot/migration-pending.txt"
 rm -rf "$tmp_apply_shell_home"
 
 echo "[TEST] Mihomo takeover report"
@@ -2242,20 +2082,11 @@ tmp_new_auth_home="$(mktemp -d)"
 grep -q 'new-environment-key' "$tmp_new_auth_home/.codex/auth.json"
 rm -rf "$tmp_new_auth_home"
 
-echo "[TEST] apply-shell creates the protected secrets scaffold"
+echo "[TEST] new shell integration leaves credentials untouched"
 tmp_apply_home="$(mktemp -d)"
-(
-    HOME="$tmp_apply_home"
-    ENVPILOT_ROOT="$ROOT"
-    . "$ROOT/lib/common.sh"
-    . "$ROOT/lib/shell.sh"
-    EP_CONFIG_DIR="$tmp_apply_home/.config/envpilot"
-    EP_SHELL_NAME=bash
-    ep_require_unix_runtime() { return 0; }
-    ep_confirm() { return 0; }
-    ep_apply_shell_profile >/dev/null
-)
-test -f "$tmp_apply_home/.config/secrets/api.env"
+HOME="$tmp_apply_home" SHELL=/bin/bash bash "$ROOT/envpilot.sh" apply-shell --yes >/dev/null
+test ! -f "$tmp_apply_home/.config/secrets/api.env"
+grep -q '# >>> envpilot >>>' "$tmp_apply_home/.bashrc"
 rm -rf "$tmp_apply_home"
 
 echo "[TEST] mamba uses clean mirror-only Conda configuration"

@@ -1,5 +1,15 @@
 #!/usr/bin/env bash
 
+ep_fetch_protected()
+{
+    local url="$1" destination="$2" core
+    core="${ENVPILOT_CORE:-}"
+    if [ -z "$core" ] && command -v ep_core_path >/dev/null 2>&1; then core="$(ep_core_path)"; fi
+    [ -n "$core" ] || core="$ENVPILOT_ROOT/bin/envpilot-core"
+    [ -x "$core" ] || ep_die 'The configuration tool is required for protected downloads; use the envpilot entrypoint.'
+    printf '%s' "$url" | "$core" protected-download --target "$destination"
+}
+
 ep_download_note()
 {
     printf '[INFO] %s\n' "$*" >&2

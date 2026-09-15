@@ -7,10 +7,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 mihomo_init_runtime
 
 subscription_url="${1:-${ENVPILOT_MIHOMO_SUBSCRIPTION_URL:-}}"
+if [ -z "$subscription_url" ] && [ -n "${ENVPILOT_SUBSCRIPTION_ENV:-}" ]; then
+    subscription_url="$(printenv "$ENVPILOT_SUBSCRIPTION_ENV" 2>/dev/null || true)"
+fi
+if [ -z "$subscription_url" ] && [ -r "${ENVPILOT_SUBSCRIPTION_FILE:-}" ]; then
+    IFS= read -r subscription_url < "$ENVPILOT_SUBSCRIPTION_FILE" || true
+fi
 if [ -z "$subscription_url" ]; then
     subscription_url="$(mihomo_saved_subscription_url 2>/dev/null || true)"
 fi
-if [ -z "$subscription_url" ] && [ -t 0 ]; then
+if [ -z "$subscription_url" ] && [ -t 0 ] && [ "${EP_NON_INTERACTIVE:-0}" != 1 ] && [ "${EP_CONFIG_APPLY:-0}" != 1 ]; then
     printf 'Paste Clash/Mihomo subscription URL: '
     IFS= read -r subscription_url
 fi
@@ -26,14 +32,12 @@ backup=""
 was_running="0"
 trap 'rm -f "$new_config"' EXIT
 
-if mihomo_command_exists curl; then
-    curl -fL --connect-timeout 15 --retry 2 --progress-bar \
-        "$subscription_url" -o "$new_config"
-elif mihomo_command_exists wget; then
-    wget -O "$new_config" "$subscription_url"
-else
-    mihomo_die "curl or wget is required to update the subscription"
+core="${ENVPILOT_CORE:-}"
+if [ -z "$core" ] && [ -r "${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}/core-path" ]; then
+    IFS= read -r core < "${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}/core-path" || true
 fi
+[ -x "$core" ] || mihomo_die 'envpilot-core is required; run envpilot setup-command first'
+printf '%s' "$subscription_url" | "$core" protected-download --target "$new_config"
 
 [ -s "$new_config" ] || mihomo_die "downloaded subscription config is empty"
 if grep -qiE '^[[:space:]]*<(html|!doctype)' "$new_config"; then

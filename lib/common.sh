@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-EP_MODE="${EP_MODE:-online}"
-EP_PREFIX="${EP_PREFIX:-${HOME:-}/software}"
+EP_MODE="${EP_MODE:-${ENVPILOT_MODE:-online}}"
+EP_PREFIX="${EP_PREFIX:-${ENVPILOT_PREFIX:-${HOME:-}/software}}"
 EP_ASSET_PATH="${EP_ASSET_PATH:-}"
 EP_ASSUME_YES="${EP_ASSUME_YES:-0}"
 EP_CONDA_DISTRIBUTION="${EP_CONDA_DISTRIBUTION:-miniconda}"
@@ -38,7 +38,7 @@ ep_init()
 {
     [ -n "${HOME:-}" ] || ep_die "HOME is not set"
     EP_RUN_ID="${EP_RUN_ID:-$(ep_timestamp)}"
-    EP_CONFIG_DIR="${EP_CONFIG_DIR:-$HOME/.config/envpilot}"
+    EP_CONFIG_DIR="${EP_CONFIG_DIR:-${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}}"
     EP_STATE_FILE="$EP_CONFIG_DIR/state"
     EP_REPORT_FILE="$EP_CONFIG_DIR/install-report.json"
     EP_LOG_FILE="$EP_CONFIG_DIR/logs/envpilot-$EP_RUN_ID.log"
@@ -50,6 +50,7 @@ ep_init()
     EP_REPO_ROOT_FILE="$EP_CONFIG_DIR/repo-root"
     # shellcheck disable=SC2034  # consumed by the sourced Mihomo component
     EP_MIHOMO_TAKEOVER_REPORT_FILE="$EP_CONFIG_DIR/mihomo-takeover-report.json"
+    case "${EP_COMMAND:-}" in doctor|plan|help) return 0 ;; esac
     mkdir -p "$EP_CONFIG_DIR/logs" "$EP_CONFIG_DIR/backups"
     if [ -n "${ENVPILOT_ROOT:-}" ] && [ -f "$ENVPILOT_ROOT/envpilot.sh" ]; then
         printf '%s\n' "$ENVPILOT_ROOT" > "$EP_REPO_ROOT_FILE.tmp"
@@ -64,27 +65,47 @@ ep_on_interrupt()
     exit 130
 }
 
+ep_translate()
+{
+    local lang="${ENVPILOT_LANG:-auto}" core
+    [ "$lang" != auto ] || lang="${LC_ALL:-${LC_MESSAGES:-${LANG:-en}}}"
+    case "$lang" in
+        zh* )
+            if command -v ep_core_path >/dev/null 2>&1 && core="$(ep_core_path 2>/dev/null)"; then
+                printf '%s' "$*" | "$core" message --lang zh-CN
+                return
+            fi ;;
+    esac
+    printf '%s' "$*"
+}
+
 ep_log()
 {
-    printf '[INFO] %s\n' "$*"
+    local message
+    message="$(ep_translate "$*")"
+    printf '[INFO] %s\n' "$message"
     if [ -n "${EP_LOG_FILE:-}" ]; then
-        printf '[INFO] %s\n' "$*" >> "$EP_LOG_FILE" 2>/dev/null || true
+        printf '[INFO] %s\n' "$message" >> "$EP_LOG_FILE" 2>/dev/null || true
     fi
 }
 
 ep_warn()
 {
-    printf '[WARN] %s\n' "$*" >&2
+    local message
+    message="$(ep_translate "$*")"
+    printf '[WARN] %s\n' "$message" >&2
     if [ -n "${EP_LOG_FILE:-}" ]; then
-        printf '[WARN] %s\n' "$*" >> "$EP_LOG_FILE" 2>/dev/null || true
+        printf '[WARN] %s\n' "$message" >> "$EP_LOG_FILE" 2>/dev/null || true
     fi
 }
 
 ep_die()
 {
-    printf '[ERROR] %s\n' "$*" >&2
+    local message
+    message="$(ep_translate "$*")"
+    printf '[ERROR] %s\n' "$message" >&2
     if [ -n "${EP_LOG_FILE:-}" ]; then
-        printf '[ERROR] %s\n' "$*" >> "$EP_LOG_FILE" 2>/dev/null || true
+        printf '[ERROR] %s\n' "$message" >> "$EP_LOG_FILE" 2>/dev/null || true
     fi
     exit 1
 }
@@ -97,8 +118,15 @@ ep_command_exists()
 ep_confirm()
 {
     local prompt="$1"
+    prompt="$(ep_translate "$prompt")"
     local default="${2:-no}"
     local answer
+
+    if [ "${EP_CONFIG_APPLY:-0}" = 1 ]; then [ "$default" = yes ]; return; fi
+    if [ "${EP_NON_INTERACTIVE:-0}" = 1 ]; then
+        [ "$EP_ASSUME_YES" = 1 ] && [ "$default" = yes ] && return 0
+        ep_die "E_INPUT_REQUIRED: configuration or explicit approval is required: $prompt"
+    fi
 
     if [ "$EP_ASSUME_YES" = "1" ] && [ "$default" = "yes" ]; then
         return 0
@@ -118,9 +146,9 @@ ep_confirm()
                 fi
                 return 1
                 ;;
-            y|Y|yes|YES|Yes) return 0 ;;
-            n|N|no|NO|No) return 1 ;;
-            *) printf 'Please answer yes or no.\n' ;;
+            y|Y|yes|YES|Yes|是) return 0 ;;
+            n|N|no|NO|No|否) return 1 ;;
+            *) printf '%s\n' "$(ep_translate 'Please answer yes or no.')" ;;
         esac
     done
 }
@@ -130,6 +158,7 @@ ep_prompt_nonempty()
     local var_name="$1"
     local prompt="$2"
     local value
+    [ "${EP_NON_INTERACTIVE:-0}" != 1 ] || ep_die "E_INPUT_REQUIRED: $prompt"
     while true; do
         printf '%s: ' "$prompt"
         IFS= read -r value || return 1
@@ -146,6 +175,10 @@ ep_prompt_optional_url()
     local var_name="$1"
     local prompt="$2"
     local value
+    if [ "${EP_NON_INTERACTIVE:-0}" = 1 ] || [ "${EP_CONFIG_APPLY:-0}" = 1 ]; then
+        printf -v "$var_name" '%s' ""
+        return 0
+    fi
     while true; do
         printf "%s (press Enter to skip): " "$prompt"
         IFS= read -r value || return 1

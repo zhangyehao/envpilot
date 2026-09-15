@@ -1,97 +1,23 @@
-# Shell 配置和环境变量
+# Shell 接入
 
-## BASHRC_PROFILE_ACTIVE 是什么
+[English](SHELL-CONFIG.md)
 
-BASHRC_PROFILE_ACTIVE 是 envpilot profile 的内部标记，不是用户需要设置的开关。每次受管 profile 加载时，envpilot_record_managed_settings 会将它设为 1，并记录 envpilot 上一次写入的 Mihomo 端口、代理模式、非交互预启动和临时目录值。
+0.4.0 使用短加载块，不替换原 profile：
 
-下一次 apply-shell 或 source 时，模板用这些记录判断当前环境中的值是否仍是 envpilot 自己设置的：
+```bash
+envpilot apply-shell
+# 移除接入：
+envpilot shell remove
+```
 
-- 如果值和上次记录相同，视为 envpilot 管理值，可以用 shell.local 的新配置覆盖；
-- 如果用户在外部 profile、SSH 启动器或当前环境中改过值，视为外部值，模板会保留它，不强行覆盖。
+受管块以 `# >>> envpilot >>>` 和 `# <<< envpilot <<<` 标记。块外内容保持原样；重复执行不会追加第二份。独立脚本和生成配置位于 `~/.config/envpilot/shell/`，Shell 启动时不下载或解析 YAML。
 
-这样做是为了让 profile 更新不会覆盖用户刚刚设置的端口或临时目录。一般不需要手工设置或删除 BASHRC_PROFILE_ACTIVE。
+新用户默认只接入 envpilot 命令。通过主 YAML 显式开启 Conda、代理、module、历史或旧快捷别名。内部函数使用 envpilot 命名空间；旧 `proxy_on`、`proxy_off`、`mihomo`、`codex_ready` 名称只有开启兼容选项且没有同名命令时才提供。
 
-## ~/.bashrc、shell.local、api.env
+`envpilot_proxy_on` 在端口就绪后为当前 Shell 导出代理，`envpilot_proxy_off` 清除当前 Shell 的代理。普通子进程无法修改父 Shell 的环境；需要独立环境时使用 `envpilot run -- COMMAND ...`。
 
-三者职责不同：
+保留现有的 `shell.local`，仅在选择 `shell.legacy_local` 的交互式 Shell 中加载。常规环境变量可放入 YAML 的 `env`，路径放入 `shell.paths`。API key 使用受保护引用。非交互 shell 不初始化 Conda、module 或交互历史，代理准备保持静默且有界。
 
-| 文件 | 作用 |
-| --- | --- |
-| ~/.bashrc / ~/.zshrc | envpilot 受管入口、函数、路径和静默启动逻辑。由 apply-shell 生成。 |
-| ~/.config/envpilot/shell.local | 用户覆盖项和安全的 PATH/module 配置。交互 shell 完整加载；非交互 shell 只读取白名单设置。 |
-| ~/.config/secrets/api.env | 需要被多个软件和子进程继承的环境变量，包括 API key。权限必须是 600/400，且属于当前用户。 |
+旧 profile 与历史模板精确匹配时可以自动迁移。含有自定义修改的旧 profile 保持可用，并在配置目录生成 `migration-pending.txt`；需对照备份完成一次人工核对，程序不会猜测复杂函数的含义。旧模板中的 `BASHRC_PROFILE_ACTIVE`、`ENVPILOT_LAST_*` 只用于兼容，不是新配置选项。
 
-`apply-shell` 不会因为 `shell.local` 或 `api.env` 已存在就跳过迁移。它会保留目标文件中的已有内容和同名变量，再从原 profile 增量补充缺失项：
-
-- 普通的单行 `export NAME=value` 进入 `shell.local`，已有同名标量保留；
-- `PATH`、`PYTHONPATH`、`LD_LIBRARY_PATH` 等累计型路径变量按原顺序迁移，包括严格的单行 `PATH=...`；
-- 不含命令替换、控制操作符或重定向的简单 `alias NAME=value` 和 `module load NAME` 进入 `shell.local`；
-- 名称含 `KEY`、`TOKEN`、`SECRET`、`PASSWORD`、`PASSWD` 或 `AUTH` 的变量进入 `api.env`；
-- 代理、Mihomo 和 envpilot 内部变量不从旧 profile 迁移；
-- 命令替换、管道、重定向、复合语句、函数、循环和条件均不迁移，也不会被执行；
-- 如果当前 profile 已由 envpilot 管理，只检查最近的非 envpilot 备份，避免把模板自身迁移进 `shell.local`。
-
-因此 `api.env` 不是 Mihomo 或 Codex 专属文件，它是多个应用共享的受保护变量入口。迁移日志只报告数量和路径，不显示值。
-
-`apply-shell` 完成前会要求立即核对旧 profile 和 `shell.local`。自动迁移故意不处理复杂 Bash 语法，因此确认仍然需要后，可以人工补入：
-
-- 未识别的 PATH、PYTHONPATH、库路径和其他工具变量；
-- alias、Shell 函数、EDITOR、LANG、提示符和历史设置；
-- 自定义 module 命令和工具初始化。
-
-不要把 API key/token 写入 `shell.local`，应写入 `api.env`。不要盲目复制旧 Conda initialize 块、代理环境变量或 Mihomo 启动块，因为这些通常已由 envpilot 接管。`PROMPT_COMMAND` 和历史设置也要先与 envpilot 的历史同步逻辑比较，避免重复记录。
-
-api.env 只应包含安静的变量赋值，例如：
-
-~~~bash
-export OPENAI_API_KEY="..."
-export NCBI_API_KEY="..."
-~~~
-
-不要在 api.env 中写 module load、conda activate、网络请求、输出或交互逻辑。
-
-## 默认开关
-
-受管 Bash/zsh 默认把以下六个开关设为 1：
-
-~~~bash
-BASHRC_INIT_CONDA=1
-BASHRC_AUTO_LOAD_MODULES=1
-BASHRC_AUTO_START_MIHOMO=1
-BASHRC_AUTO_ENABLE_PROXY=1
-BASHRC_AUTO_LOAD_SECRETS=1
-BASHRC_ENABLE_HISTORY_SYNC=1
-~~~
-
-在 `~/.config/envpilot/shell.local` 将任一项设为 0 即可关闭。开关会在对应功能执行前读取，所以关闭 history、module、Mihomo、代理或 secrets 都能在本次 profile 加载中生效。
-
-默认开启不等于无条件执行：Conda 只初始化交互式真实 TTY 且不自动激活 base；没有 `modules.list` 时不探测 module；缺少 Mihomo 启动脚本或有效配置时不启动；代理端口未监听时不导出代理。
-
-## 静默 shell 的内容
-
-非交互 shell 在真实 TTY 守卫之前只做最小准备：
-
-1. 加载权限安全的 api.env 全部变量；
-2. 加入用户态 Git/Python/Node 路径；
-3. 根据白名单读取 Mihomo 端口和节点临时目录；
-4. 必要时安静地启动 Mihomo，并在端口真实监听后导出 HTTP/HTTPS 代理；
-5. 不完整 source shell.local，因此其中自定义 PATH、alias、函数、module 命令、提示符和工具初始化不会继承；
-6. 不加载 Conda conda.sh、历史同步、module、交互提示或大段函数执行。
-
-因此 ssh host command、Codex Desktop 的无返回 SSH 启动器可以继承 API key 和代理，但不会触发完整交互初始化。完全不读取 .bashrc 的 supervisor 或启动器仍需要显式使用 bash -lc 或受信任的 BASH_ENV。
-
-## 为什么函数目前仍在 .bashrc
-
-proxy_on、mihomo、conda 初始化和非交互预启动之间存在顺序依赖；同时某些 SSH、Codex 和 scp 路径只读取一个 profile 文件。把函数全部移到另一个脚本理论上可行，例如：
-
-~~~bash
-source "$HOME/.config/envpilot/shell.functions"
-~~~
-
-但会带来三个实际问题：
-
-- 非交互 shell 仍需要先安全加载该文件，否则代理和 API key 继承顺序会变化；
-- 外部 profile、BASH_ENV、zsh 和 Bash 的加载规则不一致；
-- apply-shell 还要管理函数文件的版本、备份和路径发现。
-
-因此当前设计把小型、无输出的函数保留在模板中，把用户变量放到 shell.local/api.env。如果以后要拆分，应先建立独立函数文件的版本化接口和非交互测试，再迁移，不应只把函数剪切出去。
+更新或移动仓库后使用 `envpilot self-update` 或从新位置重新 `setup-command`，再应用配置。快照与恢复见 [升级说明](UPGRADE.zh-CN.md)。

@@ -1,21 +1,33 @@
 # Codex
 
-## 重启 app-server（0.3.0）
+## 服务管理（0.4.0）
 
-执行 `envpilot codex remote restart`（尚未登记入口时用 `bash envpilot.sh codex remote restart`）。命令会停止受管实例并确认新 PID，不只是检查 socket 或复用旧进程。无实例时直接启动；非受管实例占用时拒绝接管，不会自动 kill。
+```bash
+envpilot codex remote enable
+envpilot codex remote status
+envpilot codex remote restart
+envpilot codex remote stop
+envpilot codex remote enable
+```
 
-请先保存任务，在独立 SSH 终端运行。重启可能中断请求与 Desktop 连接，不删除会话、认证、配置或强制清空 runtime 缓存。`ready` 允许复用已有服务；`repair` 强制重建 runtime；`restart` 用于真正新建 app-server。详见 [命令入口与重启](COMMAND.zh-CN.md)。
+所有命令识别同一用户、当前节点和目标控制 socket 的实例，包括 Desktop/SSH 创建的服务。停止不再依赖 PID 文件必须存在；每次发信号前核对进程身份。其他 CODEX_HOME 和无法确认归属的进程保持不变。
+
+`restart` 必须确认新进程、实际运行文件和协议握手；`ready` 可复用健康且版本匹配的实例；`repair` 强制重建运行文件。`stop` 后再次 `enable` 会使用当前版本启动。更新前服务运行时，`update codex` 会刷新运行文件并重启；此前停止则保持停止。
+
+请在独立终端操作。重启可能中断当前请求，持久配置、认证和 sessions 保留。控制目录不迁往临时存储；可重建的运行文件位于按用户、节点和 CODEX_HOME 区分的版本化缓存中。
+
+0.154.0 的原生命令为 `codex app-server daemon start/stop/restart/version`。原生启动依赖固定的 standalone 路径，因此 envpilot 会同时检查能力与安装布局；不能由原生命令启动目标缓存时，使用已校验的本地文件直接启动。
 
 ## 安装和更新
 
 ~~~bash
-bash envpilot.sh install codex
-bash envpilot.sh update codex
+envpilot install codex
+envpilot update codex
 ~~~
 
 官方 standalone 是 Linux/macOS 的默认安装方式。它不依赖 Node.js/npm，envpilot 通过官方的 `CODEX_NON_INTERACTIVE=1` 模式调用安装器，因此不会出现 `Start Codex now?`，不会在安装流程中启动 Codex 登录界面，也不会提示卸载另一种安装。
 
-普通 `install codex` 会复用已有安装并更新配置和认证。`codex --version` 仍用于验证真实运行状态，但不再是判断安装产物是否存在的唯一依据：共享文件系统上超过 5 秒会被归类为“已安装、探测超时”，不会触发 Node.js/npm 回退。需要重新解析稳定版本时使用 `update codex`。
+普通 `install codex` 会复用已有安装，保留已有配置和认证。`codex --version` 仍用于验证真实运行状态，但不再是判断安装产物是否存在的唯一依据：共享文件系统上超过 5 秒会被归类为“已安装、探测超时”，不会触发 Node.js/npm 回退。需要重新解析稳定版本时使用 `update codex`。
 
 更新会保持原安装方法：已有 standalone 使用官方 standalone 更新器；只有 npm 安装时继续使用 npm。两者同时存在时，envpilot 优先 standalone、保留 npm 副本并提示 PATH 顺序，不会自动在两种方式之间卸载和重装。
 
@@ -45,7 +57,7 @@ env_key = "OPENAI_API_KEY"
 ~/.config/secrets/api.env
 ~~~
 
-api.env 可包含其他软件所需的环境变量。受管交互和非交互 shell 会在权限检查通过后静默导出其中全部赋值；Codex wrapper 也会独立加载它。不要把真实文件提交到 Git。
+api.env 可包含其他软件所需的环境变量。显式开启 shell.load_secrets 后，Shell 会在权限检查通过后静默导出其中的赋值；Codex wrapper 也会独立加载它。不要把真实文件提交到 Git。
 
 ## 老 glibc 和 Node.js
 
@@ -64,30 +76,30 @@ $HOME/software/node22
 如果共享文件系统上的 codex --version 很慢，启用节点本地 runtime：
 
 ~~~bash
-bash envpilot.sh codex remote status
-bash envpilot.sh codex remote enable
-bash envpilot.sh codex remote ready
-bash envpilot.sh codex remote repair
-bash envpilot.sh codex remote stop
-bash envpilot.sh codex remote disable
+envpilot codex remote status
+envpilot codex remote enable
+envpilot codex remote ready
+envpilot codex remote repair
+envpilot codex remote stop
+envpilot codex remote disable
 ~~~
 
 日常切换节点后执行：
 
 ~~~bash
-codex_ready
+envpilot codex remote ready
 ~~~
 
-持久目录保持在 ~/.codex，包括 config、auth、sessions 和 app-server control；只把可重建的完整 bin/ runtime 暂存到 /tmp/\${USER}-envpilot-codex-\${HOSTNAME}。不要把 ~/.codex/app-server-control 软链接到 /tmp。
+持久目录保持在 ~/.codex，包括 config、auth、sessions 和 app-server control；只把可重建的二进制及必要 helper 放入按用户、节点和 CODEX_HOME 区分的 /tmp 版本目录。不要把 ~/.codex/app-server-control 软链接到 /tmp。
 
 wrapper 和 remote manager 会在启动 CLI/app-server 前加载受保护的 api.env。当前进程显式设置的同名变量优先于文件内容。可用 ENVPILOT_CODEX_LOAD_SECRETS=0 关闭 Codex 进程级注入。
 
-`remote enable/ready` 会使用持久启动锁，等待并复用同一用户已经由 Desktop SSH 或其他终端启动的 app-server，避免两个启动器同时争用 `app-server-control.sock`。envpilot 只会停止自己 PID 文件记录的 app-server，不会自动杀死未知的 Desktop app-server。如果已有非 envpilot 进程持续运行但 socket 仍未就绪，先关闭对应 Desktop 远程连接或确认并安全停止该进程，再执行 `bash envpilot.sh codex remote repair`。
+`remote enable/ready` 使用持久启动锁，只复用健康且版本匹配的目标服务。stop/restart 可以管理已核实的 Desktop/SSH 实例，不再只依赖 envpilot PID 文件；未知归属时保留现场并给出诊断。不同节点共享 CODEX_HOME 时，不能擅自清理另一节点的控制记录。
 
 失败时按提示提供以下只读信息即可诊断：
 
 ~~~bash
-bash envpilot.sh codex remote status
+envpilot codex remote status
 ps -o pid,ppid,stat,etime,args -u "$USER" | grep -E '[c]odex|[a]pp-server'
 grep -F "$HOME/.codex/app-server-control/app-server-control.sock" /proc/net/unix 2>/dev/null || \
     ss -xlpn | grep -F "$HOME/.codex/app-server-control/app-server-control.sock"

@@ -852,13 +852,13 @@ ep_status_mihomo()
 
 ep_update_mihomo_subscription()
 {
-    local subscription="${1:-}" proxy_port api_port update_script
+    local subscription="${1:-${ENVPILOT_MIHOMO_SUBSCRIPTION_URL:-}}" proxy_port api_port update_script
     proxy_port="$(ep_mihomo_proxy_port)"
     api_port="$(ep_mihomo_api_port)"
     ep_mihomo_refresh_scripts
     update_script="$(ep_mihomo_script update_mihomo_subscription.sh)"
     [ -x "$update_script" ] || ep_die "Mihomo subscription update script not found: $update_script"
-    MIHOMO_PROXY_PORT="$proxy_port" MIHOMO_API_PORT="$api_port" "$update_script" "$subscription"
+    MIHOMO_PROXY_PORT="$proxy_port" MIHOMO_API_PORT="$api_port" ENVPILOT_CORE="${ENVPILOT_CORE:-$(ep_core_path)}" ENVPILOT_MIHOMO_SUBSCRIPTION_URL="$subscription" "$update_script"
 }
 
 ep_switch_mihomo_ports()
@@ -870,7 +870,7 @@ EOF
     config="$(ep_mihomo_config_file)"
     bin="$(ep_mihomo_bin)"
     [ -x "$bin" ] || ep_die "mihomo executable not found: $bin"
-    [ -s "$config" ] || ep_die "mihomo config not found: $config. Run: bash envpilot.sh install mihomo"
+    [ -s "$config" ] || ep_die "mihomo config not found: $config. Run: envpilot install mihomo"
 
     old_proxy="$(ep_mihomo_proxy_port)"
     old_api="$(ep_mihomo_api_port)"
@@ -1189,6 +1189,12 @@ EOF
     ep_install_mihomo_data_assets "$config_dir"
 
     subscription="${ENVPILOT_MIHOMO_SUBSCRIPTION_URL:-}"
+    if [ -z "$subscription" ] && [ -n "${ENVPILOT_SUBSCRIPTION_ENV:-}" ]; then
+        subscription="$(printenv "$ENVPILOT_SUBSCRIPTION_ENV" 2>/dev/null || true)"
+    fi
+    if [ -z "$subscription" ] && [ -r "${ENVPILOT_SUBSCRIPTION_FILE:-}" ]; then
+        IFS= read -r subscription < "$ENVPILOT_SUBSCRIPTION_FILE" || true
+    fi
     if [ -z "$subscription" ]; then
         subscription="$(ep_mihomo_saved_subscription_url 2>/dev/null || true)"
         [ -z "$subscription" ] || ep_log "Using saved Mihomo subscription URL from $(ep_mihomo_subscription_file) without displaying it."
@@ -1203,7 +1209,7 @@ EOF
 
     if [ -n "$subscription" ]; then
         ep_backup_file "$config_dir/config.yaml"
-        ep_fetch_url "$subscription" "$config_dir/config.yaml.tmp"
+        ep_fetch_protected "$subscription" "$config_dir/config.yaml.tmp"
         mv "$config_dir/config.yaml.tmp" "$config_dir/config.yaml"
         ep_patch_mihomo_config "$config_dir/config.yaml" "$proxy_port" "$api_port"
         chmod 600 "$config_dir/config.yaml"

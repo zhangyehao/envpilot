@@ -265,7 +265,7 @@ ep_codex_warn_slow_probe()
     local path="${1:-$EP_CODEX_BIN}"
     ep_warn "Codex is installed at $path, but codex --version did not finish within ${EP_CODEX_PROBE_TIMEOUT}s on the shared filesystem."
     ep_warn "The installation is retained; this timeout is not treated as a missing executable, and npm fallback is skipped."
-    ep_warn "Use the node-local runtime for fast startup: bash envpilot.sh codex remote enable"
+    ep_warn "Use the node-local runtime for fast startup: envpilot codex remote enable"
 }
 
 ep_doctor_codex()
@@ -617,8 +617,12 @@ ep_install_codex_npm()
 
 ep_write_codex_config()
 {
-    local config_dir="$HOME/.codex"
+    local config_dir="${CODEX_HOME:-$HOME/.codex}"
     local config_file="$config_dir/config.toml"
+    if [ -e "$config_file" ]; then
+        ep_log "Preserved existing Codex configuration: $config_file"
+        return 0
+    fi
     mkdir -p "$config_dir"
     ep_backup_file "$config_file"
     cat > "$config_file.tmp" <<EOF
@@ -782,6 +786,11 @@ ep_codex_configure_auth()
     local auth_file secret_file
     local key_source=none
 
+    if [ "${EP_CONFIG_APPLY:-0}" = 1 ] || [ "${EP_NON_INTERACTIVE:-0}" = 1 ]; then
+        ep_log 'Codex authentication is preserved. Use codex login or the configured API-key reference when needed.'
+        return 0
+    fi
+
     secret_file="$HOME/.config/secrets/api.env"
     ep_ensure_secrets_file
     auth_file="$HOME/.codex/auth.json"
@@ -861,6 +870,12 @@ ep_codex_remote_install_manager()
     cp "$template" "$tmp"
     chmod 700 "$tmp"
     mv "$tmp" "$manager"
+    if declare -F ep_core_path >/dev/null 2>&1; then
+        local core_target="$HOME/.local/lib/envpilot/0.4.0/envpilot-core" core_source
+        core_source="$(ep_core_path)"
+        mkdir -p "$(dirname "$core_target")"
+        if [ "$core_source" != "$core_target" ]; then cp "$core_source" "$core_target.tmp"; chmod 700 "$core_target.tmp"; mv "$core_target.tmp" "$core_target"; fi
+    fi
     ep_log "Installed Codex remote manager: $manager"
 }
 
@@ -907,6 +922,8 @@ ep_codex_remote_enable()
     }
 
     ep_codex_remote_install_manager
+    mkdir -p "${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}"
+    printf '%s\n' "$source" > "${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}/codex-source"
     mkdir -p "$(dirname "$wrapper")"
     if [ -e "$wrapper" ] || [ -L "$wrapper" ]; then
         if ! ep_codex_remote_is_managed_wrapper "$wrapper"; then
@@ -918,8 +935,8 @@ ep_codex_remote_enable()
         ep_log "Codex remote runtime is ready for Desktop."
     else
         ep_warn "Codex wrapper and node-local runtime were enabled, but app-server is not ready."
-        ep_warn "Inspect with: bash envpilot.sh codex remote status"
-        ep_warn "After resolving the reported process/socket conflict, run: bash envpilot.sh codex remote repair"
+        ep_warn "Inspect with: envpilot codex remote status"
+        ep_warn "After resolving the reported process/socket conflict, run: envpilot codex remote repair"
         return 1
     fi
 }
@@ -977,7 +994,7 @@ ep_codex_remote_cli()
         status:*|stage:*|prepare:*|ready:*|warm:*|restart:*|stop:*|repair:*)
             ep_codex_remote_invoke "$action" ;;
         disable:*) ep_codex_remote_disable ;;
-        *) ep_die "Usage: bash envpilot.sh codex remote {status|enable|stage|ready|warm|restart|stop|repair|disable}" ;;
+        *) ep_die "Usage: envpilot codex remote {status|enable|stage|ready|warm|restart|stop|repair|disable}" ;;
     esac
 }
 
@@ -990,17 +1007,19 @@ ep_doctor_codex_remote()
     if ep_codex_remote_is_managed_wrapper "$wrapper"; then
         ep_log "Codex remote: wrapper enabled at $wrapper"
     else
-        ep_log "Codex remote: wrapper not enabled; use: bash envpilot.sh codex remote enable"
+        ep_log "Codex remote: wrapper not enabled; use: envpilot codex remote enable"
     fi
     if [ -n "$EP_CODEX_PROBE_ERROR" ] && [[ "$EP_CODEX_PROBE_ERROR" == *"timed out"* ]]; then
-        ep_warn "Codex --version is slow on the current filesystem; use: bash envpilot.sh codex remote ready"
+        ep_warn "Codex --version is slow on the current filesystem; use: envpilot codex remote ready"
     fi
 }
 
 ep_install_codex()
 {
     ep_require_unix_runtime
-    local action existing probe_ready install_source remote_wrapper_enabled
+    local action existing probe_ready install_source remote_wrapper_enabled remote_was_running
+    remote_was_running=0
+    if bash "$(ep_codex_remote_template)" running >/dev/null 2>&1; then remote_was_running=1; fi
     action=configured
     install_source=existing
     remote_wrapper_enabled=0
@@ -1080,6 +1099,9 @@ ep_install_codex()
         ep_log "Restored the envpilot Codex remote wrapper after the CLI install/update."
     elif [ -f "$(ep_codex_remote_manager_path)" ] && grep -q 'envpilot Codex remote runtime manager' "$(ep_codex_remote_manager_path)" 2>/dev/null; then
         ep_codex_remote_install_manager
+    fi
+    if [ "$action" = updated ] && [ "$remote_was_running" = 1 ]; then
+        ep_codex_remote_invoke restart || ep_die 'Codex was updated, but the app-server restart failed. See envpilot codex remote status.'
     fi
     ep_report_event codex "$action" "preserved the Codex install method and configured env_key" "$EP_CODEX_VERSION" "$install_source" "${EP_CODEX_INSTALLED_BIN:-$EP_CODEX_BIN}"
 }
