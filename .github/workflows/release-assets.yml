@@ -61,6 +61,7 @@ jobs:
           git archive --format=tar.gz --prefix="envpilot-${version}/" -o "dist/envpilot-${version}.tar.gz" "$RELEASE_TAG"
           git archive --format=zip --prefix="envpilot-${version}/" -o "dist/envpilot-${version}.zip" "$RELEASE_TAG"
           python scripts/build-release.py
+          bash tests/test-package.sh "dist/envpilot-${version}-linux-amd64.tar.gz"
       - name: Upload verified release assets
         uses: softprops/action-gh-release@v3
         with:

@@ -52,7 +52,12 @@ def main():
                             output.write(item, item.relative_to(package.parent))
             else:
                 with tarfile.open(str(archive) + ".tar.gz", "w:gz") as output:
-                    output.add(package, arcname=package.name)
+                    def permissions(info):
+                        # Windows chmod does not preserve executable bits for tar.
+                        if info.name.endswith("/bin/envpilot-core"):
+                            info.mode = 0o755
+                        return info
+                    output.add(package, arcname=package.name, filter=permissions)
     sums = []
     for file in sorted(dist.iterdir()):
         if file.is_file() and file.name != "SHA256SUMS":
