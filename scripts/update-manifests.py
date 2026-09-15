@@ -72,6 +72,31 @@ def stable_release(releases: list[dict[str, Any]]) -> dict[str, Any]:
     raise RuntimeError("No stable release found")
 
 
+def fetch_stable_release(api: str) -> dict[str, Any]:
+    parsed = urllib.parse.urlsplit(api)
+    if parsed.hostname == "api.github.com" and parsed.path.rstrip("/").endswith("/releases"):
+        latest = urllib.parse.urlunsplit(parsed._replace(path=parsed.path.rstrip("/") + "/latest", query=""))
+        try:
+            return stable_release([fetch_json(latest)])
+        except urllib.error.HTTPError as exc:
+            if exc.code != 404:
+                raise
+        except RuntimeError:
+            pass
+        # Keep fallback pages small: Python releases contain hundreds of assets.
+        for page in range(1, 5):
+            query = urllib.parse.urlencode({"per_page": 3, "page": page})
+            releases = fetch_json(urllib.parse.urlunsplit(parsed._replace(query=query)))
+            if not releases:
+                break
+            try:
+                return stable_release(releases)
+            except RuntimeError:
+                continue
+        raise RuntimeError("No stable release found in bounded release pages")
+    return stable_release(fetch_json(api))
+
+
 def stable_tag(tags: list[dict[str, Any]]) -> dict[str, Any]:
     for tag in tags:
         name = str(tag.get("name", ""))
@@ -97,7 +122,7 @@ def update_github_release_manifest(data: dict[str, Any]) -> bool:
     if not api or not isinstance(rules, list):
         return False
 
-    release = stable_release(fetch_json(str(api)))
+    release = fetch_stable_release(str(api))
     assets = release.get("assets") or []
     resolved: dict[str, Any] = {}
     for rule in rules:

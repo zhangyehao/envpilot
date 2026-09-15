@@ -10,8 +10,18 @@ import urllib.error
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import http_utils
 
+spec = importlib.util.spec_from_file_location("manifest_updater", Path(__file__).resolve().parents[1] / "scripts/update-manifests.py")
+manifest_updater = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(manifest_updater)
+
 
 class HTTPTests(unittest.TestCase):
+    def test_large_release_repositories_use_single_latest_release(self):
+        with patch.object(manifest_updater, "fetch_json", return_value={"tag_name": "20260901", "prerelease": False, "draft": False}) as fetch:
+            release = manifest_updater.fetch_stable_release("https://api.github.com/repos/astral-sh/python-build-standalone/releases")
+            self.assertEqual(release["tag_name"], "20260901")
+            fetch.assert_called_once_with("https://api.github.com/repos/astral-sh/python-build-standalone/releases/latest")
+
     def test_retries_504_then_succeeds(self):
         error = urllib.error.HTTPError("https://example.com", 504, "timeout", {}, io.BytesIO())
         with patch("http_utils.urllib.request.build_opener") as build, patch("http_utils.time.sleep") as sleep:
