@@ -2216,7 +2216,8 @@ echo "[TEST] tmux manifest target and managed Mihomo detection"
     . "$ROOT/lib/manifest.sh"
     . "$ROOT/components/mihomo.sh"
     . "$ROOT/components/tmux.sh"
-    [ "$(ep_tmux_target_version)" = "3.7b" ]
+    manifest_tmux_version="$("$PYTHON_BIN" -c 'import json, sys; print(json.load(open(sys.argv[1]))["latest"]["version"].lstrip("v"))' "$ROOT/manifests/tmux.json")"
+    [ "$(ep_tmux_target_version)" = "$manifest_tmux_version" ]
     ep_version_at_least 3.7b 3.5a
     ep_version_at_least 3.10 3.7b
     ! ep_version_at_least 3.7 3.7b
