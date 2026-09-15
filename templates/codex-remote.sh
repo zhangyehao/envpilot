@@ -478,7 +478,9 @@ record_server()
 
 native_daemon()
 {
-    run_bounded 5 "$(local_bin)" app-server daemon --help 2>/dev/null | grep -q 'restart'
+    local help
+    help="$(run_bounded 5 "$(local_bin)" app-server daemon --help 2>/dev/null)" || return 1
+    case "$help" in *restart*) return 0 ;; *) return 1 ;; esac
 }
 
 protocol_ready()

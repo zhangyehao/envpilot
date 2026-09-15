@@ -16,7 +16,8 @@ printf '%s\n' '# custom profile' 'original_command() { printf original; }' 'alia
 cp "$original" "$HOME/.bashrc"
 bash "$ROOT/envpilot.sh" init --lang en
 bash "$ROOT/envpilot.sh" config validate
-bash "$ROOT/envpilot.sh" plan --lang zh-CN | grep -q '配置文件'
+translated="$(bash "$ROOT/envpilot.sh" plan --lang zh-CN)"
+case "$translated" in *配置文件*) ;; *) exit 1 ;; esac
 bash "$ROOT/envpilot.sh" apply --yes --non-interactive
 cp "$HOME/.bashrc" "$fixture/applied"
 bash "$ROOT/envpilot.sh" apply --yes --non-interactive
