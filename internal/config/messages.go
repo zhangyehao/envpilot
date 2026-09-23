@@ -141,6 +141,8 @@ var messages = [][2]string{
 	{`^Codex app-server is ready: PID (.*)$`, `Codex app-server 已就绪：PID ${1}`},
 	{`^Restarting Codex app-server; connected tasks may be interrupted\.$`, `正在重启 Codex app-server；当前连接中的任务可能被中断。`},
 	{`^Stopped Codex app-server: PID (.*)$`, `Codex app-server 已停止：PID ${1}`},
+	{`^A matching Desktop/SSH instance appeared: PID (.*); verifying its runtime and protocol\.$`, `Desktop/SSH 已重新启动匹配的实例：PID ${1}；正在核验运行文件和协议。`},
+	{`^Control socket is still active after stopping the process; stop was not confirmed\.$`, `原进程停止后控制 socket 仍在使用，尚未确认服务完全停止。`},
 	{`^No matching Codex app-server is running\.$`, `没有与目标配置匹配的 Codex app-server 在运行。`},
 	{`^A new app-server process was not verified\.$`, `未能确认新的 app-server 进程，重启失败。`},
 	{`^App-server startup or version verification failed; see (.*)$`, `App-server 启动或版本校验失败，请查看：${1}`},

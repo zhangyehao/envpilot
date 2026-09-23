@@ -163,6 +163,17 @@ kill "$unknown"
 wait "$unknown" 2>/dev/null || true
 unknown=""
 unset FAKE_CODEX_SOCKET_SYMLINK
+echo '[TEST] a Codex process with another home cannot be stopped through a shared socket alias'
+selected_home="$CODEX_HOME"
+CODEX_HOME="$other_home" FAKE_CODEX_SOCKET_HOME="$selected_home" "$source_dir/codex" app-server --listen unix:// &
+unknown=$!
+sleep 1
+if bash "$manager" stop; then exit 1; fi
+if bash "$manager" restart; then exit 1; fi
+kill -0 "$unknown"
+kill "$unknown"
+wait "$unknown" 2>/dev/null || true
+unknown=""
 echo '[TEST] native lifecycle adapter is used when its fixed path matches the runtime'
 export FAKE_NATIVE_STATE="$fixture/native"
 mkdir -p "$CODEX_HOME/packages/standalone/current"

@@ -6,7 +6,7 @@ User-space environment installation and maintenance for workstations, HPC nodes 
 
 Version 0.4.0 adds one YAML configuration, preserves existing shell profiles, verifies Codex restarts, and provides versioned recovery snapshots.
 
-**Version 0.4.1 fixes Codex 0.156.0 socket symlink detection and false readiness failures.** Update an existing checkout without cloning it again:
+**Version 0.4.2 handles Desktop reconnect races during Codex restart, recognizes Desktop version identifiers, and adds version/help aliases.** Update an existing checkout without cloning it again:
 
 ```bash
 cd "$HOME/envpilot" && git pull --ff-only origin main
@@ -18,6 +18,8 @@ envpilot codex remote status
 ```
 
 The final two commands apply to installations using Codex remote services. See [upgrade and recovery](docs/UPGRADE.md) for complete source and platform-package commands.
+
+Check the application version with `envpilot version`, `-v`, `-V` or `--version`. Read help with `envpilot help`, `-h`, `-help` or `--help`. These commands need neither network access, a configuration helper nor valid YAML. The YAML `version: 1` field describes the configuration format.
 
 ## Get started
 

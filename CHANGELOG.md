@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.2 - 2026-09-23
+
+### Fixed
+
+- Handles Desktop/SSH reconnects that launch a replacement app-server during restart. Retries socket ownership discovery and adopts only a verified matching runtime and protocol; stop no longer reports success while its socket is still active.
+- Accepts `Codex Desktop/0.156.0` version identifiers with spaces in the product name, and verifies the server's Codex home. Socket-owner discovery avoids scanning every process on hosts with `ss`.
+- Uses the registered configuration helper for shell secret loading instead of a fixed 0.4.0 path.
+
+### Added
+
+- Adds `envpilot version`, `-v`, `-V`, `-version`, `--version`, and consistent help aliases (`help`, `-h`, `-H`, `-help`, `--help`) to Bash and PowerShell. These commands work offline without a helper or valid YAML.
+- Adds a real Codex integration test in which a Desktop instance wins the startup race, plus checks for unrelated homes, version parsing and basic CLI commands in PowerShell 5.1/7 and Bash.
+
 ## 0.4.1 - 2026-09-23
 
 ### Fixed

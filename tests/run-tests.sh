@@ -42,6 +42,7 @@ done
 "$PYTHON_BIN" "$ROOT/scripts/update-mihomo-cache.py" --check >/tmp/envpilot-mihomo-cache-check.out
 
 echo "[TEST] workflow semantics"
+bash "$ROOT/tests/test-cli-basics.sh"
 bash "$ROOT/tests/test-command-restart.sh"
 grep -q 'git archive' "$ROOT/.github/workflows/release-assets.yml"
 ! grep -q 'files: downloads/\*' "$ROOT/.github/workflows/release-assets.yml"

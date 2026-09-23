@@ -22,4 +22,6 @@ Restart verifies a new process, its runtime generation and a JSON-RPC handshake.
 
 The 0.154.0 native daemon interface requires a fixed standalone installation path. envpilot checks both capabilities and layout; it directly starts a verified node-local runtime when native start cannot launch that target. Only reconstructible binaries and required helpers belong in the node-local cache. Persistent control state stays under CODEX_HOME.
 
+Version 0.4.2 also handles Desktop/SSH reconnects that start a replacement during restart. It rediscovers the socket owner and verifies the user, Codex home, runtime files and protocol version before accepting a new PID. Product names with spaces, such as `Codex Desktop/0.156.0`, are supported. Unidentified owners and other homes remain protected. If a supervisor keeps reviving the service during stop, the command reports failure instead of claiming the service is stopped.
+
 Use YAML secret references for OPENAI_API_KEY; do not paste credentials into scripts, logs or repository files. Native login remains available through `codex login`. See [configuration](CONFIG.md) and [recovery](UPGRADE.md).

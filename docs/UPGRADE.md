@@ -6,6 +6,7 @@
 
 ```bash
 envpilot self-update
+envpilot version
 envpilot config validate
 envpilot plan
 ```
@@ -34,12 +35,12 @@ Run `bash envpilot.sh ...` inside the checkout, or use `bash "$HOME/envpilot/env
 
 ## Upgrade using a platform package (Linux/macOS)
 
-This downloads the fixed 0.4.1 release for your OS and architecture, verifies SHA-256, and extracts to a new directory. The package includes the configuration helper and leaves the old checkout available:
+This downloads the fixed 0.4.2 release for your OS and architecture, verifies SHA-256, and extracts to a new directory. The package includes the configuration helper and leaves the old checkout available:
 
 ```bash
 (
   set -eu
-  version=0.4.1
+  version=0.4.2
   case "$(uname -s)" in Linux) os=linux ;; Darwin) os=darwin ;; *) echo 'Select a package for your OS'; exit 1 ;; esac
   case "$(uname -m)" in x86_64|amd64) arch=amd64 ;; aarch64|arm64) arch=arm64 ;; armv7l) arch=armv7 ;; *) echo 'Unsupported architecture'; exit 1 ;; esac
   asset="envpilot-$version-$os-$arch.tar.gz"
@@ -61,7 +62,7 @@ This downloads the fixed 0.4.1 release for your OS and architecture, verifies SH
 After all commands succeed, enter the extracted directory. If it already exists, inspect its contents instead of overwriting it:
 
 ```bash
-cd "$HOME/.local/share/envpilot/releases/envpilot-0.4.1"
+cd "$HOME/.local/share/envpilot/releases/envpilot-0.4.2"
 ```
 
 ## Register the command and apply configuration

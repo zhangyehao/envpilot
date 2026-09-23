@@ -1,7 +1,7 @@
 ﻿[CmdletBinding()]
 param(
     [Parameter(Position=0)]
-    [ValidateSet("init","config","plan","apply","snapshot","shell","run","self-update","setup-command","doctor","install","update","upgrade","apply-shell","rollback","restore","mihomo","codex","resume","reset","update-manifests","update-mihomo-cache","self-test","help")]
+    [ValidateSet("init","config","plan","apply","snapshot","shell","run","self-update","setup-command","doctor","install","update","upgrade","apply-shell","rollback","restore","mihomo","codex","resume","reset","update-manifests","update-mihomo-cache","self-test","help","version","-v","-version","--version","-h","-help","--help")]
     [string]$Command = "help",
 
     [Parameter(Position=1)]
@@ -24,6 +24,8 @@ param(
     [Alias("-lang")][string]$Lang,
     [Alias("-config")][string]$Config,
     [Alias("-non-interactive")][switch]$NonInteractive,
+    [Alias("v","-version")][switch]$Version,
+    [Alias("h","-help")][switch]$Help,
     [Parameter(ValueFromRemainingArguments=$true)][string[]]$CommandArgs
 )
 
@@ -1153,6 +1155,8 @@ function Show-Usage {
 envpilot — 用户态环境安装与维护
 
   envpilot init -Lang zh-CN               创建主配置
+  envpilot version                       查看软件版本（-v、-V、--version）
+  envpilot help                          查看帮助（-h、-help、--help）
   envpilot config edit|validate|show      编辑、校验或查看配置
   envpilot plan                          查看拟议变更
   envpilot apply [-Yes -NonInteractive]   应用配置
@@ -1177,6 +1181,10 @@ Configuration: envpilot init; envpilot config edit; envpilot plan; envpilot appl
 Recovery: envpilot snapshot; envpilot restore; envpilot self-update
 
 Usage:
+  envpilot version (-v, -V, --version)
+      Show the application version without loading configuration or downloading tools.
+  envpilot help (-h, -help, --help)
+      Show this help.
   .\envpilot.ps1 doctor
       Show system, shell, proxy, and installed tool status.
   .\envpilot.ps1 install [all|git|python|mihomo|conda|mamba|codex|github|tmux] [-Mode online|offline] [-Prefix PATH] [-AssetPath PATH] [-Upgrade] [-Yes]
@@ -1184,11 +1192,11 @@ Usage:
   .\envpilot.ps1 update [all|git|python|mihomo|conda|mamba|codex|github|tmux]
       Re-check compatible latest versions and update existing envpilot components.
   .\envpilot.ps1 apply-shell
-      Back up and replace the active PowerShell profile.
+      Back up changes and update only the managed profile block.
   .\envpilot.ps1 rollback
       Restore the most recent envpilot-managed backup.
   .\envpilot.ps1 restore
-      Restore envpilot-managed changes to the latest doctor baseline.
+      Restore a managed-file snapshot, with legacy baseline support.
   .\envpilot.ps1 mihomo [start|stop|status|port PORT|ports PROXY_PORT API_PORT|update-subscription [URL]]
       Manage Mihomo, its two local ports, and subscription config.
   .\envpilot.ps1 codex remote [status|enable|stage|ready|warm|stop|repair|disable]
@@ -1206,6 +1214,13 @@ Usage:
 . (Join-Path $Script:Root "lib/config.ps1")
 
 try {
+    if ($Help -or $Command -in @('-h','-help','--help')) { $Command = 'help' }
+    elseif ($Version -or $Command -in @('-v','-version','--version')) { $Command = 'version' }
+    if ($Command -eq 'version') {
+        Write-Output ('envpilot ' + (Get-Content -LiteralPath (Join-Path $Script:Root 'VERSION') -Raw).Trim())
+        exit 0
+    }
+    if ($Command -eq 'help') { Show-Usage; exit 0 }
     if ($Command -notin @("help","self-test","update-manifests","update-mihomo-cache","init","config","plan")) { Import-EnvpilotConfig }
     if ($Command -notin @("help","doctor","plan","config","init")) {
         Initialize-Envpilot

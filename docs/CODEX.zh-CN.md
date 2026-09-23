@@ -20,6 +20,8 @@ envpilot codex remote enable
 
 0.154.0 的原生命令为 `codex app-server daemon start/stop/restart/version`。原生启动依赖固定的 standalone 路径，因此 envpilot 会同时检查能力与安装布局；不能由原生命令启动目标缓存时，使用已校验的本地文件直接启动。
 
+0.4.2 进一步处理 Desktop/SSH 自动重连：如果旧服务退出后，Desktop 抢先拉起新服务，envpilot 会重新识别 socket 归属，并核对用户、CODEX_HOME、运行文件和协议版本，确认新 PID 后才报告重启成功。支持 `Codex Desktop/0.156.0` 等名称带空格的版本标识；未知归属或其他配置目录的进程保持不变。若停止过程中服务被持续重新拉起，`stop` 会返回失败并提示服务尚未完全停止。
+
 ## 安装和更新
 
 ~~~bash

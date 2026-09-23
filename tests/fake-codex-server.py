@@ -8,7 +8,7 @@ import socket
 import struct
 import threading
 
-path = Path(os.environ["CODEX_HOME"]) / "app-server-control/app-server-control.sock"
+path = Path(os.environ.get("FAKE_CODEX_SOCKET_HOME", os.environ["CODEX_HOME"])) / "app-server-control/app-server-control.sock"
 path.parent.mkdir(parents=True, exist_ok=True)
 if path.exists() or path.is_symlink():
     path.unlink()
@@ -38,8 +38,9 @@ def handle(connection):
         accept = base64.b64encode(hashlib.sha1(key + b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11").digest())
         connection.sendall(b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: " + accept + b"\r\n\r\n")
         connection.recv(4096)
-        data = json.dumps({"id": 1, "result": {"userAgent": "codex-cli/" + os.environ.get("FAKE_CODEX_VERSION", "0.153.0")}}).encode()
-        connection.sendall(bytes([0x81, len(data)]) + data)
+        data = json.dumps({"id": 1, "result": {"codexHome": os.environ["CODEX_HOME"], "userAgent": "codex-cli/" + os.environ.get("FAKE_CODEX_VERSION", "0.153.0")}}).encode()
+        frame = bytes([0x81, len(data)]) if len(data) < 126 else bytes([0x81, 126]) + struct.pack('!H', len(data))
+        connection.sendall(frame + data)
     except (OSError, StopIteration):
         pass
     finally:

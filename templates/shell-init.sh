@@ -82,7 +82,9 @@ if [ "${BASHRC_AUTO_LOAD_SECRETS:-0}" = 1 ] && [ -f "${BASHRC_SECRETS_FILE:-}" ]
         case "$__envpilot_mode" in
             400|600)
                 __envpilot_core="${ENVPILOT_ROOT:-}/bin/envpilot-core"
-                [ -x "$__envpilot_core" ] || __envpilot_core="$HOME/.local/lib/envpilot/0.4.0/envpilot-core"
+                if [ ! -x "$__envpilot_core" ] && [ -r "$__envpilot_config_dir/core-path" ]; then
+                    IFS= read -r __envpilot_core < "$__envpilot_config_dir/core-path" || true
+                fi
                 if [ -x "$__envpilot_core" ]; then
                     while IFS= read -r -d '' __envpilot_name && IFS= read -r -d '' __envpilot_value; do
                         export "$__envpilot_name=$__envpilot_value"

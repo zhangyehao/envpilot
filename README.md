@@ -6,7 +6,7 @@ envpilot 为无管理员权限的工作站、HPC 和远程 SSH 环境安装、�
 
 **0.4.0：统一 YAML 配置、保留原 profile 的 Shell 接入、可靠的 Codex 重启，以及可恢复的升级。**
 
-**0.4.1 修复 Codex 0.156.0 的 socket 符号链接识别与“未就绪”误报。** 已有 `~/envpilot` 仓库时使用下面的更新命令，不要重新克隆：
+**0.4.2 修复 Desktop 自动重连时的 Codex 重启竞争和版本识别，并补齐版本/帮助命令。** 已有 `~/envpilot` 仓库时使用下面的更新命令，不要重新克隆：
 
 ```bash
 cd "$HOME/envpilot" && git pull --ff-only origin main
@@ -18,6 +18,8 @@ envpilot codex remote status
 ```
 
 最后两条命令适用于已安装 Codex 并使用远程服务的用户。完整的源码和平台包升级命令见 [升级与恢复](docs/UPGRADE.zh-CN.md)。
+
+查看软件版本：`envpilot version`、`envpilot -v`、`envpilot -V` 或 `envpilot --version`。查看帮助：`envpilot help`、`envpilot -h`、`envpilot -help` 或 `envpilot --help`。这些命令无需联网、配置工具或有效 YAML；YAML 的 `version: 1` 仅表示配置格式版本。
 
 ## 快速开始
 

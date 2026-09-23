@@ -15,7 +15,7 @@ START_LOCK="$CONTROL_DIR/.envpilot-app-server-start.lock"
 READY_TIMEOUT="${ENVPILOT_CODEX_REMOTE_READY_TIMEOUT:-60}"
 RUNTIME_ROOT="${ENVPILOT_CODEX_RUNTIME_DIR:-}"
 QUIET="${ENVPILOT_CODEX_REMOTE_QUIET:-0}"
-CORE_BIN="${ENVPILOT_CORE:-$HOME/.local/lib/envpilot/0.4.1/envpilot-core}"
+CORE_BIN="${ENVPILOT_CORE:-$HOME/.local/lib/envpilot/0.4.2/envpilot-core}"
 SOURCE_RECORD="${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}/codex-source"
 if [ -z "${ENVPILOT_CORE:-}" ] && [ -r "${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}/core-path" ]; then
     IFS= read -r CORE_BIN < "${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}/core-path" || true
@@ -440,6 +440,14 @@ pid_is_server()
     args="$(ps -p "$pid" -o args= 2>/dev/null || true)"
     case "$args" in codex\ *|*/codex\ *) ;; *) return 1 ;; esac
     case "$args" in *app-server*) ;; *) return 1 ;; esac
+    if [ -r "/proc/$pid/environ" ]; then
+        home="$(tr '\0' '\n' < "/proc/$pid/environ" 2>/dev/null | sed -n 's/^CODEX_HOME=//p' | head -n 1)"
+        if [ -z "$home" ]; then
+            home="$(tr '\0' '\n' < "/proc/$pid/environ" 2>/dev/null | sed -n 's/^HOME=//p' | head -n 1)/.codex"
+        fi
+        home="$(cd -P "$home" 2>/dev/null && pwd)" || return 1
+        [ "$home" = "$CODEX_HOME_DIR" ] || return 1
+    fi
     pid_owns_socket "$pid" && return 0
     if [ -r /proc/net/unix ]; then
         # Before a new server binds, require its exact home and default endpoint.
@@ -454,7 +462,21 @@ pid_is_server()
 
 find_existing_server_pid()
 {
-    local pid
+    local pid resolved
+    # Start with the socket owner so busy hosts do not require a slow ps call
+    # for every process. Each candidate still passes the full identity check.
+    if command_exists ss && [ -S "$SOCKET" ]; then
+        resolved="$(resolve_link "$SOCKET" 2>/dev/null || printf '%s' "$SOCKET")"
+        while IFS= read -r pid; do
+            if pid_owns_socket "$pid" && pid_is_server "$pid"; then printf '%s' "$pid"; return 0; fi
+        done < <(ss -xlpn 2>/dev/null | awk -v path="$resolved" '
+            index($0, path) {
+                while (match($0, /pid=[0-9]+/)) {
+                    print substr($0, RSTART + 4, RLENGTH - 4)
+                    $0 = substr($0, RSTART + RLENGTH)
+                }
+            }')
+    fi
     while IFS= read -r pid; do
         pid="$(printf '%s' "$pid" | tr -d ' ')"
         pid_is_server "$pid" && { printf '%s' "$pid"; return 0; }
@@ -495,7 +517,7 @@ protocol_ready()
     [ -x "$CORE_BIN" ] || { warn "envpilot-core is required to verify the app-server protocol."; return 1; }
     expected="$(cat "$(local_current_dir)/.version" 2>/dev/null || true)"
     [ -n "$expected" ] || expected="$(local_version | awk '{print $2}')"
-    actual="$("$CORE_BIN" probe --socket "$SOCKET" --format version 2>/dev/null)" || return 1
+    actual="$("$CORE_BIN" probe --socket "$SOCKET" --expected-home "$CODEX_HOME_DIR" --format version 2>/dev/null)" || return 1
     [ -n "$expected" ] && [ "$actual" = "$expected" ]
 }
 
@@ -648,18 +670,34 @@ wait_for_socket()
 
 start_server_locked()
 {
-    local require_new="${1:-0}" pid state=0 attempts=0
+    local attempt
+    # Desktop/SSH may reconnect between discovery, socket cleanup and spawn.
+    # Retry discovery within the same lock; never unlink an active endpoint.
+    for attempt in 1 2 3; do
+        SERVER_START_ERROR=""
+        if start_server_once; then return 0; fi
+        [ "$attempt" = 3 ] || sleep 0.2
+    done
+    [ -z "$SERVER_START_ERROR" ] || warn "$SERVER_START_ERROR"
+    warn "App-server startup or version verification failed; see $SERVER_LOG"
+    return 1
+}
+
+start_server_once()
+{
+    local pid state=0 attempts=0
     pid="$(read_server_pid 2>/dev/null || true)"
     if [ -n "$pid" ]; then
-        if [ "$require_new" != 1 ] && runtime_matches_server "$pid" && wait_for_socket "$pid"; then
+        if runtime_matches_server "$pid" && wait_for_socket "$pid"; then
+            record_server "$pid"
             log "Codex app-server is ready: PID $pid"
             return 0
         fi
-        stop_server || return 1
+        stop_server 1 || return 1
     fi
     if [ -S "$SOCKET" ] || [ -L "$SOCKET" ]; then
         socket_listener_state || state=$?
-        if [ "$state" != 0 ]; then warn "Cannot verify the owner of the active control socket: $SOCKET"; return 1; fi
+        if [ "$state" != 0 ]; then SERVER_START_ERROR="Cannot verify the owner of the active control socket: $SOCKET"; return 1; fi
         rm -f "$SOCKET"
     fi
     load_codex_environment
@@ -688,13 +726,12 @@ start_server_locked()
             return 0
         fi
     fi
-    warn "App-server startup or version verification failed; see $SERVER_LOG"
     return 1
 }
 
 stop_server()
 {
-    local pid identity i=0 state=0
+    local allow_replacement="${1:-0}" pid identity i=0 state=0 replacement
     pid="$(read_server_pid 2>/dev/null || true)"
     if [ -z "$pid" ]; then
         if [ -S "$SOCKET" ] || [ -L "$SOCKET" ]; then
@@ -714,13 +751,23 @@ stop_server()
     if pid_is_server "$pid" && [ "$(process_identity "$pid")" = "$identity" ]; then kill -KILL "$pid" 2>/dev/null || true; fi
     i=0
     while pid_is_server "$pid" && [ "$i" -lt 20 ]; do sleep 0.1; i=$((i+1)); done
-    if [ -n "$(find_existing_server_pid 2>/dev/null || true)" ]; then
+    replacement="$(find_existing_server_pid 2>/dev/null || true)"
+    if [ -n "$replacement" ]; then
+        if [ "$allow_replacement" = 1 ] && [ "$replacement" != "$pid" ]; then
+            log "Stopped Codex app-server: PID $pid"
+            log "A matching Desktop/SSH instance appeared: PID $replacement; verifying its runtime and protocol."
+            return 0
+        fi
         warn "A matching app-server is still running or its supervisor restarted it; preserving state."
         return 1
     fi
     rm -f "$PID_FILE" "$PID_FILE.identity" "$PID_FILE.signature" "$PID_FILE.host" "$CONTROL_DIR/envpilot-app-server.ready"
     state=0
     socket_listener_state || state=$?
+    if [ "$state" != 0 ] && [ "$allow_replacement" != 1 ]; then
+        warn "Control socket is still active after stopping the process; stop was not confirmed."
+        return 1
+    fi
     [ "$state" != 0 ] || rm -f "$SOCKET"
     log "Stopped Codex app-server: PID $pid"
 }
@@ -765,7 +812,7 @@ server_operation()
         fi
         if [ "$operation" = restart ] || [ "$operation" = repair ]; then
             log "Restarting Codex app-server; connected tasks may be interrupted."
-            stop_server || status=$?
+            stop_server 1 || status=$?
         fi
         if [ "$status" = 0 ]; then start_server_locked 0 || status=$?; fi
         new_pid="$(read_server_pid 2>/dev/null || true)"

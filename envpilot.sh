@@ -33,6 +33,8 @@ usage()
 envpilot — 用户态环境安装与维护
 
   envpilot init                         创建统一配置
+  envpilot version                      查看 envpilot 版本（-v、-V、--version）
+  envpilot help                         查看帮助（-h、-help、--help）
   envpilot config edit|validate|show     编辑、校验或查看配置
   envpilot plan                         查看拟议变更
   envpilot apply [--yes --non-interactive] 应用配置
@@ -57,6 +59,8 @@ envpilot - cross-platform user-space environment bootstrapper
 
 Configuration workflow:
   envpilot init                         Create configuration without overwriting it.
+  envpilot version                      Show the application version (-v, -V, --version).
+  envpilot help                         Show help (-h, -help, --help).
   envpilot config edit|validate|show     Edit, validate or inspect configuration.
   envpilot plan                         Preview changes.
   envpilot apply [--yes --non-interactive] Apply configured components and integration.
@@ -66,16 +70,16 @@ Configuration workflow:
   envpilot self-update                  Update envpilot and installed management scripts.
 
 Usage:
-  envpilot doctor             Show status and capture a restore baseline.
+  envpilot doctor             Diagnose the installation without replacing recovery snapshots.
   envpilot install [all|git|python|mihomo|conda|mamba|codex|github|tmux] [--mode online|offline] [--prefix PATH] [--asset-path PATH] [--upgrade] [--yes]
                                       Install the selected component(s). Online is the default.
   envpilot update [all|git|python|mihomo|conda|mamba|codex|github|tmux]
                                        Re-check compatible latest versions and update existing envpilot components.
   envpilot apply-shell [--yes]
-                                      Back up and replace the active shell profile.
+                                      Back up changes and update only the managed profile block.
   envpilot setup-command      Install ~/.local/bin/envpilot without replacing the shell profile.
   envpilot rollback           Restore the most recent envpilot-managed backup.
-  envpilot restore            Restore envpilot-managed changes to the latest doctor baseline.
+  envpilot restore            Restore a managed-file snapshot, with legacy baseline support.
   envpilot mihomo [start|stop|status|port PORT|ports PROXY_PORT API_PORT|update-subscription [URL]]
                                       Manage Mihomo, its two local ports, and subscription config.
   envpilot codex remote [status|enable|stage|ready|warm|restart|stop|repair|disable]
@@ -99,11 +103,20 @@ Options:
 EOF
 }
 
+show_version()
+{
+    printf 'envpilot %s\n' "$(tr -d '\r\n' < "$ENVPILOT_ROOT/VERSION")"
+}
+
 parse_args()
 {
     local arg
     EP_COMMAND="${1:-help}"
     EP_COMMAND="${EP_COMMAND%$'\r'}"
+    case "$EP_COMMAND" in
+        -v|-V|-version|--version) EP_COMMAND=version ;;
+        -h|-H|-help|--help) EP_COMMAND=help ;;
+    esac
     shift || true
 
     EP_COMPONENT="all"
@@ -210,8 +223,12 @@ parse_args()
                 EP_NON_INTERACTIVE=1; export EP_NON_INTERACTIVE; shift ;;
             --)
                 shift; EP_RUN_ARGS=("$@"); break ;;
-            -h|--help)
+            -h|-H|-help|--help)
                 usage
+                exit 0
+                ;;
+            -v|-V|-version|--version)
+                show_version
                 exit 0
                 ;;
             *)
@@ -443,6 +460,7 @@ main()
     parse_args "$@"
     case "$EP_COMMAND" in
         help|-h|--help|self-test|update-manifests|update-mihomo-cache) ;;
+        version) show_version; return ;;
         init) ep_ensure_core; ep_core init --lang "${ENVPILOT_LANG:-auto}"; return ;;
         config)
             if [ "${EP_ACTION:-show}" = edit ]; then "${EDITOR:-vi}" "${EP_CONFIG_FILE:-${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}/config.yaml}"; return; fi

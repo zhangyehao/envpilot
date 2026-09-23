@@ -11,17 +11,41 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"path/filepath"
 	"regexp"
 	"time"
 )
 
 func ProbeVersion(result map[string]any) (string, error) {
 	agent, _ := result["userAgent"].(string)
-	match := regexp.MustCompile(`^[^/\s]+/([0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?)`).FindStringSubmatch(agent)
+	// Desktop uses a product name containing spaces. Read only the leading
+	// product's version, never the trailing client's version in parentheses.
+	match := regexp.MustCompile(`^[^/\r\n]+/([0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?)(?:\s|$)`).FindStringSubmatch(agent)
 	if len(match) != 2 {
 		return "", fmt.Errorf("server did not identify its version")
 	}
 	return match[1], nil
+}
+
+func ProbeHome(result map[string]any, expected string) error {
+	reported, _ := result["codexHome"].(string)
+	if reported == "" {
+		return fmt.Errorf("server did not identify its Codex home")
+	}
+	actual, err := filepath.EvalSymlinks(reported)
+	if err != nil {
+		return fmt.Errorf("could not verify server Codex home: %w", err)
+	}
+	want, err := filepath.EvalSymlinks(expected)
+	if err != nil {
+		return err
+	}
+	actual, _ = filepath.Abs(actual)
+	want, _ = filepath.Abs(want)
+	if actual != want {
+		return fmt.Errorf("server Codex home does not match the selected home")
+	}
+	return nil
 }
 
 // Probe verifies JSON-RPC initialize over the app-server Unix WebSocket.
@@ -53,7 +77,7 @@ func Probe(socket string) (map[string]any, error) {
 	if resp.Header.Get("Sec-WebSocket-Accept") != base64.StdEncoding.EncodeToString(expected[:]) {
 		return nil, fmt.Errorf("invalid WebSocket handshake")
 	}
-	payload := []byte(`{"id":1,"method":"initialize","params":{"clientInfo":{"name":"envpilot","version":"0.4.1"},"capabilities":{}}}`)
+	payload := []byte(`{"id":1,"method":"initialize","params":{"clientInfo":{"name":"envpilot","version":"0.4.2"},"capabilities":{}}}`)
 	mask := make([]byte, 4)
 	if _, err = rand.Read(mask); err != nil {
 		return nil, err

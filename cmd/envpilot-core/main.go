@@ -13,7 +13,7 @@ import (
 	"github.com/zhangyehao/envpilot/internal/config"
 )
 
-var version = "0.4.1"
+var version = "0.4.2"
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
@@ -29,6 +29,7 @@ func run(args []string) error {
 	args = args[1:]
 	path, lang, format, root, kind, target := "", "", "json", "", "bash", ""
 	envFile, keyEnv, keyFile := "", "", ""
+	expectedHome := ""
 	checkOnly := false
 	stream := false
 	rest := []string{}
@@ -45,12 +46,14 @@ func run(args []string) error {
 			break
 		}
 		switch a {
-		case "--config", "--lang", "--format", "--root", "--shell", "--target", "--socket", "--env-file", "--key-env", "--key-file":
+		case "--config", "--lang", "--format", "--root", "--shell", "--target", "--socket", "--env-file", "--key-env", "--key-file", "--expected-home":
 			if i+1 >= len(args) {
 				return fmt.Errorf("%s requires a value", a)
 			}
 			i++
 			switch a {
+			case "--expected-home":
+				expectedHome = args[i]
 			case "--env-file":
 				envFile = args[i]
 			case "--key-env":
@@ -142,6 +145,11 @@ func run(args []string) error {
 		result, err := config.Probe(target)
 		if err != nil {
 			return err
+		}
+		if expectedHome != "" {
+			if err := config.ProbeHome(result, expectedHome); err != nil {
+				return err
+			}
 		}
 		if format == "version" {
 			version, err := config.ProbeVersion(result)

@@ -6,6 +6,7 @@
 
 ```bash
 envpilot self-update
+envpilot version
 envpilot config validate
 envpilot plan
 ```
@@ -34,12 +35,12 @@ git clone https://github.com/zhangyehao/envpilot.git "$HOME/envpilot" && cd "$HO
 
 ## 改用平台包升级（Linux/macOS）
 
-平台包附带匹配的配置工具。下面命令自动选择系统与架构，下载固定的 0.4.1 版本、校验 SHA-256，并解压到新的目录。它们不会覆盖旧源码目录：
+平台包附带匹配的配置工具。下面命令自动选择系统与架构，下载固定的 0.4.2 版本、校验 SHA-256，并解压到新的目录。它们不会覆盖旧源码目录：
 
 ```bash
 (
   set -eu
-  version=0.4.1
+  version=0.4.2
   case "$(uname -s)" in Linux) os=linux ;; Darwin) os=darwin ;; *) echo '请使用匹配系统的平台包'; exit 1 ;; esac
   case "$(uname -m)" in x86_64|amd64) arch=amd64 ;; aarch64|arm64) arch=arm64 ;; armv7l) arch=armv7 ;; *) echo '不支持此架构'; exit 1 ;; esac
   asset="envpilot-$version-$os-$arch.tar.gz"
@@ -61,7 +62,7 @@ git clone https://github.com/zhangyehao/envpilot.git "$HOME/envpilot" && cd "$HO
 上一步全部成功后进入解压目录；目标目录已存在时，请先检查原有内容，不要强行覆盖：
 
 ```bash
-cd "$HOME/.local/share/envpilot/releases/envpilot-0.4.1"
+cd "$HOME/.local/share/envpilot/releases/envpilot-0.4.2"
 ```
 
 ## 登记入口并应用配置

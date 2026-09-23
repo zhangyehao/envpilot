@@ -92,5 +92,6 @@ jobs:
         env:
           ENVPILOT_LANG: en
         run: |
+          ./tests/test-cli-basics.ps1
           ./tests/test-envpilot.ps1
           ./tests/test-config.ps1

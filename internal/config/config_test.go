@@ -34,9 +34,30 @@ func TestRestorePreflightPreventsPartialChanges(t *testing.T) {
 }
 
 func TestProbeVersionUsesServerVersion(t *testing.T) {
-	version, err := ProbeVersion(map[string]any{"userAgent": "envpilot/0.154.0 (Ubuntu; x86_64) (envpilot; 0.4.0)"})
-	if err != nil || version != "0.154.0" {
-		t.Fatalf("wrong server version: %s, %v", version, err)
+	for _, tc := range []struct{ agent, want string }{
+		{"envpilot/0.154.0 (Ubuntu; x86_64) (envpilot; 0.4.0)", "0.154.0"},
+		{"Codex Desktop/0.156.0 (Ubuntu 24.4.0; x86_64) unknown (envpilot; 0.4.1)", "0.156.0"},
+		{"codex-cli/0.156.0-alpha.1", "0.156.0-alpha.1"},
+		{"Codex Desktop/unknown (envpilot/0.4.1)", ""},
+		{"codex-cli/0.156.0invalid", ""},
+		{"", ""},
+	} {
+		version, err := ProbeVersion(map[string]any{"userAgent": tc.agent})
+		if version != tc.want || (err != nil) != (tc.want == "") {
+			t.Errorf("%q: version=%q, error=%v", tc.agent, version, err)
+		}
+	}
+}
+
+func TestProbeHomeRejectsUnrelatedOrMissingHome(t *testing.T) {
+	home, other := t.TempDir(), t.TempDir()
+	if err := ProbeHome(map[string]any{"codexHome": home}, home); err != nil {
+		t.Fatal(err)
+	}
+	for _, result := range []map[string]any{{"codexHome": other}, {}} {
+		if ProbeHome(result, home) == nil {
+			t.Fatalf("unverified home accepted: %v", result)
+		}
 	}
 }
 

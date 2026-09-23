@@ -16,7 +16,8 @@ cp "$binary" "$ENVPILOT_CODEX_SOURCE_BIN/codex"
 chmod 700 "$ENVPILOT_CODEX_SOURCE_BIN/codex"
 manager="$ROOT/templates/codex-remote.sh"
 external=""
-trap 'bash "$manager" stop >/dev/null 2>&1 || true; if [ -n "$external" ]; then kill "$external" 2>/dev/null || true; wait "$external" 2>/dev/null || true; fi; rm -rf "$fixture"' EXIT
+desktop_pid_file="$fixture/desktop.pid"
+trap 'bash "$manager" stop >/dev/null 2>&1 || true; for child in "$external" "$(cat "$desktop_pid_file" 2>/dev/null || true)"; do if [ -n "$child" ]; then kill "$child" 2>/dev/null || true; wait "$child" 2>/dev/null || true; fi; done; rm -rf "$fixture"' EXIT
 version="$("$ENVPILOT_CODEX_SOURCE_BIN/codex" --version | awk '{print $2}')"
 socket="$CODEX_HOME/app-server-control/app-server-control.sock"
 pid_file="$CODEX_HOME/app-server-control/envpilot-app-server.pid"
@@ -40,6 +41,34 @@ bash "$manager" ready
 test "$(cat "$pid_file")" = "$before"
 bash "$manager" restart
 test "$(cat "$pid_file")" != "$before"
+echo '[TEST] Desktop wins the spawn race; restart verifies and records the replacement'
+export ENVPILOT_TEST_REAL_NOHUP="$(command -v nohup)"
+export ENVPILOT_TEST_DESKTOP_GATE="$fixture/desktop.gate" ENVPILOT_TEST_DESKTOP_PID="$desktop_pid_file"
+mkdir -p "$fixture/shims"
+cat > "$fixture/shims/nohup" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [ -f "$ENVPILOT_TEST_DESKTOP_GATE" ]; then
+    rm "$ENVPILOT_TEST_DESKTOP_GATE"
+    CODEX_INTERNAL_ORIGINATOR_OVERRIDE='Codex Desktop' \
+        "$ENVPILOT_CODEX_RUNTIME_DIR/current/bin/codex" -c features.code_mode_host=true app-server --listen unix:// &
+    echo "$!" > "$ENVPILOT_TEST_DESKTOP_PID"
+    for ((i=0; i<100; i++)); do
+        if "$ENVPILOT_CORE" probe --socket "$CODEX_HOME/app-server-control/app-server-control.sock" >/dev/null 2>&1; then break; fi
+        sleep 0.05
+    done
+fi
+exec "$ENVPILOT_TEST_REAL_NOHUP" "$@"
+EOF
+chmod 700 "$fixture/shims/nohup"
+touch "$ENVPILOT_TEST_DESKTOP_GATE"
+before="$(cat "$pid_file")"
+PATH="$fixture/shims:$PATH" bash "$manager" restart
+test "$(cat "$pid_file")" != "$before"
+test "$(cat "$pid_file")" = "$(cat "$desktop_pid_file")"
+"$ENVPILOT_CORE" probe --socket "$socket" | grep -F 'Codex Desktop/' >/dev/null
+test "$("$ENVPILOT_CORE" probe --socket "$socket" --format version)" = "$version"
+bash "$manager" status | grep -F 'socket: READY' >/dev/null
 rm -f "$pid_file" "$pid_file.identity"
 bash "$manager" stop
 ! "$ENVPILOT_CORE" probe --socket "$socket" >/dev/null 2>&1
