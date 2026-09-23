@@ -16,6 +16,8 @@ envpilot codex remote enable
 
 请在独立终端操作。重启可能中断当前请求，持久配置、认证和 sessions 保留。控制目录不迁往临时存储；可重建的运行文件位于按用户、节点和 CODEX_HOME 区分的版本化缓存中。
 
+0.4.1 修复了 Codex 0.156.0 的 socket 识别：`app-server-control.sock` 可以是指向 `/tmp/codex-daemon-UID/...` 的符号链接，监听检查与进程归属检查均使用其实际目标。0.4.0 用户如遇到“进程存在但 socket 未就绪”，按[升级命令](UPGRADE.zh-CN.md)更新后执行 `envpilot codex remote enable`，无需先手动杀进程。旧日志中的 `unrecognized configuration settings` 是 Codex 对过时配置项的警告，不代表服务未启动；envpilot 不会自动删除用户配置。
+
 0.154.0 的原生命令为 `codex app-server daemon start/stop/restart/version`。原生启动依赖固定的 standalone 路径，因此 envpilot 会同时检查能力与安装布局；不能由原生命令启动目标缓存时，使用已校验的本地文件直接启动。
 
 ## 安装和更新
@@ -101,8 +103,10 @@ wrapper 和 remote manager 会在启动 CLI/app-server 前加载受保护的 api
 ~~~bash
 envpilot codex remote status
 ps -o pid,ppid,stat,etime,args -u "$USER" | grep -E '[c]odex|[a]pp-server'
-grep -F "$HOME/.codex/app-server-control/app-server-control.sock" /proc/net/unix 2>/dev/null || \
-    ss -xlpn | grep -F "$HOME/.codex/app-server-control/app-server-control.sock"
+socket="${CODEX_HOME:-$HOME/.codex}/app-server-control/app-server-control.sock"
+ls -l "$socket"
+target="$(readlink -f "$socket")"
+grep -F -- "$target" /proc/net/unix 2>/dev/null || ss -xlpn | grep -F -- "$target"
 tail -100 "$HOME/.codex/app-server-control/app-server.log"
 ~~~
 

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.1 - 2026-09-23
+
+### Fixed
+
+- Resolves Codex control socket symlinks when checking readiness, listener ownership and stop/restart. Codex 0.156.0's live node-local socket is no longer mistaken for a stale control socket.
+- Preserves unidentified live socket owners and removes only stale public socket aliases. Tests cover absolute/relative symlinks, missing PID records, dangling links and real Codex 0.156.0 lifecycle operations.
+- Uses the current envpilot version when installing the copied Codex configuration helper, and translates additional remote-runtime messages.
+
+### Documentation
+
+- Provides complete `git pull --ff-only`, first-clone, verified platform-package download/extraction, and command-registration steps in both upgrade guides.
+- Explains the difference between a persistent control directory and Codex's node-local socket symlink, with recovery commands for 0.4.0 users.
+
 ## 0.4.0 - 2026-09-15
 
 ### Added

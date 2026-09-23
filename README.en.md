@@ -6,6 +6,19 @@ User-space environment installation and maintenance for workstations, HPC nodes 
 
 Version 0.4.0 adds one YAML configuration, preserves existing shell profiles, verifies Codex restarts, and provides versioned recovery snapshots.
 
+**Version 0.4.1 fixes Codex 0.156.0 socket symlink detection and false readiness failures.** Update an existing checkout without cloning it again:
+
+```bash
+cd "$HOME/envpilot" && git pull --ff-only origin main
+# After the pull succeeds, refresh the command and copied Codex manager:
+bash envpilot.sh setup-command
+export PATH="$PATH:$HOME/.local/bin"
+envpilot codex remote enable
+envpilot codex remote status
+```
+
+The final two commands apply to installations using Codex remote services. See [upgrade and recovery](docs/UPGRADE.md) for complete source and platform-package commands.
+
 ## Get started
 
 Download the matching platform package from [Releases](https://github.com/zhangyehao/envpilot/releases). It includes `envpilot-core`; Go, Python and Node are not prerequisites for configuration commands. From the extracted directory:

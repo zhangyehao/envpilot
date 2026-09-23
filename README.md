@@ -6,6 +6,19 @@ envpilot 为无管理员权限的工作站、HPC 和远程 SSH 环境安装、�
 
 **0.4.0：统一 YAML 配置、保留原 profile 的 Shell 接入、可靠的 Codex 重启，以及可恢复的升级。**
 
+**0.4.1 修复 Codex 0.156.0 的 socket 符号链接识别与“未就绪”误报。** 已有 `~/envpilot` 仓库时使用下面的更新命令，不要重新克隆：
+
+```bash
+cd "$HOME/envpilot" && git pull --ff-only origin main
+# 拉取成功后刷新命令入口与已复制的 Codex 管理器：
+bash envpilot.sh setup-command
+export PATH="$PATH:$HOME/.local/bin"
+envpilot codex remote enable
+envpilot codex remote status
+```
+
+最后两条命令适用于已安装 Codex 并使用远程服务的用户。完整的源码和平台包升级命令见 [升级与恢复](docs/UPGRADE.zh-CN.md)。
+
 ## 快速开始
 
 下载 [Release](https://github.com/zhangyehao/envpilot/releases) 中对应系统和架构的平台包。平台包包含 `envpilot-core`，使用配置功能不需要预装 Go、Python 或 Node。解压后在目录内执行：

@@ -871,7 +871,8 @@ ep_codex_remote_install_manager()
     chmod 700 "$tmp"
     mv "$tmp" "$manager"
     if declare -F ep_core_path >/dev/null 2>&1; then
-        local core_target="$HOME/.local/lib/envpilot/0.4.0/envpilot-core" core_source
+        local core_target core_source
+        core_target="$HOME/.local/lib/envpilot/$(tr -d '\r\n' < "$ENVPILOT_ROOT/VERSION")/envpilot-core"
         core_source="$(ep_core_path)"
         mkdir -p "$(dirname "$core_target")"
         if [ "$core_source" != "$core_target" ]; then cp "$core_source" "$core_target.tmp"; chmod 700 "$core_target.tmp"; mv "$core_target.tmp" "$core_target"; fi

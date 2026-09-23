@@ -15,7 +15,7 @@ START_LOCK="$CONTROL_DIR/.envpilot-app-server-start.lock"
 READY_TIMEOUT="${ENVPILOT_CODEX_REMOTE_READY_TIMEOUT:-60}"
 RUNTIME_ROOT="${ENVPILOT_CODEX_RUNTIME_DIR:-}"
 QUIET="${ENVPILOT_CODEX_REMOTE_QUIET:-0}"
-CORE_BIN="${ENVPILOT_CORE:-$HOME/.local/lib/envpilot/0.4.0/envpilot-core}"
+CORE_BIN="${ENVPILOT_CORE:-$HOME/.local/lib/envpilot/0.4.1/envpilot-core}"
 SOURCE_RECORD="${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}/codex-source"
 if [ -z "${ENVPILOT_CORE:-}" ] && [ -r "${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}/core-path" ]; then
     IFS= read -r CORE_BIN < "${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}/core-path" || true
@@ -358,23 +358,34 @@ ensure_control_dir()
 socket_listener_state()
 {
     # 0 = known absent, 1 = found, 2 = cannot inspect.
-    local line
+    local resolved listing status=0
+    resolved="$(resolve_link "$SOCKET" 2>/dev/null || printf '%s' "$SOCKET")"
     if [ -r /proc/net/unix ]; then
-        if awk -v socket="$SOCKET" '$6 == "01" && $8 == socket { found = 1; exit } END { exit !found }' /proc/net/unix; then
-            return 1
-        fi
-    fi
-    if command_exists ss; then
-        line="$(ss -xlpn 2>/dev/null | grep -F "$SOCKET" | head -n 1 || true)"
-        [ -n "$line" ] && return 1
-        [ -r /proc/net/unix ] && return 0
+        [ -z "$(socket_listener_inodes)" ] || return 1
+        return 0
     fi
     if command_exists lsof; then
-        line="$(run_bounded 2 lsof -nP -U 2>/dev/null | grep -F "$SOCKET" | head -n 1 || true)"
-        [ -n "$line" ] && return 1
+        listing="$(run_bounded 2 lsof -nP -U -Fn 2>/dev/null)" || status=$?
+        [ "$status" -le 1 ] || return 2
+        if printf '%s\n' "$listing" | grep -Fx -e "n$SOCKET" -e "n$resolved" >/dev/null; then return 1; fi
         return 0
     fi
     return 2
+}
+
+socket_listener_inodes()
+{
+    # Newer Codex versions publish a persistent symlink to a node-local socket.
+    # /proc records the bound target, not the public control socket alias.
+    local resolved
+    resolved="$(resolve_link "$SOCKET" 2>/dev/null || printf '%s' "$SOCKET")"
+    awk -v socket="$SOCKET" -v resolved="$resolved" '
+        $6 == "01" {
+            path = $8
+            for (i = 9; i <= NF; i++) path = path " " $i
+            if (path == socket || path == resolved) print $7
+        }
+    ' /proc/net/unix
 }
 
 socket_ready()
@@ -400,22 +411,26 @@ process_identity()
 
 pid_owns_socket()
 {
-    local pid="$1" inode fd
+    local pid="$1" inodes inode fd target resolved
     if [ -r /proc/net/unix ]; then
-        inode="$(awk -v socket="$SOCKET" '$8 == socket && $6 == "01" {print $7;exit}' /proc/net/unix)"
-        [ -n "$inode" ] || return 1
+        inodes="$(socket_listener_inodes)"
+        [ -n "$inodes" ] || return 1
         for fd in /proc/"$pid"/fd/*; do
-            [ "$(readlink "$fd" 2>/dev/null || true)" != "socket:[$inode]" ] || return 0
+            target="$(readlink "$fd" 2>/dev/null || true)"
+            while IFS= read -r inode; do
+                [ "$target" != "socket:[$inode]" ] || return 0
+            done <<< "$inodes"
         done
         return 1
     fi
     command_exists lsof || return 1
-    run_bounded 2 lsof -nP -a -p "$pid" -U 2>/dev/null | grep -Fq -- "$SOCKET"
+    resolved="$(resolve_link "$SOCKET" 2>/dev/null || printf '%s' "$SOCKET")"
+    run_bounded 2 lsof -nP -a -p "$pid" -U -Fn 2>/dev/null | grep -Fx -e "n$SOCKET" -e "n$resolved" >/dev/null
 }
 
 pid_is_server()
 {
-    local pid="$1" args uid state home inode fd target
+    local pid="$1" args uid state home
     case "$pid" in ''|*[!0-9]*) return 1 ;; esac
     kill -0 "$pid" 2>/dev/null || return 1
     uid="$(ps -p "$pid" -o uid= 2>/dev/null | tr -d ' ')"
@@ -425,22 +440,13 @@ pid_is_server()
     args="$(ps -p "$pid" -o args= 2>/dev/null || true)"
     case "$args" in codex\ *|*/codex\ *) ;; *) return 1 ;; esac
     case "$args" in *app-server*) ;; *) return 1 ;; esac
+    pid_owns_socket "$pid" && return 0
     if [ -r /proc/net/unix ]; then
-        inode="$(awk -v socket="$SOCKET" '$8 == socket && $6 == "01" {print $7;exit}' /proc/net/unix)"
-        if [ -n "$inode" ]; then
-            for fd in /proc/"$pid"/fd/*; do
-                target="$(readlink "$fd" 2>/dev/null || true)"
-                [ "$target" != "socket:[$inode]" ] || return 0
-            done
-        fi
         # Before a new server binds, require its exact home and default endpoint.
         home="$(tr '\0' '\n' < "/proc/$pid/environ" 2>/dev/null | sed -n 's/^CODEX_HOME=//p' | head -n 1)"
         [ "$home" = "$CODEX_HOME_DIR" ] || return 1
         case "$args " in *'--listen unix:// '*) return 0 ;; esac
         return 1
-    fi
-    if command_exists lsof; then
-        lsof -nP -a -p "$pid" -U 2>/dev/null | awk -v socket="$SOCKET" '$NF == socket {found=1} END {exit !found}' && return 0
     fi
     [ "$(sed -n '1p' "$PID_FILE" 2>/dev/null)" = "$pid" ] &&
         [ "$(cat "$PID_FILE.identity" 2>/dev/null)" = "$(process_identity "$pid")" ]
@@ -651,7 +657,7 @@ start_server_locked()
         fi
         stop_server || return 1
     fi
-    if [ -S "$SOCKET" ]; then
+    if [ -S "$SOCKET" ] || [ -L "$SOCKET" ]; then
         socket_listener_state || state=$?
         if [ "$state" != 0 ]; then warn "Cannot verify the owner of the active control socket: $SOCKET"; return 1; fi
         rm -f "$SOCKET"
@@ -691,11 +697,11 @@ stop_server()
     local pid identity i=0 state=0
     pid="$(read_server_pid 2>/dev/null || true)"
     if [ -z "$pid" ]; then
-        if [ -S "$SOCKET" ]; then
+        if [ -S "$SOCKET" ] || [ -L "$SOCKET" ]; then
             socket_listener_state || state=$?
             [ "$state" = 0 ] || { warn "Control socket owner is unknown; no process was stopped."; return 1; }
         fi
-        rm -f "$PID_FILE" "$PID_FILE.identity" "$PID_FILE.signature" "$PID_FILE.host"
+        rm -f "$SOCKET" "$PID_FILE" "$PID_FILE.identity" "$PID_FILE.signature" "$PID_FILE.host" "$CONTROL_DIR/envpilot-app-server.ready"
         log "No matching Codex app-server is running."
         return 0
     fi

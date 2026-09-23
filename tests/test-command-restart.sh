@@ -67,7 +67,8 @@ EOF
 chmod 700 "$source_dir/codex"
 manager="$ROOT/templates/codex-remote.sh"
 external=""
-trap 'bash "$manager" stop >/dev/null 2>&1 || true; if [ -n "$external" ]; then kill "$external" 2>/dev/null || true; wait "$external" 2>/dev/null || true; fi; rm -rf "$fixture" "$runtime"' EXIT
+unknown=""
+trap 'bash "$manager" stop >/dev/null 2>&1 || true; for child in "$external" "$unknown"; do if [ -n "$child" ]; then kill "$child" 2>/dev/null || true; wait "$child" 2>/dev/null || true; fi; done; rm -rf "$fixture" "$runtime"' EXIT
 bash "$manager" ready
 pid_file="$CODEX_HOME/app-server-control/envpilot-app-server.pid"
 old="$(cat "$pid_file")"
@@ -127,6 +128,41 @@ if ENVPILOT_CODEX_SOURCE_BIN="$fixture/bad-source" bash "$manager" restart; then
 kill -0 "$before"
 [ "$(cat "$pid_file")" = "$before" ]
 bash "$manager" stop
+echo '[TEST] socket symlinks are resolved for readiness, ownership and lifecycle'
+for link_mode in absolute relative; do
+    export FAKE_CODEX_SOCKET_SYMLINK="$link_mode"
+    bash "$manager" ready
+    socket="$CODEX_HOME/app-server-control/app-server-control.sock"
+    test -L "$socket"
+    bash "$manager" status | grep -F 'socket: READY' >/dev/null
+    before="$(cat "$pid_file")"
+    bash "$manager" ready
+    [ "$(cat "$pid_file")" = "$before" ]
+    bash "$manager" restart
+    [ "$(cat "$pid_file")" != "$before" ]
+    # Desktop-like ownership discovery must work without envpilot's PID files.
+    rm -f "$pid_file" "$pid_file.identity"
+    bash "$manager" stop
+    test ! -L "$socket"
+    bash "$manager" ready
+    bash "$manager" stop
+    # A dangling public alias is stale; removing it must not touch its target.
+    ln -s "$fixture/missing-$link_mode" "$socket"
+    bash "$manager" ready
+    bash "$manager" stop
+done
+echo '[TEST] an unidentified live symlink socket is preserved'
+CODEX_HOME="$CODEX_HOME" "$ENVPILOT_TEST_PYTHON" "$ENVPILOT_TEST_SERVER" &
+unknown=$!
+sleep 1
+if bash "$manager" restart; then kill "$unknown"; exit 1; fi
+kill -0 "$unknown"
+test -L "$socket"
+"$ENVPILOT_CORE" probe --socket "$socket" >/dev/null
+kill "$unknown"
+wait "$unknown" 2>/dev/null || true
+unknown=""
+unset FAKE_CODEX_SOCKET_SYMLINK
 echo '[TEST] native lifecycle adapter is used when its fixed path matches the runtime'
 export FAKE_NATIVE_STATE="$fixture/native"
 mkdir -p "$CODEX_HOME/packages/standalone/current"

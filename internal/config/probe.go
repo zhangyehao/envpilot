@@ -53,7 +53,7 @@ func Probe(socket string) (map[string]any, error) {
 	if resp.Header.Get("Sec-WebSocket-Accept") != base64.StdEncoding.EncodeToString(expected[:]) {
 		return nil, fmt.Errorf("invalid WebSocket handshake")
 	}
-	payload := []byte(`{"id":1,"method":"initialize","params":{"clientInfo":{"name":"envpilot","version":"0.4.0"},"capabilities":{}}}`)
+	payload := []byte(`{"id":1,"method":"initialize","params":{"clientInfo":{"name":"envpilot","version":"0.4.1"},"capabilities":{}}}`)
 	mask := make([]byte, 4)
 	if _, err = rand.Read(mask); err != nil {
 		return nil, err

@@ -10,11 +10,19 @@ import threading
 
 path = Path(os.environ["CODEX_HOME"]) / "app-server-control/app-server-control.sock"
 path.parent.mkdir(parents=True, exist_ok=True)
-if path.exists():
+if path.exists() or path.is_symlink():
     path.unlink()
+bound_path = path
+if os.environ.get("FAKE_CODEX_SOCKET_SYMLINK"):
+    bound_path = path.parent / "node-local" / "control.sock"
+    bound_path.parent.mkdir(parents=True, exist_ok=True)
+    if bound_path.exists():
+        bound_path.unlink()
 listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-listener.bind(str(path))
+listener.bind(str(bound_path))
 listener.listen(10)
+if bound_path != path:
+    path.symlink_to(bound_path.relative_to(path.parent) if os.environ["FAKE_CODEX_SOCKET_SYMLINK"] == "relative" else bound_path)
 
 
 def handle(connection):
