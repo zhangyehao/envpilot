@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.3 - 2026-09-23
+
+### Fixed
+
+- Fixes the 0.4.0 regression that selected the standalone package root but copied only top-level files into `bin/`, omitting the code-mode host, PATH helpers and nested resources. Manifest-based packages now retain the complete tree and relative links; npm vendor trees retain sibling resources. Bare PATH directories still copy only Codex-specific files.
+- Fingerprints all package files, paths, executable modes and links. Resource-only changes invalidate the runtime, missing/corrupt cached files rebuild a generation, and invalid source packages cannot replace the previous verified runtime.
+- Adds `envpilot codex remote verify` for a read-only complete source/runtime comparison. Runtime staging records the copied layout and atomically activates only a verified generation.
+
+### Validation and documentation
+
+- Replaces the single-binary Codex CI fixture with the official complete 0.156.0 package and verifies nested assets and helper execution/linkage, alongside existing lifecycle tests.
+- Documents persistent `model_catalog_json` configuration and hidden model entries; custom model catalogs remain under CODEX_HOME rather than being copied into disposable runtime files.
+
 ## 0.4.2 - 2026-09-23
 
 ### Fixed

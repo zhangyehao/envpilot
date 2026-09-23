@@ -2,6 +2,30 @@
 
 [简体中文](CODEX.zh-CN.md)
 
+## Complete runtime packages (0.4.3)
+
+Versions 0.4.0–0.4.2 flattened selected top-level package files into `bin/`, omitting the nested code-mode host, PATH helpers and resources. Version 0.3.0 copied the selected `bin/` directory and retained sibling executables, but did not guarantee resources alongside that directory. A successful main-binary probe or app-server handshake does not establish package completeness.
+
+Version 0.4.3 reads `codex-package.json`, retains the entire package tree, permissions and internal links, and fingerprints all assets. It activates only a fully copied, verified generation. Resource-only updates and missing/corrupt cache files invalidate the cache; incomplete sources cannot replace the working generation. npm vendor packages retain their platform tree; arbitrary PATH directories are not copied wholesale.
+
+```bash
+envpilot codex remote enable
+envpilot codex remote verify  # Read-only comparison of all package assets.
+envpilot codex remote repair  # Rebuild and restart.
+```
+
+Each generation records `.runtime-manifest.json` and a full content fingerprint. User configuration, model-catalog JSON, authentication and sessions remain in persistent CODEX_HOME. File completeness and host compatibility are separate: the musl main binary may bundle helpers with newer glibc requirements (for example, zsh in 0.156.0). Do not replace system glibc to work around this.
+
+## Custom model catalogs
+
+A JSON file in CODEX_HOME is not loaded automatically. Set the actual absolute path at the top level of `config.toml`, before any `[section]`:
+
+```toml
+model_catalog_json = "/actual/home/.codex/models.json"
+```
+
+Restart the app-server after changes. Entries marked `visibility: "hide"` remain hidden by default; `model/list` with `includeHidden: true` includes them. A listed model still requires provider-side support. See the official [configuration reference](https://developers.openai.com/codex/config-reference/) and [app-server protocol](https://developers.openai.com/codex/app-server/).
+
 ```bash
 envpilot install codex
 envpilot update codex

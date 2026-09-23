@@ -42,11 +42,12 @@ jobs:
           fixture="$RUNNER_TEMP/envpilot-codex-0.156.0"
           mkdir -p "$fixture"
           curl -fsSL --connect-timeout 15 --max-time 180 --retry 3 \
-            https://github.com/openai/codex/releases/download/rust-v0.156.0/codex-x86_64-unknown-linux-musl.tar.gz \
+            https://github.com/openai/codex/releases/download/rust-v0.156.0/codex-package-x86_64-unknown-linux-musl.tar.gz \
             -o "$fixture/codex.tar.gz"
-          echo "3d49d9af25a5168cfc51e50e520ab238b23083c259ae7c14f89b007cb2545c7b  $fixture/codex.tar.gz" | sha256sum -c -
+          echo "e8b744b03adb90b296bf632c8a29167e75ea1b9d2980e49d3dfc6e84f5dba749  $fixture/codex.tar.gz" | sha256sum -c -
           tar -xzf "$fixture/codex.tar.gz" -C "$fixture"
-          bash tests/test-codex-real.sh "$fixture/codex-x86_64-unknown-linux-musl"
+          rm "$fixture/codex.tar.gz"
+          bash tests/test-codex-real.sh "$fixture"
       - name: ShellCheck
         run: |
           sudo apt-get update

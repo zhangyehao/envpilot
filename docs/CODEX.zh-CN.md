@@ -1,5 +1,33 @@
 # Codex
 
+## 完整运行包（0.4.3）
+
+0.4.0–0.4.2 的复制逻辑错误地把包根目录的顶层文件筛选后放进 `bin/`，遗漏了 `bin/codex-code-mode-host`、`codex-path/` 和 `codex-resources/`。0.3.0 整体复制选中的 `bin/`，保留同层辅助程序，但也没有保证复制包根目录的兄弟资源。启动成功和协议握手通过不代表全部组件齐全。
+
+0.4.3 根据 `codex-package.json` 识别完整包，保留目录结构、可执行权限和包内符号链接。包内全部文件（包括新增资源）参与指纹计算；只有完整复制、内容校验和版本探测成功后才切换运行目录。资源单独更新、缓存文件丢失或损坏都会触发新一代缓存；安装来源不完整时保留原运行版本。npm vendor 使用独立的平台目录；普通 PATH 目录仍不会被整体复制。
+
+```bash
+envpilot codex remote enable
+envpilot codex remote verify    # 只读：比较来源与缓存的全部文件、路径、权限和链接
+envpilot codex remote repair    # 强制重建并重启
+```
+
+每代缓存中的 `.runtime-manifest.json` 记录布局，`.source.signature` 记录完整内容指纹。自定义 `config.toml`、模型目录 JSON、认证和会话保留在持久 `CODEX_HOME`，不放进可清理的运行包。
+
+主程序采用 musl 不意味着所有附带程序都没有 glibc 要求。例如官方 0.156.0 包中的 zsh 需要较新的 glibc。完整性校验说明文件复制正确；辅助程序能否执行还取决于主机兼容性。不要为此替换系统 glibc。
+
+## 自定义模型目录
+
+把模型 JSON 文件放到 `~/.codex` 并不会自动启用它。在 `~/.codex/config.toml` 的**顶层、所有 `[section]` 之前**加入实际绝对路径：
+
+```toml
+model_catalog_json = "/实际用户目录/.codex/models.json"
+```
+
+修改后执行 `envpilot codex remote restart`。该配置在 app-server 启动时加载；目录中的 `visibility: "hide"` 条目默认仍隐藏，`model/list` 的 `includeHidden: true` 才会返回它们。文件内容是否包含某模型、服务是否加载该文件、客户端是否显示隐藏模型，是三个不同检查点。模型出现在目录中也不代表上游供应商一定允许调用。
+
+配置依据：[Codex 配置参考](https://developers.openai.com/codex/config-reference/)；列表接口依据：[app-server 文档](https://developers.openai.com/codex/app-server/)。
+
 ## 服务管理（0.4.0）
 
 ```bash

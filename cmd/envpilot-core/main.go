@@ -13,7 +13,7 @@ import (
 	"github.com/zhangyehao/envpilot/internal/config"
 )
 
-var version = "0.4.2"
+var version = "0.4.3"
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
@@ -30,6 +30,7 @@ func run(args []string) error {
 	path, lang, format, root, kind, target := "", "", "json", "", "bash", ""
 	envFile, keyEnv, keyFile := "", "", ""
 	expectedHome := ""
+	runtimeSource, stageMode := "", "0"
 	checkOnly := false
 	stream := false
 	rest := []string{}
@@ -46,12 +47,16 @@ func run(args []string) error {
 			break
 		}
 		switch a {
-		case "--config", "--lang", "--format", "--root", "--shell", "--target", "--socket", "--env-file", "--key-env", "--key-file", "--expected-home":
+		case "--config", "--lang", "--format", "--root", "--shell", "--target", "--socket", "--env-file", "--key-env", "--key-file", "--expected-home", "--source", "--stage-mode":
 			if i+1 >= len(args) {
 				return fmt.Errorf("%s requires a value", a)
 			}
 			i++
 			switch a {
+			case "--source":
+				runtimeSource = args[i]
+			case "--stage-mode":
+				stageMode = args[i]
 			case "--expected-home":
 				expectedHome = args[i]
 			case "--env-file":
@@ -163,6 +168,23 @@ func run(args []string) error {
 			fmt.Println(string(b))
 		}
 		return err
+	}
+	if cmd == "runtime-metadata" {
+		value, err := config.RuntimeMetadata(runtimeSource)
+		if err == nil {
+			fmt.Println(value)
+		}
+		return err
+	}
+	if cmd == "runtime-stage" {
+		value, err := config.StageRuntime(runtimeSource, target, stageMode)
+		if err == nil && value != "" {
+			fmt.Println(value)
+		}
+		return err
+	}
+	if cmd == "runtime-verify" {
+		return config.VerifyRuntime(runtimeSource, target)
 	}
 
 	if cmd == "init" {

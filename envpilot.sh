@@ -45,7 +45,7 @@ envpilot — 用户态环境安装与维护
   envpilot apply-shell                  接入 Shell，保留原 profile
   envpilot shell remove                 移除受管加载块
   envpilot run -- 命令 参数              在选定环境中运行子进程
-  envpilot codex remote status|enable|ready|restart|stop|repair|disable
+  envpilot codex remote status|enable|verify|ready|restart|stop|repair|disable
   envpilot mihomo start|stop|status|ports|update-subscription
   envpilot self-update                  更新 envpilot 和受管脚本
 
@@ -82,7 +82,7 @@ Usage:
   envpilot restore            Restore a managed-file snapshot, with legacy baseline support.
   envpilot mihomo [start|stop|status|port PORT|ports PROXY_PORT API_PORT|update-subscription [URL]]
                                       Manage Mihomo, its two local ports, and subscription config.
-  envpilot codex remote [status|enable|stage|ready|warm|restart|stop|repair|disable]
+  envpilot codex remote [status|enable|stage|verify|ready|warm|restart|stop|repair|disable]
                                       Stage Codex on node-local storage and manage app-server warmup.
   envpilot resume             Continue an interrupted install using saved state.
   envpilot reset              Clear saved state so install steps can run again.

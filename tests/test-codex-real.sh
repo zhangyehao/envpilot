@@ -2,7 +2,7 @@
 # Opt-in integration with a real Codex binary; no provider requests or user state.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-binary="${1:?usage: test-codex-real.sh /absolute/path/to/codex}"
+binary="${1:?usage: test-codex-real.sh /absolute/path/to/package-or-codex}"
 fixture="$(mktemp -d /tmp/ep-real.XXXXXX)"
 export HOME="$fixture/home" CODEX_HOME="$fixture/home/.codex"
 export XDG_CONFIG_HOME="$fixture/config" XDG_STATE_HOME="$fixture/state" XDG_RUNTIME_DIR="$fixture/runtime"
@@ -12,7 +12,12 @@ export ENVPILOT_CONFIG_DIR="$fixture/envpilot" ENVPILOT_LANG=en ENVPILOT_CODEX_L
 unset OPENAI_API_KEY OPENAI_BASE_URL
 mkdir -p "$CODEX_HOME" "$ENVPILOT_CODEX_SOURCE_BIN" "$XDG_RUNTIME_DIR"
 chmod 700 "$XDG_RUNTIME_DIR"
-cp "$binary" "$ENVPILOT_CODEX_SOURCE_BIN/codex"
+if [ -d "$binary" ]; then
+    cp -a "$binary/." "$ENVPILOT_CODEX_SOURCE_BIN/"
+    [ -e "$ENVPILOT_CODEX_SOURCE_BIN/codex" ] || ln -s bin/codex "$ENVPILOT_CODEX_SOURCE_BIN/codex"
+else
+    cp "$binary" "$ENVPILOT_CODEX_SOURCE_BIN/codex"
+fi
 chmod 700 "$ENVPILOT_CODEX_SOURCE_BIN/codex"
 manager="$ROOT/templates/codex-remote.sh"
 external=""
@@ -36,6 +41,18 @@ wait "$external" 2>/dev/null || true
 external=""
 bash "$manager" status | grep -F 'socket: READY' >/dev/null
 test "$("$ENVPILOT_CORE" probe --socket "$socket" --format version)" = "$version"
+if [ -f "$ENVPILOT_CODEX_SOURCE_BIN/codex-package.json" ]; then
+    echo '[TEST] complete package, nested resources and real helper executables'
+    "$ENVPILOT_CORE" runtime-verify --source "$ENVPILOT_CODEX_SOURCE_BIN" --target "$ENVPILOT_CODEX_RUNTIME_DIR/current"
+    "$ENVPILOT_CODEX_RUNTIME_DIR/current/bin/codex-code-mode-host" --help >/dev/null
+    "$ENVPILOT_CODEX_RUNTIME_DIR/current/codex-path/rg" --version >/dev/null
+    "$ENVPILOT_CODEX_RUNTIME_DIR/current/codex-resources/bwrap" --version >/dev/null
+    "$ENVPILOT_CODEX_RUNTIME_DIR/current/codex-resources/zsh/bin/zsh" --version >/dev/null
+    # Voice host is an IPC worker, not a CLI with --help. Verify its packaged
+    # dynamic dependencies instead of assuming a command-line interface.
+    ldd "$ENVPILOT_CODEX_RUNTIME_DIR/current/codex-resources/voice/bin/codex-voice-host" > "$fixture/voice-libraries"
+    if grep -F 'not found' "$fixture/voice-libraries"; then exit 1; fi
+fi
 before="$(cat "$pid_file")"
 bash "$manager" ready
 test "$(cat "$pid_file")" = "$before"

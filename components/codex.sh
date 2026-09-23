@@ -987,15 +987,16 @@ ep_codex_remote_cli()
         remote:enable) ep_codex_remote_enable ;;
         remote:status|remote:) ep_codex_remote_invoke status ;;
         remote:stage|remote:prepare) ep_codex_remote_invoke stage ;;
+        remote:verify) ep_codex_remote_invoke verify ;;
         remote:ready|remote:warm) ep_codex_remote_invoke ready ;;
         remote:stop) ep_codex_remote_invoke stop ;;
         remote:restart) ep_codex_remote_invoke restart ;;
         remote:repair) ep_codex_remote_invoke repair ;;
         remote:disable) ep_codex_remote_disable ;;
-        status:*|stage:*|prepare:*|ready:*|warm:*|restart:*|stop:*|repair:*)
+        status:*|stage:*|prepare:*|verify:*|ready:*|warm:*|restart:*|stop:*|repair:*)
             ep_codex_remote_invoke "$action" ;;
         disable:*) ep_codex_remote_disable ;;
-        *) ep_die "Usage: envpilot codex remote {status|enable|stage|ready|warm|restart|stop|repair|disable}" ;;
+        *) ep_die "Usage: envpilot codex remote {status|enable|stage|verify|ready|warm|restart|stop|repair|disable}" ;;
     esac
 }
 

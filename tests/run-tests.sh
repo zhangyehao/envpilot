@@ -136,7 +136,7 @@ grep -q 'BASHRC_INIT_CONDA.*0' "$ROOT/templates/shell.local.example"
 ! grep -q 'conda.sh not found' "$ROOT/templates/bashrc"
 grep -q '"shell_template_init": true' "$ROOT/manifests/conda.json"
 grep -q '"shell_template_init_scope": "interactive_tty_only"' "$ROOT/manifests/conda.json"
-grep -q 'Staging Codex runtime' "$ROOT/templates/codex-remote.sh"
+# Runtime completeness is checked by Go inventory tests and the full-package fixture.
 grep -q 'app-server --listen unix://' "$ROOT/templates/codex-remote.sh"
 grep -q 'load_codex_environment' "$ROOT/templates/codex-remote.sh"
 grep -qi 'control directory must stay on persistent storage' "$ROOT/templates/codex-remote.sh"

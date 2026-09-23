@@ -15,7 +15,7 @@ START_LOCK="$CONTROL_DIR/.envpilot-app-server-start.lock"
 READY_TIMEOUT="${ENVPILOT_CODEX_REMOTE_READY_TIMEOUT:-60}"
 RUNTIME_ROOT="${ENVPILOT_CODEX_RUNTIME_DIR:-}"
 QUIET="${ENVPILOT_CODEX_REMOTE_QUIET:-0}"
-CORE_BIN="${ENVPILOT_CORE:-$HOME/.local/lib/envpilot/0.4.2/envpilot-core}"
+CORE_BIN="${ENVPILOT_CORE:-$HOME/.local/lib/envpilot/0.4.3/envpilot-core}"
 SOURCE_RECORD="${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}/codex-source"
 if [ -z "${ENVPILOT_CORE:-}" ] && [ -r "${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}/core-path" ]; then
     IFS= read -r CORE_BIN < "${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}/core-path" || true
@@ -109,7 +109,12 @@ load_codex_environment()
         key_env="${ENVPILOT_API_KEY_ENV:-}"
         key_file="${ENVPILOT_API_KEY_FILE:-}"
     fi
-    __envpilot_exec_args=("$CORE_BIN" exec-with-env --env-file "$safe_file" --key-env "$key_env" --key-file "$key_file" --target "$(local_bin)")
+    local runtime_path runtime_base
+    runtime_base="$(resolve_link "$(local_current_dir)")"
+    for runtime_path in "$runtime_base/path" "$runtime_base/codex-path"; do
+        if [ -d "$runtime_path" ]; then export PATH="$runtime_path:$PATH"; fi
+    done
+    __envpilot_exec_args=("$CORE_BIN" exec-with-env --env-file "$safe_file" --key-env "$key_env" --key-file "$key_file" --target "$runtime_base/bin/codex")
 }
 
 validate_runtime_root()
@@ -129,8 +134,11 @@ validate_runtime_root()
 
 ensure_runtime_root()
 {
+    local owner
     validate_runtime_root
     mkdir -p "$RUNTIME_ROOT"
+    owner="$(stat -c '%u' "$RUNTIME_ROOT" 2>/dev/null || stat -f '%u' "$RUNTIME_ROOT")"
+    [ "$owner" = "$(id -u)" ] || die "Codex runtime directory belongs to another user: $RUNTIME_ROOT"
     RUNTIME_ROOT="$(cd -P "$RUNTIME_ROOT" && pwd)"
     validate_runtime_root
     chmod 700 "$RUNTIME_ROOT" 2>/dev/null || true
@@ -196,6 +204,9 @@ source_bin()
     if [ -n "${ENVPILOT_CODEX_SOURCE_BIN:-}" ]; then
         candidate="$ENVPILOT_CODEX_SOURCE_BIN/codex"
         [ -x "$candidate" ] && printf '%s' "$ENVPILOT_CODEX_SOURCE_BIN" && return 0
+        if [ -f "$ENVPILOT_CODEX_SOURCE_BIN/codex-package.json" ] && [ -x "$ENVPILOT_CODEX_SOURCE_BIN/bin/codex" ]; then
+            printf '%s' "$ENVPILOT_CODEX_SOURCE_BIN/bin"; return 0
+        fi
     fi
 
     candidate="$CODEX_HOME_DIR/packages/standalone/current/bin/codex"
@@ -247,35 +258,9 @@ source_bin()
     return 1
 }
 
-runtime_files()
-{
-    local source="$1" file
-    for file in "$source"/codex "$source"/codex-* "$source"/rg "$source"/bwrap; do
-        [ -f "$file" ] && printf '%s\n' "$file"
-    done
-}
-
 source_metadata()
 {
-    local file
-    while IFS= read -r file; do
-        resolve_link "$file"
-        stat -Lc '%s|%y|%z|%i' "$file" 2>/dev/null || stat -Lf '%z|%m|%c|%i' "$file"
-    done < <(runtime_files "$1")
-}
-
-source_signature()
-{
-    local bin="$1" file
-    [ -x "$bin/codex" ] || return 1
-    while IFS= read -r file; do
-        printf '%s|' "$(basename "$file")"
-        if command_exists sha256sum; then sha256sum "$file" | awk '{print $1}'
-        else shasum -a 256 "$file" | awk '{print $1}'; fi
-    done < <(runtime_files "$bin") | {
-        if command_exists sha256sum; then sha256sum | awk '{print $1}'
-        else shasum -a 256 | awk '{print $1}'; fi
-    }
+    "$CORE_BIN" runtime-metadata --source "$1"
 }
 
 kill_process_tree()
@@ -480,7 +465,7 @@ find_existing_server_pid()
     while IFS= read -r pid; do
         pid="$(printf '%s' "$pid" | tr -d ' ')"
         pid_is_server "$pid" && { printf '%s' "$pid"; return 0; }
-    done < <(ps -u "$(id -u)" -o pid= 2>/dev/null)
+    done < <(ps -u "$(id -u)" -o pid=,args= 2>/dev/null | awk '/codex/ && /app-server/ {print $1}')
     return 1
 }
 
@@ -589,65 +574,14 @@ release_stage_lock()
 
 stage_runtime()
 (
-    local force="${1:-0}" source signature current staged generation file metadata needs_copy=0 probe
+    local force="${1:-0}" source staged
     ensure_runtime_root
     acquire_stage_lock
     trap release_stage_lock EXIT
     source="$(source_bin 2>/dev/null || true)"
     [ -n "$source" ] || die "Persistent Codex source is unavailable; refusing to silently reuse an unverified cache."
-    metadata="$(source_metadata "$source")"
-    if [ "$force" = 0 ] && [ -s "$RUNTIME_ROOT/.source-digest" ] && [ "$metadata" = "$(cat "$RUNTIME_ROOT/.source-metadata" 2>/dev/null || true)" ]; then
-        signature="$(cat "$RUNTIME_ROOT/.source-digest" 2>/dev/null || true)"
-    else
-        signature="$(source_signature "$source")"
-    fi
-    [ -n "$signature" ] || die "Could not fingerprint the Codex source."
-    case "$signature" in *[!0-9a-f]*|'') die 'Invalid runtime digest.' ;; esac
-    [ "${#signature}" = 64 ] || die 'Invalid runtime digest.'
-    current="$(local_current_dir)"
-    generation="$RUNTIME_ROOT/releases/$signature"
-    if [ -r "$current/.source.signature" ] && [ "$(cat "$current/.source.signature")" = "$signature" ]; then
-        generation="$(resolve_link "$current")"
-    fi
-    if [ "$force" = 1 ] || [ ! -x "$generation/bin/codex" ]; then
-        needs_copy=1
-    elif [ "$(source_metadata "$generation/bin")" != "$(cat "$generation/.runtime-metadata" 2>/dev/null || true)" ]; then
-        needs_copy=1
-    elif [ "$force" != 0 ] && [ "$(source_signature "$generation/bin")" != "$signature" ]; then
-        needs_copy=1
-    fi
-    if [ "$needs_copy" = 1 ]; then
-        staged="$(mktemp -d "$RUNTIME_ROOT/.staging.XXXXXX")"
-        mkdir -p "$staged/bin"
-        log "Staging Codex runtime from $source to $generation"
-        while IFS= read -r file; do cp -pL "$file" "$staged/bin/"; done < <(runtime_files "$source")
-        [ -x "$staged/bin/codex" ] || die "Staged runtime has no executable codex."
-        if [ "$(source_signature "$staged/bin")" != "$signature" ] || [ "$(source_metadata "$source")" != "$metadata" ]; then
-            rm -rf "$staged"
-            die "Codex source changed while staging; retry after the installer finishes."
-        fi
-        if ! probe="$(run_bounded 5 "$staged/bin/codex" --version 2>&1)" || ! printf '%s\n' "$probe" | grep -q '^codex-cli '; then
-            rm -rf "$staged"
-            die 'The staged Codex executable failed its version probe; the running server was preserved.'
-        fi
-        printf '%s\n' "$probe" | awk '/^codex-cli / {print $2;exit}' > "$staged/.version"
-        printf '%s\n' "$signature" > "$staged/.source.signature"
-        mkdir -p "$RUNTIME_ROOT/releases"
-        if [ -d "$generation" ]; then generation="$generation-repair-$$"; fi
-        mv "$staged" "$generation"
-        source_metadata "$generation/bin" > "$generation/.runtime-metadata"
-    fi
-    if [ -d "$current" ] && [ ! -L "$current" ]; then mv "$current" "$RUNTIME_ROOT/releases/legacy-$(date +%s)-$$"; fi
-    ln -s "$generation" "$RUNTIME_ROOT/.current.$$"
-    # mv must replace the symlink itself, not move into its target directory.
-    if [ -L "$current" ]; then
-        if [ "$(uname -s)" = Darwin ]; then mv -fh "$RUNTIME_ROOT/.current.$$" "$current"
-        else mv -fT "$RUNTIME_ROOT/.current.$$" "$current"; fi
-    else mv "$RUNTIME_ROOT/.current.$$" "$current"; fi
-    printf '%s\n' "$metadata" > "$RUNTIME_ROOT/.source-metadata.tmp.$$"
-    printf '%s\n' "$signature" > "$RUNTIME_ROOT/.source-digest.tmp.$$"
-    mv "$RUNTIME_ROOT/.source-metadata.tmp.$$" "$RUNTIME_ROOT/.source-metadata"
-    mv "$RUNTIME_ROOT/.source-digest.tmp.$$" "$RUNTIME_ROOT/.source-digest"
+    staged="$("$CORE_BIN" runtime-stage --source "$source" --target "$RUNTIME_ROOT" --stage-mode "$force")" || return 1
+    [ -z "$staged" ] || log "Staged complete Codex runtime: $staged"
 )
 
 wait_for_socket()
@@ -936,6 +870,11 @@ case "$action" in
     stage|prepare)
         stage_runtime 0
         ;;
+    verify)
+        source="$(source_bin)"
+        "$CORE_BIN" runtime-verify --source "$source" --target "$(local_current_dir)"
+        log "Codex runtime matches the complete source package."
+        ;;
     warm|ready)
         start_server
         ;;
@@ -962,7 +901,7 @@ case "$action" in
         ;;
     help|-h|--help)
         cat <<'EOF'
-Usage: codex-remote {status|stage|ready|warm|restart|stop|repair|exec [ARGS...]}
+Usage: codex-remote {status|stage|verify|ready|warm|restart|stop|repair|exec [ARGS...]}
 EOF
         ;;
     *)
