@@ -16,7 +16,15 @@ envpilot codex remote repair  # Rebuild and restart.
 
 Each generation records `.runtime-manifest.json` and a full content fingerprint. User configuration, model-catalog JSON, authentication and sessions remain in persistent CODEX_HOME. File completeness and host compatibility are separate: the musl main binary may bundle helpers with newer glibc requirements (for example, zsh in 0.156.0). Do not replace system glibc to work around this.
 
-## Custom model catalogs
+## Model discovery and refresh
+
+Leave `model_catalog_json` unset by default. Codex and the selected provider should own model discovery; downloaded caches and bundled metadata are fallbacks, not a reason to fabricate model capabilities to fill the picker.
+
+In Codex 0.156.0, API-key discovery is gated by `features.api_key_model_discovery` (disabled by default). Custom providers also need a Codex-native catalog endpoint configured as `model_providers.<id>.model_catalog_url`. A standard OpenAI-compatible `/v1/models` response containing IDs is not interchangeable with the rich Codex catalog. Verify provider routing, authentication, response format and cache state before claiming upstream refresh works.
+
+## Optional: fixed custom model catalogs
+
+Use this only when the user explicitly wants a local, static catalog. It replaces dynamic discovery and is not a solution for automatic upstream refresh. envpilot does not create or enable this override by default.
 
 A JSON file in CODEX_HOME is not loaded automatically. Set the actual absolute path at the top level of `config.toml`, before any `[section]`:
 

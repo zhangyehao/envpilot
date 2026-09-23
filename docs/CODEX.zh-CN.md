@@ -16,7 +16,15 @@ envpilot codex remote repair    # 强制重建并重启
 
 主程序采用 musl 不意味着所有附带程序都没有 glibc 要求。例如官方 0.156.0 包中的 zsh 需要较新的 glibc。完整性校验说明文件复制正确；辅助程序能否执行还取决于主机兼容性。不要为此替换系统 glibc。
 
-## 自定义模型目录
+## 模型发现与刷新
+
+默认不设置 `model_catalog_json`。模型发现应交给 Codex 和所选供应商；下载缓存或 Codex 内置目录是网络发现的回退，不应为了补齐下拉列表而手工伪造模型能力数据。
+
+Codex 0.156.0 的 API-key 模型发现受 `features.api_key_model_discovery` 开关控制（该版本默认关闭），自定义供应商还需要支持 Codex 原生模型目录并配置 `model_providers.<id>.model_catalog_url`。普通 OpenAI 兼容 `/v1/models` 通常只返回 ID，不能直接代替包含上下文长度、推理选项等信息的 Codex 原生目录。是否能从上游更新，需要核对所选供应商、认证方式、接口格式及缓存状态，不能仅以模型数量判断。
+
+## 可选：固定的自定义模型目录
+
+以下配置只用于用户明确选择本地固定目录的情况；它会切换到静态目录，不能作为自动上游刷新的解决方案。envpilot 默认不创建、不启用此引用。
 
 把模型 JSON 文件放到 `~/.codex` 并不会自动启用它。在 `~/.codex/config.toml` 的**顶层、所有 `[section]` 之前**加入实际绝对路径：
 
