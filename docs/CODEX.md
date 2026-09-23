@@ -20,6 +20,8 @@ Each generation records `.runtime-manifest.json` and a full content fingerprint.
 
 Leave `model_catalog_json` unset by default. Codex and the selected provider should own model discovery; downloaded caches and bundled metadata are fallbacks, not a reason to fabricate model capabilities to fill the picker.
 
+The bundled catalog is compiled into the Codex executable; updating Codex refreshes it. Run `envpilot update codex`, then check `codex --version`. A previously running target service is restarted using the updated complete runtime. Deleting caches or restarting the old executable does not change its bundled catalog. For example, the official 0.156.1 update adds GPT-6 Sol/Luna without a local catalog override.
+
 In Codex 0.156.0, API-key discovery is gated by `features.api_key_model_discovery` (disabled by default). Custom providers also need a Codex-native catalog endpoint configured as `model_providers.<id>.model_catalog_url`. A standard OpenAI-compatible `/v1/models` response containing IDs is not interchangeable with the rich Codex catalog. Verify provider routing, authentication, response format and cache state before claiming upstream refresh works.
 
 ## Optional: fixed custom model catalogs

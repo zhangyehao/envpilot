@@ -20,6 +20,8 @@ envpilot codex remote repair    # 强制重建并重启
 
 默认不设置 `model_catalog_json`。模型发现应交给 Codex 和所选供应商；下载缓存或 Codex 内置目录是网络发现的回退，不应为了补齐下拉列表而手工伪造模型能力数据。
 
+内置目录编译在 Codex 可执行文件中，不能单独在线刷新；升级 Codex 才会更新这份目录。执行 `envpilot update codex`，再用 `codex --version` 检查版本。目标服务此前运行时，envpilot 会切换完整运行包并重启 app-server。删除缓存或仅重启旧版本不会改变其内置目录。例如 0.156.1 的官方更新新增了 GPT-6 Sol/Luna，无需设置本地目录覆盖。
+
 Codex 0.156.0 的 API-key 模型发现受 `features.api_key_model_discovery` 开关控制（该版本默认关闭），自定义供应商还需要支持 Codex 原生模型目录并配置 `model_providers.<id>.model_catalog_url`。普通 OpenAI 兼容 `/v1/models` 通常只返回 ID，不能直接代替包含上下文长度、推理选项等信息的 Codex 原生目录。是否能从上游更新，需要核对所选供应商、认证方式、接口格式及缓存状态，不能仅以模型数量判断。
 
 ## 可选：固定的自定义模型目录
