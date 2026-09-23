@@ -38,7 +38,9 @@ func TestRuntimePackagePreservesEveryNestedComponent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if layout.Kind != "package" || layout.Root != source {
+	wantRoot, wantErr := os.Stat(source)
+	actualRoot, actualErr := os.Stat(layout.Root)
+	if layout.Kind != "package" || wantErr != nil || actualErr != nil || !os.SameFile(wantRoot, actualRoot) {
 		t.Fatalf("wrong package root: %+v", layout)
 	}
 	dest := t.TempDir()
@@ -74,7 +76,7 @@ func TestRuntimePackageLinksCannotEscapeSource(t *testing.T) {
 	if err = copyRuntime(layout, dest); err != nil {
 		t.Fatal(err)
 	}
-	if link, err := os.Readlink(filepath.Join(dest, "codex")); err != nil || link != "bin/codex" {
+	if link, err := os.Readlink(filepath.Join(dest, "codex")); err != nil || filepath.ToSlash(link) != "bin/codex" {
 		t.Fatalf("entry link was flattened: %q %v", link, err)
 	}
 	outside := filepath.Join(t.TempDir(), "private")

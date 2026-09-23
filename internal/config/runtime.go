@@ -132,6 +132,7 @@ func discoverRuntime(source string) (runtimeLayout, error) {
 			switch {
 			case d.Type()&os.ModeSymlink != 0:
 				e.Kind = "link"
+				e.Mode = 0 // Link permissions vary by OS and do not govern target access.
 				target, err := filepath.EvalSymlinks(current)
 				if err != nil {
 					return fmt.Errorf("invalid package link %s: %w", e.Path, err)
@@ -169,7 +170,7 @@ func discoverRuntime(source string) (runtimeLayout, error) {
 			if _, err = os.Lstat(filepath.Join(layout.Root, "bin")); !os.IsNotExist(err) {
 				return layout, fmt.Errorf("ambiguous npm Codex bin layout")
 			}
-			layout.Entries = append(layout.Entries, runtimeEntry{Path: "bin", Kind: "dir", Mode: 0755}, runtimeEntry{Path: "bin/codex", Kind: "link", Mode: 0777, Link: "../codex/codex"})
+			layout.Entries = append(layout.Entries, runtimeEntry{Path: "bin", Kind: "dir", Mode: 0755}, runtimeEntry{Path: "bin/codex", Kind: "link", Link: "../codex/codex"})
 		}
 	} else {
 		// A bare PATH directory is not a package: never copy unrelated programs.
@@ -237,7 +238,7 @@ func runtimeFingerprint(layout runtimeLayout, target string, content bool) (stri
 		} else if !info.Mode().IsRegular() {
 			kind = "special"
 		}
-		if kind != entry.Kind || (goruntime.GOOS != "windows" && info.Mode().Perm() != entry.Mode) {
+		if kind != entry.Kind || (kind != "link" && goruntime.GOOS != "windows" && info.Mode().Perm() != entry.Mode) {
 			return "", fmt.Errorf("Codex runtime type or permissions mismatch: %s", entry.Path)
 		}
 		if kind == "link" && target != "" {
@@ -401,8 +402,21 @@ func StageRuntime(source, root, mode string) (string, error) {
 	if withinRuntime(layout.Root, root) {
 		return "", fmt.Errorf("runtime cache must not be inside the source package")
 	}
+	if info, e := os.Lstat(root); e == nil && (!info.IsDir() || info.Mode()&os.ModeSymlink != 0) {
+		return "", fmt.Errorf("unsafe runtime directory: %s", root)
+	}
+	if err = os.MkdirAll(root, 0700); err != nil {
+		return "", err
+	}
+	root, err = filepath.EvalSymlinks(root)
+	if err != nil {
+		return "", err
+	}
+	if withinRuntime(layout.Root, root) {
+		return "", fmt.Errorf("runtime cache must not be inside the source package")
+	}
 	releases := filepath.Join(root, "releases")
-	for _, dir := range []string{root, releases} {
+	for _, dir := range []string{releases} {
 		if st, e := os.Lstat(dir); e == nil && (!st.IsDir() || st.Mode()&os.ModeSymlink != 0) {
 			return "", fmt.Errorf("unsafe runtime directory: %s", dir)
 		}
