@@ -44,7 +44,7 @@ This downloads the fixed 0.4.1 release for your OS and architecture, verifies SH
   case "$(uname -m)" in x86_64|amd64) arch=amd64 ;; aarch64|arm64) arch=arm64 ;; armv7l) arch=armv7 ;; *) echo 'Unsupported architecture'; exit 1 ;; esac
   asset="envpilot-$version-$os-$arch.tar.gz"
   base="https://github.com/zhangyehao/envpilot/releases/download/v$version"
-  # Gitee: base="https://gitee.com/zhangyehao0422/envpilot/releases/download/v$version"
+  # Only with a complete Gitee release: base="https://gitee.com/zhangyehao0422/envpilot/releases/download/v$version"
   mkdir -p "$HOME/Downloads/envpilot-$version"
   cd "$HOME/Downloads/envpilot-$version"
   curl -fL --retry 3 "$base/$asset" -o "$asset"

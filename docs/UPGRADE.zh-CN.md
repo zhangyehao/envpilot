@@ -44,7 +44,7 @@ git clone https://github.com/zhangyehao/envpilot.git "$HOME/envpilot" && cd "$HO
   case "$(uname -m)" in x86_64|amd64) arch=amd64 ;; aarch64|arm64) arch=arm64 ;; armv7l) arch=armv7 ;; *) echo '不支持此架构'; exit 1 ;; esac
   asset="envpilot-$version-$os-$arch.tar.gz"
   base="https://github.com/zhangyehao/envpilot/releases/download/v$version"
-  # Gitee 下载源可改成：base="https://gitee.com/zhangyehao0422/envpilot/releases/download/v$version"
+  # 仅当 Gitee 对应版本附件已齐全时改用：base="https://gitee.com/zhangyehao0422/envpilot/releases/download/v$version"
   mkdir -p "$HOME/Downloads/envpilot-$version"
   cd "$HOME/Downloads/envpilot-$version"
   curl -fL --retry 3 "$base/$asset" -o "$asset"
