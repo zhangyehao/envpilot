@@ -26,11 +26,11 @@
     "write_auth_json": false
   },
   "latest": {
-    "version": "0.154.0",
-    "published_at": "2026-09-09T22:40:10.746Z",
-    "checked_at": "2026-09-15T11:19:50Z",
-    "tarball": "https://registry.npmjs.org/@openai/codex/-/codex-0.154.0.tgz",
-    "integrity": "sha512-FV/x1OHXYv/ifjf3mXj9ThTTAWcUZN6cGIRQRhRxkKNOPuImu1WW0c8ev1vUkE9XGH90dEnYG1tBjIkxRikg0w==",
-    "shasum": "eb1ec011cca427c606ef6cd4814014e59a1c3d70"
+    "version": "0.158.0",
+    "published_at": "2026-09-28T05:12:20.266Z",
+    "checked_at": "2026-09-28T09:46:20Z",
+    "tarball": "https://registry.npmjs.org/@openai/codex/-/codex-0.158.0.tgz",
+    "integrity": "sha512-GBhcKpQmVLsCtEP5mUf6WFye6QQgTKotwsXrYPM0GFmEsoOSahik6hkf2FHabX9kZBl0Y0/PQowLu7uYMKT8dg==",
+    "shasum": "494b272acab9e14efd7e2fc9e61ed1e04046fb6c"
   }
 }

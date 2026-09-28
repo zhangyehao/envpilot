@@ -28,43 +28,43 @@
     }
   ],
   "latest": {
-    "version": "20260901",
-    "name": "20260901",
-    "published_at": "2026-09-01T17:48:48Z",
-    "html_url": "https://github.com/astral-sh/python-build-standalone/releases/tag/20260901",
-    "checked_at": "2026-09-15T11:19:52Z",
+    "version": "20260924",
+    "name": "20260924",
+    "published_at": "2026-09-24T19:19:40Z",
+    "html_url": "https://github.com/astral-sh/python-build-standalone/releases/tag/20260924",
+    "checked_at": "2026-09-28T09:46:21Z",
     "assets": {
       "linux-amd64": {
-        "name": "cpython-3.10.21+20260901-x86_64-unknown-linux-gnu-install_only.tar.gz",
-        "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20260901/cpython-3.10.21%2B20260901-x86_64-unknown-linux-gnu-install_only.tar.gz",
-        "size": 43730914,
-        "digest": "sha256:73cc92db5e6fb07ba611dca3709956d57cc2ed74ebcc01515b550ea89dfe9cba",
+        "name": "cpython-3.10.21+20260924-x86_64-unknown-linux-gnu-install_only.tar.gz",
+        "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20260924/cpython-3.10.21%2B20260924-x86_64-unknown-linux-gnu-install_only.tar.gz",
+        "size": 43782696,
+        "digest": "sha256:7e80168bf45472a17da889caa06519024e8589d51656b73cfa6f38cb2236a233",
         "content_type": "application/octet-stream",
-        "updated_at": "2026-09-01T17:45:26Z"
+        "updated_at": "2026-09-24T19:16:36Z"
       },
       "linux-arm64": {
-        "name": "cpython-3.10.21+20260901-aarch64-unknown-linux-gnu-install_only.tar.gz",
-        "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20260901/cpython-3.10.21%2B20260901-aarch64-unknown-linux-gnu-install_only.tar.gz",
-        "size": 43919661,
-        "digest": "sha256:bd9ebd39612e1ae9388983c4b89cad2c5b95a5b4eccd0f26288a4ab6a91dd50a",
+        "name": "cpython-3.10.21+20260924-aarch64-unknown-linux-gnu-install_only.tar.gz",
+        "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20260924/cpython-3.10.21%2B20260924-aarch64-unknown-linux-gnu-install_only.tar.gz",
+        "size": 43926859,
+        "digest": "sha256:caafe6f9e2a904874c20a8a942414e05e01d46937311d02ef55614365ba34e19",
         "content_type": "application/octet-stream",
-        "updated_at": "2026-09-01T17:45:19Z"
+        "updated_at": "2026-09-24T19:16:28Z"
       },
       "darwin-amd64": {
-        "name": "cpython-3.10.21+20260901-x86_64-apple-darwin-install_only.tar.gz",
-        "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20260901/cpython-3.10.21%2B20260901-x86_64-apple-darwin-install_only.tar.gz",
-        "size": 25535556,
-        "digest": "sha256:e22c8cd258c12d264261104ae8ea5ce1b8e2c5efde074e36f01b7c299c17e221",
+        "name": "cpython-3.10.21+20260924-x86_64-apple-darwin-install_only.tar.gz",
+        "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20260924/cpython-3.10.21%2B20260924-x86_64-apple-darwin-install_only.tar.gz",
+        "size": 25536408,
+        "digest": "sha256:d89ffc797a7b7a145e6dd21340205f5644573024a2c2c7c05991d4c23d029382",
         "content_type": "application/octet-stream",
-        "updated_at": "2026-09-01T17:45:23Z"
+        "updated_at": "2026-09-24T19:16:33Z"
       },
       "darwin-arm64": {
-        "name": "cpython-3.10.21+20260901-aarch64-apple-darwin-install_only.tar.gz",
-        "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20260901/cpython-3.10.21%2B20260901-aarch64-apple-darwin-install_only.tar.gz",
-        "size": 25834741,
-        "digest": "sha256:cee232aabfb6790eec78f3cca935caeb7bd4eedca4dcb0a10dbcdb4302320b38",
+        "name": "cpython-3.10.21+20260924-aarch64-apple-darwin-install_only.tar.gz",
+        "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20260924/cpython-3.10.21%2B20260924-aarch64-apple-darwin-install_only.tar.gz",
+        "size": 25832478,
+        "digest": "sha256:640f6eef16f3c85aaf6430e4ab258e6ca75fe7dc0fc29b10d26ed6ca792ebe4e",
         "content_type": "application/octet-stream",
-        "updated_at": "2026-09-01T17:45:17Z"
+        "updated_at": "2026-09-24T19:16:28Z"
       }
     }
   },
