@@ -1092,7 +1092,7 @@ EOF
     if [ "$EP_MODE" = "offline" ]; then
         source="$(ep_find_offline_asset "$offline_pattern")"
     else
-        source="$(ep_find_cached_asset "$offline_pattern" 2>/dev/null || true)"
+        if [ "$EP_UPGRADE" != 1 ]; then source="$(ep_find_cached_asset "$offline_pattern" 2>/dev/null || true)"; fi
         if [ -n "$source" ]; then
             ep_log "Using bundled downloads/ Mihomo asset for $EP_OS/$EP_ARCH before network: $source"
         else

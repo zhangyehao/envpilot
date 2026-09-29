@@ -48,6 +48,8 @@ envpilot — 用户态环境安装与维护
   envpilot codex remote status|enable|verify|ready|restart|stop|repair|disable
   envpilot mihomo start|stop|status|ports|update-subscription
   envpilot self-update                  更新 envpilot 和受管脚本
+  envpilot updates check|run|status|history|enable|disable
+                                       检查更新、按配置运行或管理定时任务
 
 通用选项：--config 路径，--lang auto|en|zh-CN，--mode online|offline，
           --prefix 路径，--yes，--non-interactive，--help
@@ -68,6 +70,8 @@ Configuration workflow:
   envpilot shell remove                 Remove only the managed profile block.
   envpilot run -- COMMAND [ARGS...]      Run a child with the configured environment.
   envpilot self-update                  Update envpilot and installed management scripts.
+  envpilot updates check|run|status|history|enable|disable
+                                       Check releases, run the configured policy, or manage scheduling.
 
 Usage:
   envpilot doctor             Diagnose the installation without replacing recovery snapshots.
@@ -122,8 +126,11 @@ parse_args()
     EP_COMPONENT="all"
     EP_ACTION=""
     EP_RUN_ARGS=()
+    EP_UPDATE_FORMAT=text
+    EP_HISTORY_DAYS=30
+    EP_HISTORY_COMPONENT=""
     case "$EP_COMMAND" in
-        config|shell|restore)
+        config|shell|restore|updates)
             if [ -n "${1:-}" ] && [[ "$1" != -* ]]; then EP_ACTION="$1"; shift; fi ;;
     esac
     if { [ "$EP_COMMAND" = "install" ] || [ "$EP_COMMAND" = "update" ] || [ "$EP_COMMAND" = "upgrade" ]; } && [ "${1:-}" != "" ]; then
@@ -172,6 +179,13 @@ parse_args()
     while [ "$#" -gt 0 ]; do
         arg="${1%$'\r'}"
         case "$arg" in
+            --days)
+                [ -n "${2:-}" ] || ep_die '--days requires a value'
+                EP_HISTORY_DAYS="$2"; shift 2 ;;
+            --component)
+                [ -n "${2:-}" ] || ep_die '--component requires a value'
+                EP_HISTORY_COMPONENT="$2"; shift 2 ;;
+            --json) EP_UPDATE_FORMAT=json; shift ;;
             --mode)
                 EP_MODE="${2:-}"
                 EP_MODE="${EP_MODE%$'\r'}"
@@ -258,6 +272,15 @@ run_doctor()
 install_one()
 {
     local component="$1"
+    ep_history_begin "$component"
+    if [ "${EP_UPGRADE:-0}" = 1 ] && [ "${EP_MODE:-online}" = online ]; then
+        case "$component" in
+            git) [ ! -x "$(ep_git_managed_bin)" ] || EP_GIT_VERSION="$(ep_core latest-component --target git)" ;;
+            python) [ ! -x "$(ep_python_managed_bin)" ] || EP_PYTHON_VERSION="$(ep_core latest-component --target python)" ;;
+            tmux) EP_TMUX_VERSION="$(ep_core latest-component --target tmux)" ;;
+        esac
+        export EP_GIT_VERSION EP_PYTHON_VERSION EP_TMUX_VERSION
+    fi
     case "$component" in
         git) ep_install_git ;;
         python) ep_install_python ;;
@@ -269,6 +292,7 @@ install_one()
         tmux) ep_install_tmux ;;
         *) ep_die "Unknown component: $component" ;;
     esac
+    ep_history_finish 0
 }
 
 ep_install_no_proxy_add()
@@ -457,6 +481,7 @@ run_self_test()
 
 main()
 {
+    local original_args=("$@")
     parse_args "$@"
     case "$EP_COMMAND" in
         help|-h|--help|self-test|update-manifests|update-mihomo-cache) ;;
@@ -471,6 +496,13 @@ main()
         *) ep_config_load || return ;;
     esac
     case "$EP_COMMAND" in
+        install|update|upgrade|self-update|apply)
+            if [ "${ENVPILOT_UPDATE_LOCK_HELD:-0}" != 1 ]; then
+                "$(ep_core_path)" update-lock -- bash "$ENVPILOT_ROOT/envpilot.sh" "${original_args[@]}"
+                return
+            fi ;;
+    esac
+    case "$EP_COMMAND" in
         config)
             case "${EP_ACTION:-show}" in
                 edit) "${EDITOR:-vi}" "${EP_CONFIG_FILE:-${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}/config.yaml}" ;;
@@ -482,7 +514,8 @@ main()
         snapshot) ep_snapshot ;;
         run) "$(ep_core_path)" run --config "${EP_CONFIG_FILE:-${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}/config.yaml}" -- "${EP_RUN_ARGS[@]}" ;;
         shell) ep_init; ep_platform_detect; ep_core shell "${EP_ACTION:-install}" --shell "$(basename "${SHELL:-bash}")" ;;
-        self-update) ep_self_update ;;
+        self-update) ep_history_begin envpilot; ep_self_update; ep_history_finish 0 ;;
+        updates) ep_core updates "${EP_ACTION:-status}" --format "$EP_UPDATE_FORMAT" --days "$EP_HISTORY_DAYS" --component "$EP_HISTORY_COMPONENT" ;;
         doctor) run_doctor ;;
         install) run_install ;;
         update|upgrade) run_update ;;

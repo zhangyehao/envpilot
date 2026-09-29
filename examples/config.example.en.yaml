@@ -1,0 +1,113 @@
+# envpilot 0.4.4 — complete configuration example / 完整配置样例
+# Copy selected settings into ~/.config/envpilot/config.yaml; keep existing user settings.
+# See docs/CONFIG.md or docs/CONFIG.zh-CN.md for protected-file setup.
+
+# Configuration format (1), not the envpilot application version.
+version: 1
+
+# auto follows locale; en or zh-CN selects a language.
+language: en
+
+# Settings for envpilot apply/install.
+install:
+  # Choose mihomo, git, python, conda, mamba, codex, github, tmux. Empty installs nothing.
+  components: []
+  # online downloads upstream assets; offline requires a platform package and prepared assets.
+  mode: online
+  # User-space installation root; never replaces system directories.
+  prefix: ~/software
+  # envpilot release source: github or gitee. Gitee needs complete release attachments.
+  release_source: github
+
+# Changes take effect after apply-shell and a new shell. Existing profile content is preserved.
+shell:
+  # true installs the short envpilot loader; false disables integration during apply.
+  enabled: true
+  # Initialize Conda in interactive shells without activating base.
+  conda: false
+  # Module names for module load, e.g. [gcc/12]; requires your site module command.
+  modules: []
+  # Start the configured Mihomo proxy in an interactive shell.
+  auto_start_proxy: false
+  # Export proxy variables only when the proxy is listening; preserve no_proxy.
+  auto_enable_proxy: false
+  # Load secrets.file into the shell. Keep false to limit global exposure; Codex can load it separately.
+  load_secrets: false
+  # Synchronize interactive Bash command history.
+  history_sync: false
+  # Add old shortcut aliases only when no user command uses their names.
+  legacy_aliases: false
+  # Load preserved ~/.config/envpilot/shell.local interactively; migration may set true.
+  legacy_local: false
+  # Append additional PATH directories, e.g. [~/tools/bin], without overriding existing commands.
+  paths: []
+  # Prefer managed Git/Python in ordinary shells; activated Python environments still win.
+  prefer_managed: []
+
+# Proxy settings. Store the actual subscription URL in the protected reference below.
+mihomo:
+  # HTTP/mixed port, integer 1-65535.
+  proxy_port: 42290
+  # Local controller port, 1-65535; must differ from proxy_port.
+  api_port: 60290
+  # Also export SOCKS5 all_proxy when proxy integration is enabled.
+  socks: false
+  # Use file OR env. The file contains only one subscription URL, no variable assignment.
+  subscription:
+    # Unix: owned by you, chmod 600. Never commit this file.
+    file: ~/.config/mihomo/subscription.url
+    # Alternative: MIHOMO_SUBSCRIPTION_URL; set file: "" when using this.
+    env: ""
+
+# Conda/Mamba keep existing environments.
+conda:
+  # miniconda or anaconda.
+  distribution: miniconda
+  # Existing Conda installation path; empty means automatic discovery.
+  prefix: ""
+
+# Codex configuration, auth and sessions stay in the persistent home.
+codex:
+  # Enable node-local runtime/app-server integration on Linux/macOS/WSL when applying.
+  remote: false
+  # Persistent CODEX_HOME. Do not put this in a disposable cache.
+  home: ~/.codex
+  # Optional node-local cache root; empty chooses a user/node-specific temporary directory.
+  runtime: ""
+  # Seconds to wait for protocol readiness, integer 1-600.
+  ready_timeout: 60
+  # Provider base URL for NEW config only. Existing ~/.codex/config.toml is preserved. No model JSON override.
+  base_url: ""
+  # Use env OR file. Do not place the key itself in YAML. Existing auth.json is preserved.
+  api_key:
+    # Variable from your environment or secrets.file below.
+    env: OPENAI_API_KEY
+    # Alternative: ~/.config/secrets/codex.key containing only the key; then set env: "".
+    file: ""
+
+# Register once: envpilot updates enable. Status never installs or restarts anything.
+updates:
+  # Allow scheduled runs; false pauses them without deleting history or the task.
+  enabled: true
+  # Successful check interval: 1-365 days. Failures retry after one hour.
+  interval_days: 3
+  # Set true for unattended installation in the window below; Codex restart can interrupt tasks.
+  auto_apply: false
+  # Check these installed components. Missing tools are skipped; external/system installs stay with their original manager.
+  components: [mihomo, git, python, conda, mamba, codex, github, tmux]
+  # Also update envpilot itself, its helper, command entry and copied managers.
+  envpilot: true
+  # Automatic installation start, HH:MM inclusive. Manual update commands run immediately.
+  window_start: "03:00"
+  # Do not start new installations at/after this time; already-started work may finish.
+  window_end: "05:00"
+  # Local = machine timezone. For Beijing time use Asia/Shanghai, especially on UTC servers.
+  timezone: Local
+
+# Protected assignment-only environment file; never shell scripts. Unix mode 600/400, owned by you.
+secrets:
+  # Example CONTENT: OPENAI_API_KEY='your-key'. Optional additional provider variables; no executable syntax.
+  file: ~/.config/secrets/api.env
+
+# Ordinary child environment only, e.g. {EDITOR: vim}. Secret/token/password names are rejected.
+env: {}

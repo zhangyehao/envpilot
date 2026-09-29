@@ -100,4 +100,31 @@ if [ "${BASHRC_AUTO_START_MIHOMO:-0}" = 1 ] && [ -r "${EP_PREFIX:-$HOME/software
     MIHOMO_QUIET_START=1 bash "${EP_PREFIX:-$HOME/software}/mihomo/start_mihomo.sh" >/dev/null 2>&1 || true
 fi
 if [ "${BASHRC_AUTO_ENABLE_PROXY:-0}" = 1 ]; then envpilot_proxy_on >/dev/null 2>&1 || true; fi
-unset __envpilot_config_dir
+# Explicitly selected managed tools precede ordinary PATH entries. Preserve
+# aliases/functions and the Python belonging to an activated environment.
+__envpilot_path_prepend()
+{
+    [ -d "$1" ] || return 0
+    local entry remaining="" old_ifs="$IFS"
+    IFS=:
+    for entry in $PATH; do
+        [ "$entry" = "$1" ] || remaining="${remaining:+$remaining:}$entry"
+    done
+    IFS="$old_ifs"
+    export PATH="$1${remaining:+:$remaining}"
+}
+for __envpilot_tool in "${ENVPILOT_PREFER_MANAGED[@]:-}"; do
+    case "$__envpilot_tool" in
+        git)
+            __envpilot_bin="${EP_PREFIX:-$HOME/software}/git/current/bin"
+            [ ! -x "$__envpilot_bin/git" ] || __envpilot_path_prepend "$__envpilot_bin"
+            ;;
+        python)
+            if [ -z "${CONDA_PREFIX:-}" ] && [ -z "${VIRTUAL_ENV:-}" ]; then
+                __envpilot_bin="${EP_PREFIX:-$HOME/software}/python/current/bin"
+                [ ! -x "$__envpilot_bin/python3" ] || __envpilot_path_prepend "$__envpilot_bin"
+            fi ;;
+    esac
+done
+if [ -n "${BASH_VERSION:-}" ]; then hash -r; elif [ -n "${ZSH_VERSION:-}" ]; then rehash; fi
+unset __envpilot_tool __envpilot_bin __envpilot_config_dir

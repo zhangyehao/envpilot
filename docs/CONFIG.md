@@ -51,3 +51,25 @@ envpilot run -- python3 --version
 ```
 
 Non-interactive mode never waits for input. Optional fallback installation methods are not automatically accepted. Third-party installer output remains in its original language.
+
+## Complete examples, updates and command priority
+
+[English example](../examples/config.example.en.yaml) and [中文样例](../examples/config.example.zh-CN.yaml) cover every setting and choice. Merge selected fields rather than overwriting existing user settings.
+
+Set `shell.prefer_managed: [git, python]` to prefer installed managed tools in ordinary shells. Default `[]` preserves existing priority. Run `envpilot apply-shell`, open a new shell, then inspect `command -v git` / `command -v python3`. User functions/aliases and activated Conda/venv Python remain intact.
+
+Update fields: `enabled: true`, `interval_days: 3` (1–365), `auto_apply: false`, `components: [mihomo, git, python, conda, mamba, codex, github, tmux]`, `envpilot: true`, `window_start: "03:00"`, `window_end: "05:00"`, `timezone: Local`. Use an explicit zone such as `Asia/Shanghai` when needed. See [updates/history](UPDATES.md).
+
+### Where credentials and subscriptions go
+
+```bash
+install -d -m 700 "$HOME/.config/secrets" "$HOME/.config/mihomo"
+(umask 077; touch "$HOME/.config/secrets/api.env" "$HOME/.config/mihomo/subscription.url")
+chmod 600 "$HOME/.config/secrets/api.env" "$HOME/.config/mihomo/subscription.url"
+${EDITOR:-vi} "$HOME/.config/secrets/api.env"
+${EDITOR:-vi} "$HOME/.config/mihomo/subscription.url"
+```
+
+Put `OPENAI_API_KEY='your-real-key'` inside `api.env`; put just the actual subscription URL on one line inside `subscription.url`. Keep only references in YAML: `secrets.file`, `mihomo.subscription.file`, and `codex.api_key.env: OPENAI_API_KEY`. Codex does not require globally enabling `shell.load_secrets`.
+
+Alternatively set `codex.api_key.file: ~/.config/secrets/codex.key`, containing just the key, and clear `codex.api_key.env`. For a subscription environment reference, set `mihomo.subscription.env: MIHOMO_SUBSCRIPTION_URL` and clear `file`. Scheduled tasks do not inherit variables temporarily exported by an interactive terminal; protected file references are recommended. `secrets` supports only an assignment file, never executable shell content. On Windows, protect the same referenced files using user ACLs.

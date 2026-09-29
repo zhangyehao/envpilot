@@ -151,6 +151,7 @@ func Render(c Config, root, kind string) error {
 	if kind == "powershell" {
 		fmt.Fprintf(&body, "$env:ENVPILOT_ROOT = %s\n", PSQuote(root))
 		fmt.Fprintf(&body, "$EnvpilotExtraPaths = @(%s)\n", joinQuoted(c.Shell.Paths, PSQuote))
+		fmt.Fprintf(&body, "$EnvpilotPreferManaged = @(%s)\n", joinQuoted(c.Shell.PreferManaged, PSQuote))
 		fmt.Fprintf(&body, "$EnvpilotModules = @(%s)\n", joinQuoted(c.Shell.Modules, PSQuote))
 		for _, k := range SortedKeys(c.Env) {
 			fmt.Fprintf(&body, "$env:%s = %s\n", k, PSQuote(c.Env[k]))
@@ -159,6 +160,7 @@ func Render(c Config, root, kind string) error {
 	}
 	fmt.Fprintf(&body, "ENVPILOT_ROOT=%s\n", Quote(root))
 	fmt.Fprintf(&body, "ENVPILOT_EXTRA_PATHS=(%s)\n", joinShellQuoted(c.Shell.Paths))
+	fmt.Fprintf(&body, "ENVPILOT_PREFER_MANAGED=(%s)\n", joinShellQuoted(c.Shell.PreferManaged))
 	fmt.Fprintf(&body, "ENVPILOT_MODULES=(%s)\n", joinShellQuoted(c.Shell.Modules))
 	for _, k := range SortedKeys(c.Env) {
 		fmt.Fprintf(&body, "export %s=%s\n", k, Quote(c.Env[k]))

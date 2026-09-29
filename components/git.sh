@@ -65,7 +65,8 @@ ep_install_git()
     managed_version=""
     [ -n "$system_git" ] && system_version="$(ep_git_version "$system_git")"
     [ -x "$managed" ] && managed_version="$(ep_git_version "$managed")"
-    if [ -n "$system_git" ] && [ "$system_git" != "$managed" ] && [ -n "$system_version" ] && ep_version_at_least "$system_version" "$EP_GIT_MIN_VERSION"; then
+    if [ -n "$system_git" ] && [ "$system_git" != "$managed" ] && [ -n "$system_version" ] && ep_version_at_least "$system_version" "$EP_GIT_MIN_VERSION" &&
+       { [ "$EP_UPGRADE" != 1 ] || [ ! -x "$managed" ]; }; then
         ep_log "Git $system_version already satisfies the minimum $EP_GIT_MIN_VERSION at $system_git; envpilot will not overwrite it."
         ep_state_mark_done git
         ep_report_event git skipped "existing compatible Git retained; system installation was not modified" "$system_version" "system PATH" "$system_git"
@@ -95,7 +96,7 @@ ep_install_git()
     if [ "$EP_MODE" = "offline" ]; then
         source="$(ep_find_offline_asset "$(ep_git_offline_pattern)")"
     else
-        source="$(ep_find_cached_asset "$(ep_git_offline_pattern)" 2>/dev/null || true)"
+        if [ "$EP_UPGRADE" != 1 ]; then source="$(ep_find_cached_asset "$(ep_git_offline_pattern)" 2>/dev/null || true)"; fi
         [ -n "$source" ] || source="$(ep_git_source_url)"
     fi
     source_version="$(basename "$source" 2>/dev/null | sed -n -E 's/^git-([0-9]+(\.[0-9]+)+)\.tar\.xz$/\1/p')"
@@ -135,6 +136,7 @@ ep_install_git()
     [ -n "$jobs" ] || jobs="$(getconf _NPROCESSORS_ONLN 2>/dev/null || printf 2)"
     ep_log "Building Git with $jobs job(s); this can take several minutes on a login node."
     (cd "$source_dir" && ./configure --prefix="$target_dir" --with-curl --with-openssl && make -j"$jobs" NO_GETTEXT=YesPlease NO_TCLTK=YesPlease NO_PERL=YesPlease NO_PYTHON=YesPlease all && make NO_GETTEXT=YesPlease NO_TCLTK=YesPlease NO_PERL=YesPlease NO_PYTHON=YesPlease install) || ep_die "User-space Git build failed. Check compiler/development libraries, or use a system/module Git."
+    "$target_dir/bin/git" --version >/dev/null 2>&1 || ep_die "Built Git cannot run on this host; the previous active Git was preserved."
     current_dir="$EP_PREFIX/git/current"
     rm -rf -- "$current_dir"
     if ! ln -s "$target_dir" "$current_dir" 2>/dev/null; then

@@ -8,12 +8,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/zhangyehao/envpilot/internal/config"
 )
 
-var version = "0.4.3"
+var version = "0.4.4"
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
@@ -31,6 +32,7 @@ func run(args []string) error {
 	envFile, keyEnv, keyFile := "", "", ""
 	expectedHome := ""
 	runtimeSource, stageMode := "", "0"
+	historyDays, historyComponent := 30, ""
 	checkOnly := false
 	stream := false
 	rest := []string{}
@@ -47,12 +49,20 @@ func run(args []string) error {
 			break
 		}
 		switch a {
-		case "--config", "--lang", "--format", "--root", "--shell", "--target", "--socket", "--env-file", "--key-env", "--key-file", "--expected-home", "--source", "--stage-mode":
+		case "--config", "--lang", "--format", "--root", "--shell", "--target", "--socket", "--env-file", "--key-env", "--key-file", "--expected-home", "--source", "--stage-mode", "--days", "--component":
 			if i+1 >= len(args) {
 				return fmt.Errorf("%s requires a value", a)
 			}
 			i++
 			switch a {
+			case "--days":
+				var err error
+				historyDays, err = strconv.Atoi(args[i])
+				if err != nil {
+					return fmt.Errorf("history days must be an integer")
+				}
+			case "--component":
+				historyComponent = args[i]
 			case "--source":
 				runtimeSource = args[i]
 			case "--stage-mode":
@@ -90,6 +100,9 @@ func run(args []string) error {
 	if cmd == "version" {
 		fmt.Println(version)
 		return nil
+	}
+	if cmd == "update-lock" {
+		return config.LockedCommand(rest)
 	}
 	if cmd == "message" {
 		if lang == "" {
@@ -200,6 +213,35 @@ func run(args []string) error {
 	}
 	c := r.Config
 	switch cmd {
+	case "latest-component":
+		v, err := config.LatestComponent(target)
+		if err == nil {
+			fmt.Println(v)
+		}
+		return err
+	case "history-begin":
+		if len(rest) != 1 {
+			return fmt.Errorf("history-begin requires a component")
+		}
+		id, err := config.BeginUpdateHistory(c, root, rest[0])
+		if err == nil {
+			fmt.Println(id)
+		}
+		return err
+	case "history-finish":
+		if len(rest) != 2 {
+			return fmt.Errorf("history-finish requires id and exit code")
+		}
+		return config.FinishUpdateHistory(c, root, rest[0], rest[1])
+	case "updates":
+		action := "status"
+		if len(rest) > 0 {
+			action = rest[0]
+		}
+		if action == "history" {
+			return config.UpdateHistory(c, historyDays, historyComponent, format)
+		}
+		return config.UpdatesCommand(c, root, r.Path, action, format)
 	case "secret-export":
 		values, err := config.ReadEnvironment(c.Secrets.File)
 		if err != nil {

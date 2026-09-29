@@ -39,11 +39,13 @@ ep_python_offline_pattern()
 
 ep_python_asset_regex()
 {
+    local version='[0-9]+\.[0-9]+\.[0-9]+'
+    if [ -n "$EP_PYTHON_VERSION" ]; then version="${EP_PYTHON_VERSION//./\\.}"; fi
     case "$EP_OS:$EP_ARCH" in
-        linux:amd64) printf 'cpython-[0-9]+\\.[0-9]+\\.[0-9]+\\+.*-x86_64-unknown-linux-gnu-install_only\\.tar\\.gz$' ;;
-        linux:arm64) printf 'cpython-[0-9]+\\.[0-9]+\\.[0-9]+\\+.*-aarch64-unknown-linux-gnu-install_only\\.tar\\.gz$' ;;
-        darwin:amd64) printf 'cpython-[0-9]+\\.[0-9]+\\.[0-9]+\\+.*-x86_64-apple-darwin-install_only\\.tar\\.gz$' ;;
-        darwin:arm64) printf 'cpython-[0-9]+\\.[0-9]+\\.[0-9]+\\+.*-aarch64-apple-darwin-install_only\\.tar\\.gz$' ;;
+        linux:amd64) printf 'cpython-%s\\+.*-x86_64-unknown-linux-gnu-install_only\\.tar\\.gz$' "$version" ;;
+        linux:arm64) printf 'cpython-%s\\+.*-aarch64-unknown-linux-gnu-install_only\\.tar\\.gz$' "$version" ;;
+        darwin:amd64) printf 'cpython-%s\\+.*-x86_64-apple-darwin-install_only\\.tar\\.gz$' "$version" ;;
+        darwin:arm64) printf 'cpython-%s\\+.*-aarch64-apple-darwin-install_only\\.tar\\.gz$' "$version" ;;
         *) ep_die "No Python standalone asset rule for $EP_OS/$EP_ARCH." ;;
     esac
 }
@@ -86,13 +88,14 @@ ep_install_python()
 {
     ep_require_unix_runtime
     local existing managed source archive source_version version target_dir python_bin python_root current_dir action
-    if existing="$(ep_python_system_bin 2>/dev/null)"; then
+    managed="$(ep_python_managed_bin)"
+    if { [ "$EP_UPGRADE" != 1 ] || [ ! -x "$managed" ]; } && existing="$(ep_python_system_bin 2>/dev/null)"; then
         ep_log "Python 3 already available at $existing; envpilot will not replace the system interpreter."
         ep_state_mark_done python
         ep_report_event python skipped "existing Python 3 retained; system installation was not modified" "$("$existing" --version 2>&1 || true)" "system PATH" "$existing"
         return 0
     fi
-    if existing="$(ep_python_conda_bin 2>/dev/null)"; then
+    if { [ "$EP_UPGRADE" != 1 ] || [ ! -x "$managed" ]; } && existing="$(ep_python_conda_bin 2>/dev/null)"; then
         ep_log "Python 3 already available in Conda at $existing; envpilot will not create a second interpreter."
         ep_state_mark_done python
         ep_report_event python skipped "Conda Python retained" "$("$existing" --version 2>&1 || true)" "Conda base" "$existing"
@@ -114,7 +117,8 @@ ep_install_python()
     if [ "$EP_MODE" = "offline" ]; then
         source="$(ep_find_offline_asset "$(ep_python_offline_pattern)")"
     else
-        source="$(ep_find_cached_asset "$(ep_python_offline_pattern)" 2>/dev/null || true)"
+        source=""
+        if [ "$EP_UPGRADE" != 1 ]; then source="$(ep_find_cached_asset "$(ep_python_offline_pattern)" 2>/dev/null || true)"; fi
         [ -n "$source" ] || source="$(ep_github_asset_url astral-sh python-build-standalone "$(ep_python_asset_regex)")"
     fi
     source_version="$(basename "$source" 2>/dev/null | sed -n -E "s/^cpython-([0-9]+\.[0-9]+\.[0-9]+).*/\1/p")"
@@ -142,6 +146,7 @@ ep_install_python()
     tar -xzf "$archive" -C "$target_dir"
     python_bin="$(find "$target_dir" -type f -name python3 -perm -u+x 2>/dev/null | head -n 1 || true)"
     [ -n "$python_bin" ] || ep_die "Python archive did not contain an executable bin/python3."
+    "$python_bin" --version >/dev/null 2>&1 || ep_die "Downloaded Python cannot run on this host; the previous active interpreter was preserved."
     python_root="$(cd "$(dirname "$python_bin")/.." && pwd)"
     current_dir="$EP_PREFIX/python/current"
     rm -rf -- "$current_dir"

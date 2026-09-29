@@ -13,3 +13,11 @@ envpilot doctor
 0.4.0 的 PowerShell 用户态入口为 `~/.local/bin/envpilot.ps1`，同样可从任何目录运行。PowerShell 选项使用 `-Config`、`-Lang`、`-Yes` 和 `-NonInteractive`。
 
 `apply-shell` 现在仅添加短加载块，见 [Shell 接入](SHELL-CONFIG.zh-CN.md)。服务生命周期见 [Codex](CODEX.zh-CN.md)，统一配置见 [配置说明](CONFIG.zh-CN.md)。
+
+## 统一更新命令（0.4.4）
+
+`update COMPONENT` 立即更新组件；`self-update` 立即更新 envpilot 自身。`updates check` 立即检查、不安装；`updates run` 执行到期策略并遵守夜间窗口；`updates enable/disable` 登记/注销任务；`updates status` 读取保存状态。
+
+`envpilot updates history` 默认查询最近 30 天；`--days 90 --component codex --json` 可调整范围、筛选和导出。PowerShell 使用 `-Days 90 -HistoryComponent codex -Json`。详见 [更新与历史](UPDATES.zh-CN.md)。
+
+要让普通 Shell 优先使用受管 Git/Python，设置 `shell.prefer_managed: [git, python]` 后 `apply-shell` 并重开终端；已激活的 Python 环境仍优先。

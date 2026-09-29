@@ -142,9 +142,15 @@ function Update-EnvpilotSelf {
     Save-EnvpilotSnapshot
     git -C $Script:Root merge --ff-only $tag
     if ($LASTEXITCODE -ne 0) { throw 'Fast-forward update failed.' }
-    Install-EnvpilotCommand
-    $Script:ConfigApply = $true
-    Apply-ShellProfile
+    $shellExe = if ($PSVersionTable.PSEdition -eq 'Core') { Join-Path $PSHOME 'pwsh.exe' } else { Join-Path $PSHOME 'powershell.exe' }
+    $configPath = if ($Config) { $Config } else { Join-Path $Script:ConfigDir 'config.yaml' }
+    $previousApply = $env:EP_CONFIG_APPLY
+    try {
+        $env:EP_CONFIG_APPLY = '1'
+        & $shellExe -NoProfile -File (Join-Path $Script:Root 'envpilot.ps1') apply-shell -Yes -NonInteractive -Config $configPath
+        if ($LASTEXITCODE -ne 0) { throw 'Shell migration failed; restore the managed-file snapshot to recover.' }
+    } finally { $env:EP_CONFIG_APPLY = $previousApply }
+    Invoke-EnvpilotCore refresh
 }
 
 function Get-EnvpilotSubscription {

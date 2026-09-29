@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.4
+
+- Add unified installed-component and envpilot update checks, a configurable 3-day interval, 03:00–05:00 installation window and IANA timezone support; register user scheduling explicitly.
+- Add persistent manual/automatic update history (`updates history`, 30 days by default), safe retries, concurrent-update exclusion and stable error/status output.
+- Add an upgrade bridge for 0.3.0, refresh self-update entrypoints with the new implementation, preserve custom configuration paths, and reject package downgrades.
+- Resolve live stable versions for managed Git/Python/tmux and bypass stale cached installers on online updates. Retain external/system tools and package-manager compatibility decisions.
+- Add opt-in managed Git/Python shell priority while preserving aliases/functions and active Python environments.
+- Fix file/env reference defaults; provide complete bilingual YAML examples, secret-file instructions and reorganized bilingual README workflows.
+
+
 ## 0.4.3 - 2026-09-23
 
 ### Fixed

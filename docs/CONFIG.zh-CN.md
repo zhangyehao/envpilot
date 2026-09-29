@@ -51,3 +51,25 @@ envpilot run -- python3 --version
 ```
 
 非交互模式不会等待输入。未选择的备用安装方式不会自动启用。第三方安装器的原始输出保留原文。
+
+## 完整样例、更新与命令优先级
+
+[完整中文样例](../examples/config.example.zh-CN.yaml) 与 [英文样例](../examples/config.example.en.yaml) 包含全部字段及参数说明；请合并所需字段，不要覆盖已有用户配置。
+
+新增 `shell.prefer_managed: [git, python]` 可让已安装的受管 Git/Python 在普通 Shell 中优先。默认 `[]` 保留原优先级。执行 `envpilot apply-shell` 并打开新 Shell，使用 `command -v git`、`command -v python3` 检查。用户函数/alias 保留；已激活的 Conda/venv Python 不被覆盖。
+
+`updates` 字段：`enabled: true`、`interval_days: 3`（1–365）、`auto_apply: false`、`components: [mihomo, git, python, conda, mamba, codex, github, tmux]`、`envpilot: true`、`window_start: "03:00"`、`window_end: "05:00"`、`timezone: Local`。北京时间使用 `Asia/Shanghai`。详见 [更新与历史](UPDATES.zh-CN.md)。
+
+### 实际密钥与订阅写在哪里
+
+```bash
+install -d -m 700 "$HOME/.config/secrets" "$HOME/.config/mihomo"
+(umask 077; touch "$HOME/.config/secrets/api.env" "$HOME/.config/mihomo/subscription.url")
+chmod 600 "$HOME/.config/secrets/api.env" "$HOME/.config/mihomo/subscription.url"
+${EDITOR:-vi} "$HOME/.config/secrets/api.env"
+${EDITOR:-vi} "$HOME/.config/mihomo/subscription.url"
+```
+
+`api.env` 内写 `OPENAI_API_KEY='你的真实密钥'`；`subscription.url` 内只写一行真实订阅 URL。配置保留 `secrets.file` 和 `mihomo.subscription.file` 的路径，`codex.api_key.env` 填 `OPENAI_API_KEY`。不需要 `shell.load_secrets: true` 才能给 Codex 使用受保护文件。
+
+另一种密钥方案：`codex.api_key.file: ~/.config/secrets/codex.key`，文件仅一行密钥；同时设置 `codex.api_key.env: ""`。订阅也可配置 `mihomo.subscription.env: MIHOMO_SUBSCRIPTION_URL`，同时清空 `file`。定时任务不继承交互终端临时导出的变量，建议使用文件引用。`secrets` 仅支持赋值文件 `file`；不执行命令。Windows 同样使用这些路径和引用，通过用户 ACL 保护文件。

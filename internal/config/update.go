@@ -3,6 +3,7 @@ package config
 import (
 	"archive/tar"
 	"archive/zip"
+	"bytes"
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
@@ -78,8 +79,11 @@ func InstallCore(root string) error {
 		if err != nil {
 			return err
 		}
-		if err = WriteAtomic(target, data, 0700); err != nil {
-			return err
+		existing, _ := os.ReadFile(target)
+		if !bytes.Equal(existing, data) {
+			if err = WriteAtomic(target, data, 0700); err != nil {
+				return err
+			}
 		}
 	}
 	return WriteAtomic(filepath.Join(Dir(), "core-path"), []byte(target+"\n"), 0600)
@@ -132,6 +136,9 @@ func BundleUpdate(c Config, root, configPath string) error {
 	if strings.TrimSpace(string(old)) == version {
 		fmt.Println(Text(c.Language, "envpilot is already up to date.", "envpilot 已是最新版本。"))
 		return RefreshScripts(c, root)
+	}
+	if !newerVersion(version, strings.TrimSpace(string(old))) {
+		return fmt.Errorf("E_UPDATE_DOWNGRADE: current version is newer or is not a stable release")
 	}
 	arch := runtime.GOARCH
 	if arch == "arm" {

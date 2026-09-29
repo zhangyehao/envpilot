@@ -20,7 +20,10 @@ if ($env:BASHRC_AUTO_START_MIHOMO -eq '1') { & envpilot mihomo start *> $null }
 if ($env:BASHRC_AUTO_ENABLE_PROXY -eq '1') { Enable-EnvpilotProxy }
 if ($env:BASHRC_AUTO_LOAD_SECRETS -eq '1') {
     $EnvpilotCore = Join-Path $env:ENVPILOT_ROOT 'bin/envpilot-core.exe'
-    if (-not (Test-Path -LiteralPath $EnvpilotCore)) { $EnvpilotCore = Join-Path $HOME '.local/lib/envpilot/0.4.0/envpilot-core.exe' }
+    if (-not (Test-Path -LiteralPath $EnvpilotCore)) {
+        $EnvpilotCoreRecord = Join-Path $EnvpilotConfigDirectory 'core-path'
+        if (Test-Path -LiteralPath $EnvpilotCoreRecord) { $EnvpilotCore = (Get-Content -LiteralPath $EnvpilotCoreRecord -Raw).Trim() }
+    }
     if (Test-Path -LiteralPath $EnvpilotCore) {
         $EnvpilotSecretData = & $EnvpilotCore secret-export --config $env:ENVPILOT_CONFIG_FILE 2>$null
         if ($LASTEXITCODE -eq 0 -and $EnvpilotSecretData) {
@@ -38,4 +41,12 @@ if ($env:BASHRC_INIT_CONDA -eq '1' -and -not (Get-Command conda -ErrorAction Sil
 if ($env:ENVPILOT_LEGACY_LOCAL -eq '1') {
     $EnvpilotLocal = Join-Path $EnvpilotConfigDirectory 'shell.local.ps1'
     if (Test-Path -LiteralPath $EnvpilotLocal) { . $EnvpilotLocal }
+}
+foreach ($EnvpilotTool in @($EnvpilotPreferManaged)) {
+    if ($EnvpilotTool -eq 'python' -and ($env:CONDA_PREFIX -or $env:VIRTUAL_ENV)) { continue }
+    $EnvpilotManagedBin = Join-Path $env:EP_PREFIX "$EnvpilotTool/current/bin"
+    $EnvpilotManagedCommand = if ($EnvpilotTool -eq 'python') { 'python3.exe' } else { 'git.exe' }
+    if (Test-Path -LiteralPath (Join-Path $EnvpilotManagedBin $EnvpilotManagedCommand)) {
+        $env:PATH = (@($EnvpilotManagedBin) + @(($env:PATH -split [IO.Path]::PathSeparator) | Where-Object { $_ -ne $EnvpilotManagedBin })) -join [IO.Path]::PathSeparator
+    }
 }

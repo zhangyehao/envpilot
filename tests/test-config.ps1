@@ -32,6 +32,7 @@ if ($localized -notmatch '配置文件') { throw 'Chinese plan is missing.' }
 & "$Root/envpilot.ps1" apply -Yes -NonInteractive
 $first = [IO.File]::ReadAllText($env:ENVPILOT_PROFILE)
 if (-not $first.StartsWith($original)) { throw 'Original profile was changed.' }
+if ($first -notmatch '# >>> envpilot >>>') { throw 'Apply did not install the managed loader.' }
 & "$Root/envpilot.ps1" apply -Yes -NonInteractive
 if ([IO.File]::ReadAllText($env:ENVPILOT_PROFILE) -ne $first) { throw 'Repeated apply changed the profile.' }
 . $env:ENVPILOT_PROFILE

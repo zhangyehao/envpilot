@@ -1,7 +1,7 @@
 ﻿[CmdletBinding()]
 param(
     [Parameter(Position=0)]
-    [ValidateSet("init","config","plan","apply","snapshot","shell","run","self-update","setup-command","doctor","install","update","upgrade","apply-shell","rollback","restore","mihomo","codex","resume","reset","update-manifests","update-mihomo-cache","self-test","help","version","-v","-version","--version","-h","-help","--help")]
+    [ValidateSet("init","config","plan","apply","snapshot","shell","run","self-update","updates","setup-command","doctor","install","update","upgrade","apply-shell","rollback","restore","mihomo","codex","resume","reset","update-manifests","update-mihomo-cache","self-test","help","version","-v","-version","--version","-h","-help","--help")]
     [string]$Command = "help",
 
     [Parameter(Position=1)]
@@ -26,6 +26,9 @@ param(
     [Alias("-non-interactive")][switch]$NonInteractive,
     [Alias("v","-version")][switch]$Version,
     [Alias("h","-help")][switch]$Help,
+    [Alias("-days")][int]$Days = 30,
+    [Alias("-json")][switch]$Json,
+    [Alias("-component")][string]$HistoryComponent,
     [Parameter(ValueFromRemainingArguments=$true)][string[]]$CommandArgs
 )
 
@@ -1168,6 +1171,7 @@ envpilot — 用户态环境安装与维护
   envpilot shell remove                  移除受管加载块
   envpilot run -- 命令 参数               在配置环境中运行子进程
   envpilot self-update                   更新 envpilot 和管理脚本
+  envpilot updates check|run|status|history|enable|disable  检查更新和管理定时任务
 
 选项：-Config 路径，-Lang auto|en|zh-CN，-Mode online|offline，-Prefix 路径。
 "@
@@ -1179,6 +1183,7 @@ envpilot - cross-platform user-space environment bootstrapper
 
 Configuration: envpilot init; envpilot config edit; envpilot plan; envpilot apply
 Recovery: envpilot snapshot; envpilot restore; envpilot self-update
+Updates: envpilot updates check|run|status|history|enable|disable
 
 Usage:
   envpilot version (-v, -V, --version)
@@ -1222,7 +1227,20 @@ try {
     }
     if ($Command -eq 'help') { Show-Usage; exit 0 }
     if ($Command -notin @("help","self-test","update-manifests","update-mihomo-cache","init","config","plan")) { Import-EnvpilotConfig }
-    if ($Command -notin @("help","doctor","plan","config","init")) {
+    if ($Command -in @('install','update','upgrade','self-update','apply') -and $env:ENVPILOT_UPDATE_LOCK_HELD -ne '1') {
+        $reentry = @()
+        foreach ($entry in $Script:ExplicitParameters.GetEnumerator()) {
+            if ($entry.Key -eq 'CommandArgs') { continue }
+            if ($entry.Value -is [System.Management.Automation.SwitchParameter]) {
+                if ($entry.Value.IsPresent) { $reentry += '-' + $entry.Key }
+            } else { $reentry += @('-' + $entry.Key) + @([string]$entry.Value) }
+        }
+        $reentry += @($CommandArgs)
+        $shellExe = if ($PSVersionTable.PSEdition -eq 'Core') { Join-Path $PSHOME 'pwsh.exe' } else { Join-Path $PSHOME 'powershell.exe' }
+        & (Get-EnvpilotCore) update-lock -- $shellExe -NoProfile -File (Join-Path $Script:Root 'envpilot.ps1') @reentry
+        exit $LASTEXITCODE
+    }
+    if ($Command -notin @("help","doctor","plan","config","init","updates")) {
         Initialize-Envpilot
     }
     switch ($Command) {
@@ -1237,7 +1255,16 @@ try {
         "snapshot" { Save-EnvpilotSnapshot }
         "setup-command" { Install-EnvpilotCommand }
         "shell" { Invoke-EnvpilotCore shell $Component --shell powershell --target (Get-EnvpilotProfileTarget) }
-        "self-update" { Update-EnvpilotSelf }
+        "self-update" {
+            $historyId = Invoke-EnvpilotCore history-begin envpilot
+            $historyExit = "1"
+            try { Update-EnvpilotSelf; $historyExit = "0" } finally { Invoke-EnvpilotCore history-finish $historyId $historyExit }
+        }
+        "updates" {
+            $updateArgs = @('updates', $(if ($Component -eq 'all') { 'status' } else { $Component }), '--format', $(if ($Json) { 'json' } else { 'text' }), '--days', [string]$Days)
+            if ($HistoryComponent) { $updateArgs += @('--component', $HistoryComponent) }
+            Invoke-EnvpilotCore @updateArgs
+        }
         "run" {
             $runArgs = @($Component,$Value,$Value2) + @($CommandArgs) | Where-Object { $null -ne $_ -and $_ -ne '--' }
             & (Get-EnvpilotCore) run --config $(if ($Config) { $Config } else { Join-Path $Script:ConfigDir 'config.yaml' }) -- @runArgs
