@@ -1,0 +1,115 @@
+# envpilot 0.4.4 — complete configuration example / 完整配置样例
+# Copy selected settings into ~/.config/envpilot/config.yaml; keep existing user settings.
+# See docs/CONFIG.md or docs/CONFIG.zh-CN.md for protected-file setup.
+
+# 配置格式版本（1），不是 envpilot 软件版本。
+version: 1
+
+# auto 随系统语言；en 英文；zh-CN 简体中文。
+language: zh-CN
+
+# envpilot apply/install 的安装设置。
+install:
+  # 可选 mihomo、git、python、conda、mamba、codex、github、tmux；空列表不安装组件。
+  components: []
+  # online 从上游下载；offline 需要完整平台包和预备好的组件资源。
+  mode: online
+  # 用户态软件安装根目录，不替换系统目录。
+  prefix: ~/software
+  # envpilot 发布包来源：github 或 gitee；Gitee 必须有完整版本附件。
+  release_source: github
+
+# 修改后运行 apply-shell 并打开新 Shell 生效；保留原 profile 内容。
+shell:
+  # true 在 apply 时接入 envpilot；false 不安装集成。移除已有集成用 shell remove。
+  enabled: true
+  # 在交互 Shell 初始化 Conda，不自动激活 base。
+  conda: false
+  # module load 的模块名，例如 [gcc/12]；需要站点提供 module 命令。
+  modules: []
+  # 在交互 Shell 自动启动已经配置的 Mihomo。
+  auto_start_proxy: false
+  # 代理监听就绪后导出代理环境变量，保留 no_proxy。
+  auto_enable_proxy: false
+  # 是否将 secrets.file 加载到当前 Shell；建议 false，Codex 可单独加载。
+  load_secrets: false
+  # 是否同步交互 Bash 的命令历史。
+  history_sync: false
+  # 启用旧快捷命令；遇到已有同名命令时保留用户命令。
+  legacy_aliases: false
+  # 交互时加载保留的 shell.local；旧版迁移可能自动设为 true。
+  legacy_local: false
+  # 追加 PATH 目录，例如 [~/tools/bin]，不抢占已有命令优先级。
+  paths: []
+  # 填 [git, python] 让受管 Git/Python 在普通 Shell 优先；已激活的 Python 环境仍优先。
+  # Linux/macOS 下显式 install 也会据此创建独立版本，即使系统工具可用。
+  # 设置后执行 envpilot install git / envpilot install python；定时任务不安装缺失组件。
+  prefer_managed: []
+
+# 代理设置；真实订阅链接写入下面引用的受保护文件。
+mihomo:
+  # HTTP/混合代理端口，整数 1–65535。
+  proxy_port: 42290
+  # 本地控制 API 端口，1–65535；必须与 proxy_port 不同。
+  api_port: 60290
+  # 启用代理集成时，是否同时导出 SOCKS5 all_proxy。
+  socks: false
+  # file 与 env 二选一。文件中只写一行订阅链接，不写变量赋值。
+  subscription:
+    # Unix 下文件属于当前用户，chmod 600；不要提交到 Git。
+    file: ~/.config/mihomo/subscription.url
+    # 也可填 MIHOMO_SUBSCRIPTION_URL；使用时将 file 设为 ""。
+    env: ""
+
+# Conda/Mamba 保留已有环境。
+conda:
+  # miniconda 或 anaconda。
+  distribution: miniconda
+  # 已有 Conda 安装目录；留空自动寻找。
+  prefix: ""
+
+# Codex 配置、认证与会话存放在持久 home 中。
+codex:
+  # apply 时启用 Linux/macOS/WSL 节点本地运行与 app-server 管理。
+  remote: false
+  # 持久 CODEX_HOME，请勿放入可清理的临时缓存。
+  home: ~/.codex
+  # 节点本地运行缓存根目录；留空按用户和节点选择临时目录。
+  runtime: ""
+  # 等待协议就绪的秒数，整数 1–600。
+  ready_timeout: 60
+  # 只用于新建配置的供应商 base URL；保留已有 config.toml，不写入模型 JSON 覆盖。
+  base_url: ""
+  # env 与 file 二选一；密钥本身不写入 YAML。保留已有 auth.json。
+  api_key:
+    # 从当前环境或下面的 secrets.file 中读取此变量。
+    env: OPENAI_API_KEY
+    # 也可填 ~/.config/secrets/codex.key，文件仅存密钥一行；同时将 env 设为 ""。
+    file: ""
+
+# 用 envpilot updates enable 登记一次定时任务。status 不安装、不重启。
+updates:
+  # 允许定时运行；false 暂停，不删除历史记录和任务。
+  enabled: true
+  # 成功检查的间隔：1–365 天；失败后 1 小时重试。
+  interval_days: 3
+  # 改为 true 后在下面的窗口内无人值守安装；Codex 重启可能中断任务。
+  auto_apply: false
+  # 维护列表中的已安装组件；未安装的跳过，外部/系统安装由原包管理器维护。
+  components: [mihomo, git, python, conda, mamba, codex, github, tmux]
+  # 同时更新 envpilot 自身、配置工具、命令入口和已复制的管理脚本。
+  envpilot: true
+  # 自动安装开始时间，HH:MM，包含此时刻；手动更新命令立即执行。
+  window_start: "03:00"
+  # 此时刻起不再开始新的安装；已开始的安装可继续完成。
+  window_end: "05:00"
+  # Local 表示本机时区；北京时间填 Asia/Shanghai，尤其注意使用 UTC 的服务器。
+  timezone: Local
+
+# 受保护的变量赋值文件，不执行 Shell 脚本。Unix 权限 600/400，属于当前用户。
+secrets:
+  # 文件内容示例：OPENAI_API_KEY='你的密钥'。可添加其他供应商变量，但不可含可执行语法。
+  file: ~/.config/secrets/api.env
+
+# 仅普通子进程环境变量，例如 {EDITOR: vim}。禁止在此设置 secret/token/password 等敏感变量。
+env: {}

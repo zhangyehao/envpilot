@@ -86,6 +86,23 @@ ep_snapshot()
     ep_log "Snapshot: $snapshot"
 }
 
+ep_history_begin()
+{
+    EP_HISTORY_ID="$(ep_core history-begin "$1")" || return 1
+    trap 'ep_history_finish "$?"' EXIT
+}
+
+ep_history_finish()
+{
+    local status="${1:-1}" id="${EP_HISTORY_ID:-}"
+    trap - EXIT
+    EP_HISTORY_ID=""
+    if [ -n "$id" ]; then
+        ep_core history-finish "$id" "$status" || ep_warn "Could not finish update history: $id"
+    fi
+    return "$status"
+}
+
 ep_apply_config()
 {
     ep_core plan
@@ -108,7 +125,7 @@ run_codex_enable() { ep_init; ep_platform_detect; ep_codex_remote_enable; }
 
 ep_self_update()
 {
-    local tag previous manager
+    local tag previous snapshot
     ep_init
     if [ ! -d "$ENVPILOT_ROOT/.git" ] && [ ! -f "$ENVPILOT_ROOT/.git" ]; then
         ep_core self-update
@@ -120,13 +137,11 @@ ep_self_update()
     [ -n "$tag" ] || ep_die 'No stable envpilot tag found.'
     previous="$(git -C "$ENVPILOT_ROOT" rev-parse HEAD)"
     git -C "$ENVPILOT_ROOT" merge-base --is-ancestor HEAD "$tag" || ep_die 'The checkout is ahead of or diverged from the stable release; no files were changed.'
-    ep_snapshot
+    snapshot="$(ep_core snapshot)" || return 1
+    ep_log "Snapshot: $snapshot"
     git -C "$ENVPILOT_ROOT" merge --ff-only "$tag"
-    ep_setup_command
-    manager="$(ep_codex_remote_manager_path)"
-    if [ -f "$manager" ]; then ep_codex_remote_install_manager; fi
     # Execute the updated entrypoint so copied scripts use the new implementation.
-    if ! EP_CONFIG_APPLY=1 bash "$ENVPILOT_ROOT/envpilot.sh" apply-shell --yes --non-interactive; then
+    if ! EP_CONFIG_APPLY=1 bash "$ENVPILOT_ROOT/envpilot.sh" apply-shell --yes --non-interactive --config "${EP_CONFIG_FILE:-${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}/config.yaml}"; then
         ep_warn "Shell migration needs review. Previous source commit: $previous; managed-file snapshot is available through envpilot restore."
         return 1
     fi

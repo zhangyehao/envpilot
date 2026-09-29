@@ -2,31 +2,15 @@
 
 [English](README.en.md) · [GitHub](https://github.com/zhangyehao/envpilot) · [Gitee](https://gitee.com/zhangyehao0422/envpilot)
 
-envpilot 为无管理员权限的工作站、HPC 和远程 SSH 环境安装、配置及维护用户态工具。支持 Mihomo、Git、Python、Conda/Mamba、Codex、GitHub CLI 和 tmux。
+为工作站、HPC 和远程 SSH 环境安装、配置和维护用户态工具。一个 YAML 管理安装、Shell 接入、代理、Codex 运行环境与定时更新；保留原 profile、认证和会话。
 
-**0.4.0：统一 YAML 配置、保留原 profile 的 Shell 接入、可靠的 Codex 重启，以及可恢复的升级。**
+## 快速开始与更新
 
-**0.4.3 修复 Codex 完整安装包复制缺失，保留辅助程序、资源目录和符号链接，并提供完整性校验。** 已有 `~/envpilot` 仓库时使用下面的更新命令，不要重新克隆：
-
-```bash
-cd "$HOME/envpilot" && git pull --ff-only origin main
-# 拉取成功后刷新命令入口与已复制的 Codex 管理器：
-bash envpilot.sh setup-command
-export PATH="$PATH:$HOME/.local/bin"
-envpilot codex remote enable
-envpilot codex remote verify
-envpilot codex remote status
-```
-
-最后三条命令适用于已安装 Codex 并使用远程服务的用户。完整的源码和平台包升级命令见 [升级与恢复](docs/UPGRADE.zh-CN.md)。
-
-查看软件版本：`envpilot version`、`envpilot -v`、`envpilot -V` 或 `envpilot --version`。查看帮助：`envpilot help`、`envpilot -h`、`envpilot -help` 或 `envpilot --help`。这些命令无需联网、配置工具或有效 YAML；YAML 的 `version: 1` 仅表示配置格式版本。
-
-## 快速开始
-
-下载 [Release](https://github.com/zhangyehao/envpilot/releases) 中对应系统和架构的平台包。平台包包含 `envpilot-core`，使用配置功能不需要预装 Go、Python 或 Node。解压后在目录内执行：
+### 第一次使用
 
 ```bash
+git clone https://github.com/zhangyehao/envpilot.git "$HOME/envpilot"
+cd "$HOME/envpilot"
 bash envpilot.sh setup-command
 export PATH="$PATH:$HOME/.local/bin"
 envpilot init --lang zh-CN
@@ -35,24 +19,15 @@ envpilot plan
 envpilot apply
 ```
 
-`init` 默认不选择安装组件。编辑配置的 `install.components` 后，`apply` 会按依赖顺序安装所选组件。安装全部组件仍可使用 `envpilot install all`。
+国内可将仓库地址换为 `https://gitee.com/zhangyehao0422/envpilot.git`。源码安装会获取并校验匹配的配置工具，无需 Go/Python/Node。离线使用 [Release 平台包](https://github.com/zhangyehao/envpilot/releases/latest)，并准备组件本身的离线资源。
 
-也可以从源码安装；配置工具会从对应版本的 Release 获取并校验：
+`bootstrap.sh` 仍支持 partial clone 与 sparse-checkout，只获取匹配架构的已有 Mihomo 缓存，适合需要减少克隆体积的用户。
 
-```bash
-git clone https://github.com/zhangyehao/envpilot.git
-# 国内网络可改用 https://gitee.com/zhangyehao0422/envpilot.git
-cd envpilot
-bash envpilot.sh setup-command
-export PATH="$PATH:$HOME/.local/bin"
-envpilot init --lang zh-CN
-```
+`init` 不覆盖已有配置。初始 `install.components: []` 不安装组件；改成例如 `[mihomo, codex, git]` 后执行 `plan → apply`。登录由对应软件处理。新用户默认只接入 envpilot，代理、Conda、module 和旧快捷命令需主动开启。
 
-`bootstrap.sh` 继续支持 partial clone 和 sparse-checkout，按架构获取已有 Mihomo 缓存。完全离线时使用包含配置工具的平台包；组件本身的离线资源仍需准备。
+从 **0.3.0** 起，确认执行 `apply-shell` 会安装 `~/.local/bin/envpilot`；`setup-command` 可独立登记入口。PATH 生效后，在任意目录运行 `envpilot ...`，等价于 `bash /仓库路径/envpilot.sh ...`。移动仓库后重新登记。
 
-从 **0.3.0** 起，确认执行 `apply-shell` 会安装 `~/.local/bin/envpilot`。PATH 生效后，可在任意目录使用 `envpilot ...`，与 `bash /仓库路径/envpilot.sh ...` 等价，保留当前目录、参数及退出码。`setup-command` 可以独立登记入口。仓库移动后，在新位置重新登记。
-
-Windows PowerShell：
+Windows PowerShell，在源码或平台包目录执行：
 
 ```powershell
 .\envpilot.ps1 setup-command
@@ -63,94 +38,133 @@ envpilot plan
 envpilot apply
 ```
 
-PowerShell 使用 `-Yes -NonInteractive`；Bash 使用 `--yes --non-interactive`。Codex 节点本地运行管理使用 Linux/macOS/WSL 入口。
+### 更新已有安装
 
-## 一个主配置入口
+**0.4.0 及以上：**
 
-默认配置：`~/.config/envpilot/config.yaml`。例如：
-
-```yaml
-version: 1
-language: zh-CN
-install:
-  components: [mihomo, git, python, codex]
-  mode: online
-  prefix: ~/software
-  release_source: github
-shell:
-  enabled: true
-  auto_start_proxy: true
-  auto_enable_proxy: true
-  conda: false
-mihomo:
-  proxy_port: 42290
-  api_port: 60290
-  subscription:
-    file: ~/.config/mihomo/subscription.url
-codex:
-  remote: true
-  home: ~/.codex
-  ready_timeout: 60
-  api_key:
-    env: OPENAI_API_KEY
-secrets:
-  file: ~/.config/secrets/api.env
+```bash
+envpilot self-update                 # 更新 envpilot、配置工具和管理脚本
+envpilot version
+envpilot update codex                # 更新组件，也可换成 git、mihomo 等
+envpilot codex remote status
 ```
 
-常规设置集中在 YAML；密钥和订阅链接存放在引用的受保护文件或环境变量中。保留已有 `auth.json`。配置字段、优先级及示例见 [配置说明](docs/CONFIG.zh-CN.md)。
+Codex 原来在运行时，`update codex` 会刷新完整运行目录并重启、验证；原来已停止则保持停止。通常不用先 `stop`。明确需要先停再更新时使用 `stop → update codex → restart → status`。
+
+**0.3.0** 没有 `self-update`，先运行一次升级桥接脚本。它检查源码修改/分叉、备份旧文件、拉取稳定标签并迁移配置，不强制重置仓库：
+
+```bash
+curl -fL --retry 3 https://raw.githubusercontent.com/zhangyehao/envpilot/main/scripts/upgrade.sh -o /tmp/envpilot-upgrade.sh
+bash /tmp/envpilot-upgrade.sh "$HOME/envpilot"
+export PATH="$PATH:$HOME/.local/bin"
+envpilot version
+```
+
+也可以手动更新已有源码，**拉取成功后**再登记入口：
+
+```bash
+cd "$HOME/envpilot" && git pull --ff-only origin main
+bash envpilot.sh setup-command
+envpilot apply-shell
+envpilot codex remote enable         # 仅已使用 Codex 远程服务时需要
+```
+
+Git 自更新要求工作区干净、可快进至稳定标签；平台包自更新校验 SHA-256，并切换到新版本目录。[升级与恢复](docs/UPGRADE.zh-CN.md) 包含完整平台包命令和恢复方法。
+
+### 定时检查与夜间自动安装
+
+0.4.4 默认每 **3 天**检查一次，自动安装窗口默认 **03:00–05:00**。默认仅检查；需要无人值守安装时，在主配置中设置：
+
+```yaml
+updates:
+  enabled: true
+  interval_days: 3
+  auto_apply: true
+  components: [mihomo, git, python, conda, mamba, codex, github, tmux]
+  envpilot: true
+  window_start: "03:00"
+  window_end: "05:00"
+  timezone: Asia/Shanghai
+```
 
 ```bash
 envpilot config validate
-envpilot apply --yes --non-interactive
+envpilot updates check               # 立即检查，不安装
+envpilot updates enable              # 登记定时任务，无需保持终端打开
+envpilot updates status              # 策略、下次时间与上次结果
+envpilot updates history             # 最近 30 天的手动/自动更新
+envpilot updates history --days 90 --component codex
 ```
 
-新用户默认只接入 envpilot，不自动改变代理、Conda、module、历史设置或旧快捷别名；按需在配置中开启。旧用户迁移保留已有开关。
+未安装的组件跳过；外部/系统安装由原包管理器维护，受管工具使用各自的兼容性规则。窗口限制自动安装的**开始时间**，已开始的安装允许完成；Codex 重启可能中断任务。手动 `update COMPONENT` / `self-update` 不受窗口限制。修改间隔无需重新登记；禁用任务用 `envpilot updates disable`。详见 [更新机制与历史](docs/UPDATES.zh-CN.md)。
 
-## 常用命令
+## 配置文件说明
 
-| 命令 | 用途 |
-| --- | --- |
-| `envpilot plan` | 查看配置和拟议变更。 |
-| `envpilot apply` | 应用所选组件及 Shell 设置。 |
-| `envpilot install COMPONENT` | 安装指定组件。 |
-| `envpilot update COMPONENT` | 检查兼容更新。 |
-| `envpilot doctor` | 只诊断，不覆盖恢复点。 |
-| `envpilot snapshot` | 创建新的文件恢复快照。 |
-| `envpilot restore` | 恢复最新快照，兼容旧 baseline。 |
-| `envpilot rollback` | 恢复最近一次单文件备份。 |
-| `envpilot self-update` | 更新 envpilot 和已安装的管理脚本。 |
-| `envpilot apply-shell` | 安装独立脚本，并在原 profile 中加入短加载块。 |
-| `envpilot shell remove` | 仅移除 envpilot 加载块。 |
-| `envpilot run -- COMMAND ...` | 在配置的工具和环境中运行子进程。 |
-| `envpilot resume` | 继续未完成的安装。 |
-| `envpilot reset` | 清除安装状态，不卸载软件。 |
+主配置：`~/.config/envpilot/config.yaml`。优先级：命令参数 → 已声明的环境变量覆盖 → YAML → 默认值。
 
-## Codex 重启和更新
+- [完整中文样例](examples/config.example.zh-CN.yaml)：全部可配置字段、参数与注释。
+- [Complete English example](examples/config.example.en.yaml)。
+- [配置与受保护文件说明](docs/CONFIG.zh-CN.md)：不同引用方式、文件内容与权限。
+
+**订阅链接**写入 `~/.config/mihomo/subscription.url`，只写一行 URL；YAML 中使用 `mihomo.subscription.file` 引用。**密钥**通常写入 `~/.config/secrets/api.env`，例如 `OPENAI_API_KEY='你的密钥'`，通过 `secrets.file` 和 `codex.api_key.env: OPENAI_API_KEY` 引用。也可使用仅含一行密钥的文件并配置 `codex.api_key.file`，这时将 `env` 留空。Unix 文件应属于当前用户、权限 `600`；实际密钥/订阅链接不要写入 YAML、命令行参数或 Git。
+
+让普通 Shell 优先使用受管 Git/Python（Linux/macOS）：
+
+```yaml
+shell:
+  prefer_managed: [git, python]
+```
+
+若尚未安装受管版本，设置此项后执行 `envpilot install git` 和 `envpilot install python`。即使系统版本可用，也会在用户目录安装独立版本；不替换系统文件。定时更新不会主动安装缺失的组件。Windows 的 Git/Python 仍由原包管理器维护。
 
 ```bash
-envpilot codex remote status
-envpilot codex remote enable
-envpilot codex remote restart
-# 也可以：
-envpilot codex remote stop
-envpilot codex remote enable
-envpilot update codex
+envpilot apply-shell
+# 打开新终端，或在 Bash 中重新加载：
+source ~/.bashrc
+command -v git
+command -v python3
 ```
 
-`restart` 会停止当前用户、当前节点、同一控制 socket 的已核实实例，包括由 Desktop/SSH 启动的实例，再启动并验证新进程。未知归属或其他 CODEX_HOME 的实例不会被停止。重启可能中断当前请求。
+未激活 Python 环境时，路径应指向安装前缀下的 `git/current/bin/git`、`python/current/bin/python3`。已激活 Conda/venv 时保留环境的 Python。同名用户 alias/函数不会被覆盖，可用 `type -a git python3` 检查。
 
-`update codex` 在更新前服务运行时刷新运行文件并重启；此前停止则保持停止。配置、认证和会话数据保留。节点缓存采用版本目录；只有协议握手和运行版本校验通过才报告就绪。详见 [Codex](docs/CODEX.zh-CN.md)。
+修改后运行 `envpilot config validate`；安装与 Shell 设置通过 `plan → apply` 应用。定时更新每次读取 YAML。旧 `shell.local` 保留；Bash/zsh/PowerShell profile 只加入短加载块，不整体替换。
 
-## Shell 与升级
+## 各类命令解析
 
-0.4.0 保留原 `.bashrc`、`.zshrc` 或 PowerShell profile，只添加受管加载块。独立脚本保存在配置目录中；重复应用不堆积内容，同名函数和别名默认保留。
+| 目的 | 命令 |
+| --- | --- |
+| 版本与帮助 | `envpilot version` / `-v` / `-V`；`envpilot help` / `-h` / `-help` |
+| 配置 | `envpilot init`；`envpilot config edit/validate/show` |
+| 预览并应用 | `envpilot plan`；`envpilot apply` |
+| 无交互应用 | Bash：`--yes --non-interactive`；PowerShell：`-Yes -NonInteractive` |
+| 安装 / 更新组件 | `envpilot install COMPONENT`；`envpilot update COMPONENT` |
+| 更新 envpilot 自身 | `envpilot self-update` |
+| 检查 / 运行到期策略 | `envpilot updates check`；`envpilot updates run` |
+| 定时任务 / 状态 / 历史 | `envpilot updates enable/disable/status/history` |
+| Shell 接入 / 移除 | `envpilot apply-shell`；`envpilot shell remove` |
+| 独立子进程环境 | `envpilot run -- COMMAND ...` |
+| 诊断 / 快照 / 恢复 | `envpilot doctor`；`envpilot snapshot`；`envpilot restore` |
+| Codex 服务 | `envpilot codex remote status/enable/verify/restart/stop` |
+| 代理 | `envpilot mihomo start/stop/status/ports/update-subscription` |
+| 中断安装 / 状态重置 | `envpilot resume`；`envpilot reset`（不卸载） |
 
-从旧版升级时，精确识别的旧模板可自动迁移；带自定义修改的旧 profile 保持可用并给出待处理提示。`shell.local` 和密钥文件保留。升级步骤见 [升级与恢复](docs/UPGRADE.zh-CN.md) 和 [Shell 接入](docs/SHELL-CONFIG.zh-CN.md)。
+表格中的 `/` 表示可选子命令，执行时选择一个。[命令说明](docs/COMMAND.zh-CN.md) 提供具体示例。
 
-## 组件、维护与发布
+## 软件目录
 
-[Mihomo](docs/MIHOMO.zh-CN.md) · [Conda/Mamba](docs/CONDA-MAMBA.zh-CN.md) · [Git/Python](docs/GIT-PYTHON.zh-CN.md) · [GitHub CLI/tmux](docs/GITHUB-TMUX.zh-CN.md)
+| 软件 | 用途与文档 |
+| --- | --- |
+| [Mihomo](docs/MIHOMO.zh-CN.md) | 代理、订阅与端口 |
+| [Git / Python](docs/GIT-PYTHON.zh-CN.md) | 兼容的用户态工具，保留系统安装 |
+| [Conda / Mamba](docs/CONDA-MAMBA.zh-CN.md) | 包与环境管理，保留已有环境 |
+| [Codex](docs/CODEX.zh-CN.md) | CLI、完整节点运行目录与 app-server |
+| [GitHub CLI / tmux](docs/GITHUB-TMUX.zh-CN.md) | GitHub 操作与持久终端 |
 
-GitHub Actions 测试 Linux、macOS、Windows；定时更新使用只安装到本仓库的 GitHub App 创建 PR，避免 `GITHUB_TOKEN` 触发的待批准状态。发布包包含源码、配置工具和 SHA-256 校验文件。GitHub/Gitee 使用相同 main 和不可变版本标签。
+## 其它内容
 
-维护说明：[架构](docs/ARCHITECTURE.md)、[扩展](docs/EXTENDING.zh-CN.md)、[运维技能](docs/ENVPILOT-SKILL.md)。许可证：MIT。
+- [Shell 接入](docs/SHELL-CONFIG.zh-CN.md)、[升级与恢复](docs/UPGRADE.zh-CN.md)、[更新与历史](docs/UPDATES.zh-CN.md)。
+- [维护与分支](docs/OPERATIONS.zh-CN.md)：`main` 是已集成代码，标签是不可变发布点；机器人分支承载定期更新 PR，可在合入后重建；已合并的普通开发分支可删除。
+- [架构](docs/ARCHITECTURE.md)、[扩展组件](docs/EXTENDING.zh-CN.md)、[运维指南](docs/ENVPILOT-SKILL.md)、[变更记录](CHANGELOG.md)。
+- GitHub/Gitee 同步代码与标签；平台包以实际附件和校验值为准。Gitee 附件尚不完整时，优先使用 GitHub Release。
+
+许可证：MIT。

@@ -15,7 +15,7 @@ START_LOCK="$CONTROL_DIR/.envpilot-app-server-start.lock"
 READY_TIMEOUT="${ENVPILOT_CODEX_REMOTE_READY_TIMEOUT:-60}"
 RUNTIME_ROOT="${ENVPILOT_CODEX_RUNTIME_DIR:-}"
 QUIET="${ENVPILOT_CODEX_REMOTE_QUIET:-0}"
-CORE_BIN="${ENVPILOT_CORE:-$HOME/.local/lib/envpilot/0.4.3/envpilot-core}"
+CORE_BIN="${ENVPILOT_CORE:-$HOME/.local/lib/envpilot/0.4.4/envpilot-core}"
 SOURCE_RECORD="${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}/codex-source"
 if [ -z "${ENVPILOT_CORE:-}" ] && [ -r "${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}/core-path" ]; then
     IFS= read -r CORE_BIN < "${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}/core-path" || true

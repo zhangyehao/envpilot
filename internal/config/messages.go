@@ -8,6 +8,18 @@ import (
 // Installer adapters and copied service managers share this catalog. Arguments
 // stay data; translations never become shell code or machine-readable fields.
 var messages = [][2]string{
+	{`^updates.interval_days must be between 1 and 365$`, `updates.interval_days 必须为 1–365 之间的整数。`},
+	{`^updates.window_start/window_end must be distinct HH:MM values$`, `updates.window_start 和 updates.window_end 必须是不同的 HH:MM 时间。`},
+	{`^updates.timezone.*$`, `updates.timezone 必须为 Local 或有效 IANA 时区，例如 Asia/Shanghai。`},
+	{`^E_UPDATE_BUSY:.*$`, `E_UPDATE_BUSY：已有 envpilot 安装或更新正在运行，请稍后重试。`},
+	{`^E_UPDATE_OFFLINE$`, `E_UPDATE_OFFLINE：离线模式不检查在线更新。`},
+	{`^E_UPDATE_FAILED$`, `E_UPDATE_FAILED：部分检查或更新失败。请运行 envpilot updates status；安装日志位于配置目录的 updates/install.log。`},
+	{`^E_UPDATE_DISABLED:.*$`, `E_UPDATE_DISABLED：请先在配置中设置 updates.enabled: true。`},
+	{`^E_UPDATE_ENTRYPOINT:.*$`, `E_UPDATE_ENTRYPOINT：请先运行 envpilot setup-command 登记命令入口。`},
+	{`^E_UPDATE_DOWNGRADE:.*$`, `E_UPDATE_DOWNGRADE：当前版本更高或不是稳定版，不自动降级。`},
+	{`^use envpilot updates check\|run\|status\|history\|enable\|disable$`, `请使用 envpilot updates check|run|status|history|enable|disable。`},
+	{`^history days must be.*$`, `历史查询天数必须为 1–36500 之间的整数。`},
+	{`^E_UPDATE_SCHEDULER: crontab unavailable.*$`, `E_UPDATE_SCHEDULER：crontab 不可用；请安装/启用 cron，或用自己的调度器运行 envpilot updates run。`},
 	{`^=== Process ===$`, `=== 进程 ===`},
 	{`^=== Listening ports ===$`, `=== 监听端口 ===`},
 	{`^=== API health ===$`, `=== API 健康状态 ===`},
@@ -224,6 +236,9 @@ var messages = [][2]string{
 	{`^Building Git with (.*) job\(s\); this can take several minutes on a login node\.$`, `使用 ${1} 个并行任务编译 Git，登录节点上可能需要几分钟。`},
 	{`^Install user-space Git (.*) under (.*)\?$`, `在 ${2} 安装用户态 Git ${1}？`},
 	{`^Install compatible Python 3 under (.*)\?$`, `在 ${1} 安装兼容的 Python 3？`},
+	{`^Shell priority: set shell.prefer_managed: \[(git|python)\] and run envpilot apply-shell\.$`, `Shell 优先级：在 shell.prefer_managed 中加入 ${1}，然后运行 envpilot apply-shell。`},
+	{`^Built Git cannot run on this host; the previous active Git was preserved\.$`, `新编译的 Git 无法在本机运行，保留原有活动版本。`},
+	{`^Downloaded Python cannot run on this host; the previous active interpreter was preserved\.$`, `下载的 Python 无法在本机运行，保留原有活动解释器。`},
 	{`^Install/update GitHub CLI in (.*)\?$`, `在 ${1} 安装或更新 GitHub CLI？`},
 	{`^Install tmux (.*) as a direct user command\?$`, `安装 tmux ${1} 并提供用户态命令？`},
 	{`^Install (.*) from (.*) to (.*)\?$`, `从 ${2} 将 ${1} 安装到 ${3}？`},
