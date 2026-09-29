@@ -222,11 +222,7 @@ func installedUpdate(c Config, root, component string) (string, error) {
 		if err != nil || st.IsDir() {
 			continue
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		cmd := exec.CommandContext(ctx, p, "--version")
-		cmd.Env = append(os.Environ(), "PATH="+filepath.Dir(p)+string(os.PathListSeparator)+os.Getenv("PATH"))
-		b, err := cmd.Output()
-		cancel()
+		b, err := versionOutput(p, "--version")
 		if err != nil {
 			return "", fmt.Errorf("E_UPDATE_PROBE")
 		}

@@ -42,6 +42,8 @@ shell:
   # 追加 PATH 目录，例如 [~/tools/bin]，不抢占已有命令优先级。
   paths: []
   # 填 [git, python] 让受管 Git/Python 在普通 Shell 优先；已激活的 Python 环境仍优先。
+  # Linux/macOS 下显式 install 也会据此创建独立版本，即使系统工具可用。
+  # 设置后执行 envpilot install git / envpilot install python；定时任务不安装缺失组件。
   prefer_managed: []
 
 # 代理设置；真实订阅链接写入下面引用的受保护文件。

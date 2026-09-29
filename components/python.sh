@@ -89,13 +89,15 @@ ep_install_python()
     ep_require_unix_runtime
     local existing managed source archive source_version version target_dir python_bin python_root current_dir action
     managed="$(ep_python_managed_bin)"
-    if { [ "$EP_UPGRADE" != 1 ] || [ ! -x "$managed" ]; } && existing="$(ep_python_system_bin 2>/dev/null)"; then
+    if [[ " ${ENVPILOT_PREFER_MANAGED_TOOLS:-} " != *" python "* ]] &&
+       { [ "$EP_UPGRADE" != 1 ] || [ ! -x "$managed" ]; } && existing="$(ep_python_system_bin 2>/dev/null)"; then
         ep_log "Python 3 already available at $existing; envpilot will not replace the system interpreter."
         ep_state_mark_done python
         ep_report_event python skipped "existing Python 3 retained; system installation was not modified" "$("$existing" --version 2>&1 || true)" "system PATH" "$existing"
         return 0
     fi
-    if { [ "$EP_UPGRADE" != 1 ] || [ ! -x "$managed" ]; } && existing="$(ep_python_conda_bin 2>/dev/null)"; then
+    if [[ " ${ENVPILOT_PREFER_MANAGED_TOOLS:-} " != *" python "* ]] &&
+       { [ "$EP_UPGRADE" != 1 ] || [ ! -x "$managed" ]; } && existing="$(ep_python_conda_bin 2>/dev/null)"; then
         ep_log "Python 3 already available in Conda at $existing; envpilot will not create a second interpreter."
         ep_state_mark_done python
         ep_report_event python skipped "Conda Python retained" "$("$existing" --version 2>&1 || true)" "Conda base" "$existing"
@@ -133,7 +135,7 @@ ep_install_python()
     ep_log "Compatibility: matched OS=$EP_OS arch=$EP_ARCH libc=$EP_LIBC glibc=${EP_GLIBC_VERSION:-na}; no system Python will be overwritten."
     ep_log "Source: $source"
     ep_log "Target: $EP_PREFIX/python/current/bin/python3"
-    ep_log "PATH on the next shell: $HOME/software/python/current/bin"
+    ep_log "Shell priority: set shell.prefer_managed: [python] and run envpilot apply-shell."
     ep_confirm "Install compatible Python 3 under $EP_PREFIX/python?" "yes" || {
         ep_report_event python skipped "user declined" "" "$source" "$managed"
         return 0

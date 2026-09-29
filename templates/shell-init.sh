@@ -105,13 +105,18 @@ if [ "${BASHRC_AUTO_ENABLE_PROXY:-0}" = 1 ]; then envpilot_proxy_on >/dev/null 2
 __envpilot_path_prepend()
 {
     [ -d "$1" ] || return 0
-    local entry remaining="" old_ifs="$IFS"
-    IFS=:
-    for entry in $PATH; do
-        [ "$entry" = "$1" ] || remaining="${remaining:+$remaining:}$entry"
+    local entry remaining="" rest="$PATH" separator="" more count=0
+    while :; do
+        case "$rest" in
+            *:*) entry="${rest%%:*}"; rest="${rest#*:}"; more=1 ;;
+            *) entry="$rest"; more=0 ;;
+        esac
+        if [ "$entry" != "$1" ]; then
+            remaining="$remaining$separator$entry"; separator=:; count=$((count + 1))
+        fi
+        [ "$more" = 1 ] || break
     done
-    IFS="$old_ifs"
-    export PATH="$1${remaining:+:$remaining}"
+    if [ "$count" -gt 0 ]; then export PATH="$1:$remaining"; else export PATH="$1"; fi
 }
 for __envpilot_tool in "${ENVPILOT_PREFER_MANAGED[@]:-}"; do
     case "$__envpilot_tool" in

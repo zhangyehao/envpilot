@@ -108,12 +108,14 @@ Default: `~/.config/envpilot/config.yaml`. Precedence: arguments → declared en
 
 Put the **subscription URL** alone on one line in `~/.config/mihomo/subscription.url`, referenced by `mihomo.subscription.file`. Put **API keys** in `~/.config/secrets/api.env`, for example `OPENAI_API_KEY='your-key'`, referenced by `secrets.file` and `codex.api_key.env: OPENAI_API_KEY`. Alternatively use `codex.api_key.file` for a file containing only the key and leave `env` empty. Unix files must be owned by you and mode `600`. Keep credentials and subscription URLs out of YAML, command arguments and Git.
 
-Prefer installed managed Git/Python in ordinary shells:
+Prefer managed Git/Python in ordinary shells (Linux/macOS):
 
 ```yaml
 shell:
   prefer_managed: [git, python]
 ```
+
+If the managed versions are missing, set this option and run `envpilot install git` and `envpilot install python`. This installs separate user-space copies even when system tools are available, preserving system files. Scheduled updates never install missing components. On Windows, Git/Python remain maintained by their original package manager.
 
 Run `envpilot apply-shell`, open a new shell and inspect `command -v git` / `command -v python3`. They should resolve under the managed `git/current/bin` and `python/current/bin` directories. Activated Conda/venv environments retain their Python; user aliases/functions are preserved. Use `type -a git python3` to inspect conflicts.
 

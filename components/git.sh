@@ -65,7 +65,8 @@ ep_install_git()
     managed_version=""
     [ -n "$system_git" ] && system_version="$(ep_git_version "$system_git")"
     [ -x "$managed" ] && managed_version="$(ep_git_version "$managed")"
-    if [ -n "$system_git" ] && [ "$system_git" != "$managed" ] && [ -n "$system_version" ] && ep_version_at_least "$system_version" "$EP_GIT_MIN_VERSION" &&
+    if [[ " ${ENVPILOT_PREFER_MANAGED_TOOLS:-} " != *" git "* ]] &&
+       [ -n "$system_git" ] && [ "$system_git" != "$managed" ] && [ -n "$system_version" ] && ep_version_at_least "$system_version" "$EP_GIT_MIN_VERSION" &&
        { [ "$EP_UPGRADE" != 1 ] || [ ! -x "$managed" ]; }; then
         ep_log "Git $system_version already satisfies the minimum $EP_GIT_MIN_VERSION at $system_git; envpilot will not overwrite it."
         ep_state_mark_done git
@@ -118,7 +119,7 @@ ep_install_git()
     ep_log "Compatibility: build against the current OS/$EP_ARCH/$EP_LIBC toolchain; system Git will remain unchanged."
     ep_log "Source: $source"
     ep_log "Target: $EP_PREFIX/git/current/bin/git"
-    ep_log "PATH on the next shell: $HOME/software/git/current/bin"
+    ep_log "Shell priority: set shell.prefer_managed: [git] and run envpilot apply-shell."
     ep_confirm "Install user-space Git $version under $EP_PREFIX/git?" "yes" || {
         ep_report_event git skipped "user declined" "" "$source" "$managed"
         return 0

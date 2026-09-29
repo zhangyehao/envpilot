@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.4
+## 0.4.4 - 2026-09-29
 
 - Add unified installed-component and envpilot update checks, a configurable 3-day interval, 03:00–05:00 installation window and IANA timezone support; register user scheduling explicitly.
 - Add persistent manual/automatic update history (`updates history`, 30 days by default), safe retries, concurrent-update exclusion and stable error/status output.

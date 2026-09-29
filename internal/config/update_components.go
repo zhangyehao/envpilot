@@ -21,7 +21,7 @@ func containsComponent(names []string, name string) bool {
 	return false
 }
 
-var toolVersion = regexp.MustCompile(`(?:^|[ /v])([0-9]+\.[0-9]+(?:\.[0-9]+)?[a-z]?)(?:[ \r\n(]|$)`)
+var toolVersion = regexp.MustCompile(`(?:^|[ /v])([0-9]+\.[0-9]+(?:\.[0-9]+)?[a-z]?)(?:\.windows\.[0-9]+)?(?:[ \r\n(]|$)`)
 var tmuxVersion = regexp.MustCompile(`^([0-9]+)\.([0-9]+)([a-z]?)$`)
 
 func knownComponentVersion(component, v string) bool {
@@ -102,10 +102,7 @@ func installedComponent(c Config, component string) (string, error) {
 	if component == "mihomo" {
 		arg = "-v"
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, path, arg)
-	b, err := cmd.Output()
+	b, err := versionOutput(path, arg)
 	if err != nil {
 		return "", fmt.Errorf("E_UPDATE_PROBE")
 	}
@@ -114,6 +111,27 @@ func installedComponent(c Config, component string) (string, error) {
 		return "", fmt.Errorf("E_UPDATE_PROBE")
 	}
 	return match[1], nil
+}
+
+// Windows npm/Conda launchers can be batch files. Pass their path as data
+// through PowerShell rather than interpolating it into a cmd.exe command.
+func versionOutput(path, arg string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, path, arg)
+	env := append(os.Environ(), "PATH="+filepath.Dir(path)+string(os.PathListSeparator)+os.Getenv("PATH"))
+	if runtime.GOOS == "windows" && (strings.EqualFold(filepath.Ext(path), ".cmd") || strings.EqualFold(filepath.Ext(path), ".bat")) {
+		shell, err := exec.LookPath("pwsh")
+		if err != nil {
+			shell = "powershell.exe"
+		}
+		cmd = exec.CommandContext(ctx, shell, "-NoProfile", "-NonInteractive", "-Command",
+			"& $env:ENVPILOT_VERSION_EXECUTABLE $env:ENVPILOT_VERSION_ARGUMENT; exit $LASTEXITCODE")
+		env = append(env, "ENVPILOT_VERSION_EXECUTABLE="+path, "ENVPILOT_VERSION_ARGUMENT="+arg)
+	}
+	cmd.Env = env
+	cmd.WaitDelay = time.Second
+	return cmd.Output()
 }
 func managedUpdateComponent(c Config, component string) bool {
 	_, managed := componentTool(c, component)

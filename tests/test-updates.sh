@@ -56,6 +56,12 @@ shell:
   prefer_managed: [git, python]
 EOF
 bash "$ROOT/envpilot.sh" apply-shell --yes --non-interactive
+# The installer must not skip a requested managed Python because a system
+# interpreter exists. An invalid explicit asset must fail and record failure.
+if bash "$ROOT/envpilot.sh" update python --mode offline --asset-path "$fixture/missing.tar.gz" --yes --non-interactive > "$fixture/failed-install.log" 2>&1; then
+    cat "$fixture/failed-install.log"; exit 1
+fi
+bash "$ROOT/envpilot.sh" updates history --component python --json | grep '"status": "failed"'
 env -u CONDA_PREFIX -u VIRTUAL_ENV bash --noprofile --norc -c '
     . "$HOME/.bashrc"
     test "$(command -v git)" = "$HOME/software/git/current/bin/git"
@@ -68,4 +74,11 @@ VIRTUAL_ENV="$fixture/venv" PATH="$fixture/venv/bin:$PATH" bash --noprofile --no
     test "$(command -v python3)" = "$VIRTUAL_ENV/bin/python3"
     test "$(command -v git)" = "$HOME/software/git/current/bin/git"
 '
+if command -v zsh >/dev/null 2>&1; then
+    env -u CONDA_PREFIX -u VIRTUAL_ENV zsh -f -c '
+        source "$HOME/.config/envpilot/shell/init.sh"
+        test "$(command -v git)" = "$HOME/software/git/current/bin/git"
+        previous=$PATH; source "$HOME/.config/envpilot/shell/init.sh"; test "$previous" = "$PATH"
+    '
+fi
 echo '[TEST] update CLI, offline policy, history and idempotent scheduler passed'

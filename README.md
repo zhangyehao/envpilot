@@ -108,12 +108,14 @@ envpilot updates history --days 90 --component codex
 
 **订阅链接**写入 `~/.config/mihomo/subscription.url`，只写一行 URL；YAML 中使用 `mihomo.subscription.file` 引用。**密钥**通常写入 `~/.config/secrets/api.env`，例如 `OPENAI_API_KEY='你的密钥'`，通过 `secrets.file` 和 `codex.api_key.env: OPENAI_API_KEY` 引用。也可使用仅含一行密钥的文件并配置 `codex.api_key.file`，这时将 `env` 留空。Unix 文件应属于当前用户、权限 `600`；实际密钥/订阅链接不要写入 YAML、命令行参数或 Git。
 
-让普通 Shell 优先使用已安装的受管 Git/Python：
+让普通 Shell 优先使用受管 Git/Python（Linux/macOS）：
 
 ```yaml
 shell:
   prefer_managed: [git, python]
 ```
+
+若尚未安装受管版本，设置此项后执行 `envpilot install git` 和 `envpilot install python`。即使系统版本可用，也会在用户目录安装独立版本；不替换系统文件。定时更新不会主动安装缺失的组件。Windows 的 Git/Python 仍由原包管理器维护。
 
 ```bash
 envpilot apply-shell

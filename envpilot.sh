@@ -275,8 +275,14 @@ install_one()
     ep_history_begin "$component"
     if [ "${EP_UPGRADE:-0}" = 1 ] && [ "${EP_MODE:-online}" = online ]; then
         case "$component" in
-            git) [ ! -x "$(ep_git_managed_bin)" ] || EP_GIT_VERSION="$(ep_core latest-component --target git)" ;;
-            python) [ ! -x "$(ep_python_managed_bin)" ] || EP_PYTHON_VERSION="$(ep_core latest-component --target python)" ;;
+            git)
+                if [ -x "$(ep_git_managed_bin)" ] || [[ " ${ENVPILOT_PREFER_MANAGED_TOOLS:-} " == *" git "* ]]; then
+                    EP_GIT_VERSION="$(ep_core latest-component --target git)"
+                fi ;;
+            python)
+                if [ -x "$(ep_python_managed_bin)" ] || [[ " ${ENVPILOT_PREFER_MANAGED_TOOLS:-} " == *" python "* ]]; then
+                    EP_PYTHON_VERSION="$(ep_core latest-component --target python)"
+                fi ;;
             tmux) EP_TMUX_VERSION="$(ep_core latest-component --target tmux)" ;;
         esac
         export EP_GIT_VERSION EP_PYTHON_VERSION EP_TMUX_VERSION

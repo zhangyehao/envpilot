@@ -42,6 +42,15 @@ $updatedYaml = [IO.File]::ReadAllText($configFile).Replace('proxy_port: 42290','
 [IO.File]::WriteAllText($configFile,$updatedYaml)
 $effective = & "$Root/envpilot.ps1" config show | ConvertFrom-Json
 if ($effective.config.mihomo.proxy_port -ne 43000) { throw 'Generated environment masked an edited YAML value.' }
+$updateStatus = & "$Root/envpilot.ps1" updates status -Json | ConvertFrom-Json
+if (-not $updateStatus.PSObject.Properties['next_check']) { throw 'Update status JSON is missing.' }
+$history = & "$Root/envpilot.ps1" updates history -Json | Out-String
+if ($history.Trim() -ne '[]') { throw 'Fresh update history is not empty.' }
+$core = Join-Path $Root 'bin/envpilot-core.exe'
+$historyID = & $core history-begin git --root $Root --config $configFile
+& $core history-finish $historyID 1 --root $Root --config $configFile
+$events = @(& "$Root/envpilot.ps1" updates history -Days 30 -HistoryComponent git -Json | ConvertFrom-Json)
+if ($events.Count -ne 1 -or $events[0].status -ne 'failed') { throw 'PowerShell history filter lost a failed operation.' }
 & "$Root/envpilot.ps1" shell remove
 if ([IO.File]::ReadAllText($env:ENVPILOT_PROFILE) -ne $original) { throw 'Shell removal changed user content.' }
 Write-Output '[TEST] configuration and shell integration passed'

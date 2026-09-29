@@ -42,6 +42,8 @@ shell:
   # Append additional PATH directories, e.g. [~/tools/bin], without overriding existing commands.
   paths: []
   # Prefer managed Git/Python in ordinary shells; activated Python environments still win.
+  # On Linux/macOS this also lets explicit install create managed copies despite suitable system tools.
+  # Then use envpilot install git / envpilot install python; scheduling never installs missing tools.
   prefer_managed: []
 
 # Proxy settings. Store the actual subscription URL in the protected reference below.
