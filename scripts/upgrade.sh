@@ -5,9 +5,9 @@ umask 077
 root="${1:-$HOME/envpilot}"
 config_dir="${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}"
 config_file="${ENVPILOT_CONFIG_FILE:-$config_dir/config.yaml}"
-[ -f "$root/envpilot.sh" ] && [ -f "$root/VERSION" ] || {
+if [ ! -f "$root/envpilot.sh" ] || [ ! -f "$root/VERSION" ]; then
     printf 'Not an envpilot source checkout / 不是 envpilot 源码目录: %s\n' "$root" >&2; exit 1
-}
+fi
 root="$(cd "$root" && pwd)"
 git -C "$root" rev-parse --git-dir >/dev/null
 [ -z "$(git -C "$root" status --porcelain)" ] || {
