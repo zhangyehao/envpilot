@@ -6,10 +6,10 @@
   "source": "https://www.kernel.org/pub/software/scm/git/git-{version}.tar.xz",
   "offline_pattern": "git-*.tar.xz",
   "latest": {
-    "version": "2.55.0",
-    "checked_at": "2026-09-15T11:19:51Z",
-    "source": "https://www.kernel.org/pub/software/scm/git/git-2.55.0.tar.xz",
-    "html_url": "https://github.com/git/git/tree/v2.55.0"
+    "version": "2.56.0",
+    "checked_at": "2026-10-19T08:52:07Z",
+    "source": "https://www.kernel.org/pub/software/scm/git/git-2.56.0.tar.xz",
+    "html_url": "https://github.com/git/git/tree/v2.56.0"
   },
   "post_install": {
     "prefix": "$HOME/software/git/current",
