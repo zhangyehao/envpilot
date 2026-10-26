@@ -437,15 +437,14 @@ func mihomoList(c Config, proxies map[string]mihomoProxy, args []string, format 
 		groups = append(groups, p)
 	} else {
 		names := make([]string, 0, len(proxies))
-		for name := range proxies {
-			names = append(names, name)
-		}
-		sort.Strings(names)
-		for _, name := range names {
-			p := proxies[name]
+		for name, p := range proxies {
 			if len(p.All) > 0 || len(p.Providers) > 0 {
-				groups = append(groups, p)
+				names = append(names, name)
 			}
+		}
+		mihomoSortGroupNames(names, c.Mihomo.GroupOrder)
+		for _, name := range names {
+			groups = append(groups, proxies[name])
 		}
 	}
 	if format == "json" {
@@ -490,6 +489,26 @@ func mihomoList(c Config, proxies map[string]mihomoProxy, args []string, format 
 	return nil
 }
 
+// Only group names are sorted. Membership and the subscription's node order
+// remain unchanged; preferences for absent or ineligible groups have no effect.
+func mihomoSortGroupNames(names, preferred []string) {
+	priority := make(map[string]int, len(preferred))
+	for i, name := range preferred {
+		priority[name] = i
+	}
+	sort.Slice(names, func(i, j int) bool {
+		left, leftPreferred := priority[names[i]]
+		right, rightPreferred := priority[names[j]]
+		if leftPreferred != rightPreferred {
+			return leftPreferred
+		}
+		if leftPreferred {
+			return left < right
+		}
+		return names[i] < names[j]
+	})
+}
+
 func mihomoChooseGroup(c Config, proxies map[string]mihomoProxy, args []string, reader *bufio.Reader, out io.Writer, interactive bool) (mihomoProxy, error) {
 	if len(args) > 0 {
 		group, ok := proxies[args[0]]
@@ -504,7 +523,7 @@ func mihomoChooseGroup(c Config, proxies map[string]mihomoProxy, args []string, 
 			names = append(names, name)
 		}
 	}
-	sort.Strings(names)
+	mihomoSortGroupNames(names, c.Mihomo.GroupOrder)
 	if len(names) == 1 {
 		return proxies[names[0]], nil
 	}

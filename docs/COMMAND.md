@@ -14,7 +14,9 @@ Configure once with `envpilot init`, `envpilot config edit`, `envpilot config va
 
 Codex remote lifecycle: `status`, `enable`, `verify`, `ready`, `restart`, `stop`, `repair`, `disable`. `update codex` already restarts a previously running server. See [Codex](CODEX.md).
 
-Mihomo 0.4.5 commands: `envpilot mihomo select` prompts for a group/node; `nodes` lists candidates and `test "GROUP"` probes directly listed proxy nodes only. Explicitly use `test "GROUP" "MEMBER"` for nested groups or DIRECT/REJECT. Scripts use `envpilot mihomo select "GROUP" "NODE" --non-interactive`; these node commands support `--json`. Saved choices survive restart and subscription refresh when the names still exist.
+Mihomo commands added in 0.4.5: `envpilot mihomo select` prompts for a group/node; `nodes` lists candidates and `test "GROUP"` probes directly listed proxy nodes only. Explicitly use `test "GROUP" "MEMBER"` for nested groups or DIRECT/REJECT. Scripts use `envpilot mihomo select "GROUP" "NODE" --non-interactive`; these node commands support `--json`. Saved choices survive restart and subscription refresh when the names still exist.
+
+Since 0.4.7, set `group_order: ["烟火云"]` inside the main configuration's `mihomo` section to display that group first in `nodes` lists and `select` menus. Default `[]` preserves name ordering; remaining groups sort by name and absent names are ignored. The next command uses the saved order, without changing nodes or routing. See the full YAML example in [configuration](CONFIG.md#show-frequently-used-groups-first).
 
 `envpilot mihomo update-subscription` refreshes complete YAML using the protected URL reference. Use `--network direct|proxy|auto` to choose the download route, or `--file PATH` to import a file downloaded elsewhere. On Unix, first run `chmod 600 PATH` to protect the imported file. Failed downloads preserve the old configuration and running service.
 

@@ -40,7 +40,7 @@ envpilot apply
 
 ### Update an existing installation
 
-The current version, **0.4.6**, fixes `args[@]: unbound variable` when running `mihomo nodes/select/test` without a group name on Bash 4.2. Existing 0.4.4 and 0.4.5 users can follow the steps below while retaining subscription references, configuration and ports.
+The current version, **0.4.7**, adds `mihomo.group_order` to place frequently used groups first in menus. It includes the 0.4.6 fix for `args[@]: unbound variable` when running `mihomo nodes/select/test` without a group name on Bash 4.2. Existing 0.4.x users can follow the steps below while retaining subscription references, configuration and ports.
 
 **0.4.0 and later:**
 
@@ -85,6 +85,15 @@ envpilot mihomo status
 ```
 
 Use `nodes` to list candidates, `test "GROUP"` to probe directly listed proxy nodes and `restart` to restart with valid choices restored. To probe nested groups or DIRECT/REJECT, specify `test "GROUP" "MEMBER"`. When the host cannot download a subscription, upload complete Clash YAML, run `chmod 600 ~/subscription.yaml`, then `envpilot mihomo update-subscription --file ~/subscription.yaml`. See the [Mihomo guide](docs/MIHOMO.md) for PowerShell options, download routes and recovery.
+
+To show “烟火云” first in the group menu, run `envpilot config edit` and merge this field into the existing `mihomo` section:
+
+```yaml
+mihomo:
+  group_order: ["烟火云"]
+```
+
+The next `nodes` and `select` commands use this order. Default `[]` sorts groups by name; configured groups come first, remaining groups stay sorted by name, and absent names are ignored. This affects group display order only, preserving node order within groups, current selections and routing. No service restart is needed.
 
 ### Scheduled checks and overnight installation
 

@@ -28,6 +28,7 @@ Precedence is explicit arguments, declared environment overrides, YAML, then def
 | `shell.paths` | Additional paths, appended to preserve existing command priority. |
 | `mihomo.proxy_port/api_port` | 42290/60290; distinct integers between 1 and 65535. |
 | `mihomo.socks` | Export a SOCKS proxy; false. |
+| `mihomo.group_order` | Group display priority as a list of nonblank, unique names; default `[]`. For example, `["烟火云"]` puts that group first. Remaining groups sort by name; absent names are ignored. |
 | `mihomo.subscription.file/env` | Subscription file or environment reference, not both. |
 | `mihomo.subscription_network` | Subscription download route: `auto` (default; direct, then proxy on failure), `direct` or `proxy`; override with `--network`. |
 | `conda.distribution` | `miniconda` or `anaconda`. |
@@ -77,4 +78,17 @@ Alternatively set `codex.api_key.file: ~/.config/secrets/codex.key`, containing 
 
 `mihomo.subscription_network` controls subscription downloads only, not networking for the whole shell or every tool. Override it with `ENVPILOT_SUBSCRIPTION_NETWORK` or `--network` (PowerShell: `-Network`). Stopping Mihomo leaves existing proxy variables in the calling shell; `--network direct` ignores them. Use `envpilot mihomo update-subscription --file PATH` (PowerShell: `-SubscriptionFile PATH`) for offline import without configuring another URL. On Unix, the input must belong to the current user with mode 600/400; first run `chmod 600 PATH`.
 
-Use `envpilot mihomo select` to choose a node. Choices are saved per host under the configuration directory's `mihomo-selections/`, rather than adding group or node names to the main YAML. Removed or renamed choices prompt you to select again. See [Mihomo](MIHOMO.md).
+Use `envpilot mihomo select` to choose a node. Actual selections are saved per host under the configuration directory's `mihomo-selections/`. Removed or renamed choices prompt you to select again.
+
+### Show frequently used groups first
+
+Since 0.4.7, merge this field into the existing `mihomo` section to show “烟火云” first in the `nodes` group list and `select` group menu:
+
+```yaml
+mihomo:
+  group_order: ["烟火云"]
+```
+
+`group_order` is an ordered list of complete group names, defaulting to `[]`. Names must be nonblank and unique, matching the group's case and spacing exactly. Existing eligible groups appear in the configured order, followed by remaining groups sorted by name. Names absent from the subscription are ignored until they appear. `select` continues to offer only manually selectable groups. Changes take effect on the next command after saving YAML, without `apply` or a Mihomo restart.
+
+Only group display order changes. Node order within groups, saved node selections, subscription configuration and proxy routing remain intact. See [Mihomo](MIHOMO.md).

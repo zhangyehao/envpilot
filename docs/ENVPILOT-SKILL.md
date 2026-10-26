@@ -33,9 +33,11 @@ Keep persistent auth, sessions, configuration and control state separate from ve
 
 Mihomo ports must be distinct and real listeners must be checked before exporting proxies. Preserve no_proxy, subscription files and configured ports. Conda upgrades preserve environments; Mamba preserves .condarc. Never replace system glibc or unrelated system tools.
 
-## Mihomo subscriptions and node selection (0.4.5)
+## Mihomo subscriptions and node selection (since 0.4.5)
 
 Use `envpilot mihomo nodes`, `select` and `test` to inspect and choose nodes. Prefer the numbered interactive menu for users; scripts supply exact group and node names. `test GROUP` probes directly listed proxy nodes, excluding nested groups and DIRECT/REJECT; use `test GROUP NODE` to explicitly probe those members. A policy group is not another network endpoint, and an automatic group containing one real node provides no alternative route.
+
+Since 0.4.7, `mihomo.group_order` is an optional list of complete names to show first in group lists and menus, for example `["烟火云"]`. Default `[]` preserves name ordering; absent names are ignored and remaining groups sort by name. This is a display preference, effective on the next command, not a node selection or routing change. Preserve node order within groups and existing selections; no service restart or subscription rewrite is needed.
 
 Save selections per host under the envpilot configuration directory's `mihomo-selections/`, outside temporary runtime files. Restore valid selections across stop/start, restart and subscription replacement; report deleted or renamed choices without guessing. Do not leak controller credentials or overwrite another host's selections on a shared home.
 

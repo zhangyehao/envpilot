@@ -45,6 +45,7 @@ type Mihomo struct {
 	SOCKS               bool      `yaml:"socks" json:"socks"`
 	Subscription        Reference `yaml:"subscription" json:"subscription"`
 	SubscriptionNetwork string    `yaml:"subscription_network" json:"subscription_network"`
+	GroupOrder          []string  `yaml:"group_order" json:"group_order"`
 }
 type Conda struct {
 	Distribution string `yaml:"distribution" json:"distribution"`
@@ -148,7 +149,7 @@ func Expand(p string) string {
 	return filepath.Clean(p)
 }
 func Defaults() Config {
-	return Config{Version: 1, Language: "auto", Install: Install{Components: []string{}, Mode: "online", Prefix: "~/software", ReleaseSource: "github"}, Shell: Shell{Enabled: true, Modules: []string{}, Paths: []string{}}, Mihomo: Mihomo{ProxyPort: 42290, APIPort: 60290, SubscriptionNetwork: "auto", Subscription: Reference{File: "~/.config/mihomo/subscription.url"}}, Conda: Conda{Distribution: "miniconda"}, Codex: Codex{Home: "~/.codex", ReadyTimeout: 60, APIKey: Reference{Env: "OPENAI_API_KEY"}}, Updates: Updates{Enabled: true, IntervalDays: 3, Components: append([]string{}, Names...), Envpilot: true, WindowStart: "03:00", WindowEnd: "05:00", Timezone: "Local"}, Secrets: Reference{File: "~/.config/secrets/api.env"}, Env: map[string]string{}}
+	return Config{Version: 1, Language: "auto", Install: Install{Components: []string{}, Mode: "online", Prefix: "~/software", ReleaseSource: "github"}, Shell: Shell{Enabled: true, Modules: []string{}, Paths: []string{}}, Mihomo: Mihomo{ProxyPort: 42290, APIPort: 60290, SubscriptionNetwork: "auto", Subscription: Reference{File: "~/.config/mihomo/subscription.url"}, GroupOrder: []string{}}, Conda: Conda{Distribution: "miniconda"}, Codex: Codex{Home: "~/.codex", ReadyTimeout: 60, APIKey: Reference{Env: "OPENAI_API_KEY"}}, Updates: Updates{Enabled: true, IntervalDays: 3, Components: append([]string{}, Names...), Envpilot: true, WindowStart: "03:00", WindowEnd: "05:00", Timezone: "Local"}, Secrets: Reference{File: "~/.config/secrets/api.env"}, Env: map[string]string{}}
 }
 func Load(path string, overrides map[string]string) (Resolved, error) {
 	if path == "" {
@@ -290,6 +291,16 @@ func Validate(c Config) error {
 	case "auto", "direct", "proxy":
 	default:
 		return fmt.Errorf("mihomo.subscription_network: use auto, direct or proxy")
+	}
+	groupNames := map[string]bool{}
+	for _, name := range c.Mihomo.GroupOrder {
+		if strings.TrimSpace(name) == "" {
+			return fmt.Errorf("mihomo.group_order: entries must be nonblank group names")
+		}
+		if groupNames[name] {
+			return fmt.Errorf("mihomo.group_order: duplicate group names are not allowed")
+		}
+		groupNames[name] = true
 	}
 	if c.Conda.Distribution != "miniconda" && c.Conda.Distribution != "anaconda" {
 		return fmt.Errorf("conda.distribution: use miniconda or anaconda")
@@ -433,6 +444,7 @@ func Encode(c Config) ([]byte, error) {
 		"shell.legacy_local":          {"Load the previous user-owned shell.local interactively.", "交互时加载已有的用户自定义 shell.local。"},
 		"mihomo.subscription":         {"Choose file or env. Keep the actual subscription URL out of this YAML.", "file 或 env 二选一，实际订阅地址不写入本 YAML。"},
 		"mihomo.subscription_network": {"auto tries direct access before proxy fallback; direct/proxy selects one route.", "auto 先直连，失败再尝试代理；direct/proxy 固定使用对应通路。"},
+		"mihomo.group_order":          {"Exact group names to show first in nodes/select; other groups stay alphabetical. Missing names are ignored; [] keeps the default order.", "nodes/select 中优先显示的策略组完整名称；其余组仍按名称排序。不存在的名称会被忽略；[] 保持默认顺序。"},
 		"mihomo.proxy_port":           {"HTTP/mixed proxy port, 1-65535; must differ from api_port.", "HTTP/混合代理端口，1–65535；必须与 api_port 不同。"},
 		"mihomo.api_port":             {"Local controller API port, 1-65535.", "本地控制 API 端口，1–65535。"},
 		"mihomo.socks":                {"Also export all_proxy as SOCKS5 when enabling the proxy.", "启用代理时是否同时导出 SOCKS5 all_proxy。"},

@@ -40,7 +40,7 @@ envpilot apply
 
 ### 更新已有安装
 
-当前版本 **0.4.6** 修复了 Bash 4.2 环境中，不带组名运行 `mihomo nodes/select/test` 时出现的 `args[@]: unbound variable`。已安装 0.4.4 或 0.4.5 的用户可按下方步骤更新，保留已有订阅、配置和端口。
+当前版本 **0.4.7** 支持用 `mihomo.group_order` 将常用策略组排在菜单前面。它同时包含 0.4.6 的旧 Bash 修复：在 Bash 4.2 下，不带组名运行 `mihomo nodes/select/test` 不再因 `args[@]: unbound variable` 退出。已有 0.4.x 用户可按下方步骤更新，保留订阅、配置和端口。
 
 **0.4.0 及以上：**
 
@@ -85,6 +85,15 @@ envpilot mihomo status
 ```
 
 `nodes` 查看候选项，`test "策略组"` 测试组内直接代理节点，`restart` 重启后恢复有效选择。嵌套组和 DIRECT/REJECT 需用 `test "策略组" "成员名"` 明确指定。无法在服务器下载订阅时，可上传完整 Clash YAML，先执行 `chmod 600 ~/subscription.yaml`，再执行 `envpilot mihomo update-subscription --file ~/subscription.yaml`。[Mihomo 使用说明](docs/MIHOMO.zh-CN.md) 包含 PowerShell 选项、指定网络路径和恢复流程。
+
+希望“烟火云”显示在策略组菜单前面时，运行 `envpilot config edit`，将下面字段合并到已有的 `mihomo` 段：
+
+```yaml
+mihomo:
+  group_order: ["烟火云"]
+```
+
+保存后，下次 `nodes` 和 `select` 即采用这个组顺序。默认 `[]` 按名称排序；指定组优先，其余组仍按名称排序，暂不存在的组名忽略。这个设置只调整组的显示顺序，不改变组内节点顺序、当前选择或代理路由，无需重启服务。
 
 ### 定时检查与夜间自动安装
 

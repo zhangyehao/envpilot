@@ -53,6 +53,19 @@ envpilot mihomo update-subscription -SubscriptionFile "$HOME/subscription.yaml"
 
 控制命令会核实 API 监听进程属于当前用户的受管 Mihomo。端口被其他实例占用或无法确认归属时，不发送控制请求；`nodes` 可回退显示持久配置，`select` 会给出诊断。共享服务器上的 localhost 端口并非每个用户独有。
 
+### 把常用策略组放到前面
+
+0.4.7 起，运行 `envpilot config edit`，将 `group_order` 合并到主配置已有的 `mihomo` 段：
+
+```yaml
+mihomo:
+  group_order: ["烟火云"]
+```
+
+保存后运行 `envpilot mihomo nodes` 或 `envpilot mihomo select`，“烟火云”会优先显示。可以列出多个完整组名，按列表顺序排列；剩余组按名称排序，暂不存在的名称忽略。默认 `[]` 保持按名称排序。`select` 只显示可手动选择的组，排序设置不会让自动策略组变成手动组。
+
+此设置只调整策略组的显示顺序，不改变组内节点顺序、当前节点选择、订阅规则或代理路由；无需更新订阅、执行 `apply` 或重启服务。若只想直接进入某个组，也可运行 `envpilot mihomo select "烟火云"`。
+
 ## 文件和运行目录
 
 持久文件位于用户目录：

@@ -46,6 +46,8 @@ var messages = [][2]string{
 	{`^--network requires auto, direct or proxy$`, `--network 需要 auto、direct 或 proxy。`},
 	{`^--file requires a path$`, `--file 需要指定文件路径。`},
 	{`^mihomo.subscription_network: use auto, direct or proxy$`, `mihomo.subscription_network：请选择 auto、direct 或 proxy。`},
+	{`^mihomo.group_order: entries must be nonblank group names$`, `mihomo.group_order：每一项必须为非空的策略组名称，不能只含空白字符。`},
+	{`^mihomo.group_order: duplicate group names are not allowed$`, `mihomo.group_order：策略组名称不能重复。`},
 	{`^  VERSION MISMATCH: run (.*)$`, `  运行版本不匹配，请执行：${1}`},
 	{`^  SOURCE UPDATED: run (.*)$`, `  安装来源已更新，请执行：${1}`},
 	{`^E_SUBSCRIPTION: upstream returned HTTP (.*)$`, `E_SUBSCRIPTION：订阅服务返回 HTTP ${1}`},

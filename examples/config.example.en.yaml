@@ -1,4 +1,4 @@
-# envpilot 0.4.5 — complete configuration example / 完整配置样例
+# envpilot 0.4.7 — complete configuration example / 完整配置样例
 # Copy selected settings into ~/.config/envpilot/config.yaml; keep existing user settings.
 # See docs/CONFIG.md or docs/CONFIG.zh-CN.md for protected-file setup.
 
@@ -54,6 +54,10 @@ mihomo:
   api_port: 60290
   # Also export SOCKS5 all_proxy when proxy integration is enabled.
   socks: false
+  # Preferred group order in nodes lists and select menus; ["烟火云"] puts that group first.
+  # Names must be nonblank and unique. List order comes first; remaining groups sort by name, absent names are ignored. Default [].
+  # Only group display order changes, preserving node order, selections and routing; effective next command.
+  group_order: []
   # Subscription downloads: auto tries direct, then proxy; direct bypasses proxies; proxy uses a proxy.
   # Override with update-subscription --network (PowerShell: -Network) or ENVPILOT_SUBSCRIPTION_NETWORK.
   # This controls subscription downloads only, not whole-shell networking.
@@ -64,7 +68,7 @@ mihomo:
     file: ~/.config/mihomo/subscription.url
     # Alternative: MIHOMO_SUBSCRIPTION_URL; set file: "" when using this.
     env: ""
-  # Select nodes with envpilot mihomo select; per-host choices live in mihomo-selections/, not this YAML.
+  # Select actual nodes with envpilot mihomo select; per-host choices live in mihomo-selections/, separate from display order.
 
 # Conda/Mamba keep existing environments.
 conda:
