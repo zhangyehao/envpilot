@@ -13,6 +13,19 @@ envpilot plan
 
 Git 安装要求工作区干净且可快进到稳定版；分叉或未提交修改会保留，不强制覆盖。平台包安装验证 SHA-256 后使用新的版本目录。更新 envpilot 不会自动更新所有组件；组件更新使用 `envpilot update COMPONENT`。
 
+### 升级到 0.4.5 后使用 Mihomo
+
+`self-update` 会刷新已安装的管理脚本，保留订阅引用、配置和端口。Mihomo 已在运行时：
+
+```bash
+envpilot mihomo nodes
+envpilot mihomo select
+```
+
+这会把你确认的选择保存到当前节点的持久记录，供后续重启及订阅更新恢复。旧版临时缓存里已经丢失的选择无法还原；重新选择一次即可。升级 envpilot 不会替你下载订阅或决定使用哪个节点。
+
+订阅下载默认先直连、失败后尝试代理，可用 `--network direct` 单独验证直连；整个服务器无法下载时使用 `envpilot mihomo update-subscription --file PATH` 导入完整 Clash YAML，Unix 上先执行 `chmod 600 PATH`。PowerShell 对应选项为 `-Network` 和 `-SubscriptionFile`。停止 Mihomo 不会清除当前 Shell 的代理变量。完整步骤见 [Mihomo](MIHOMO.zh-CN.md)。
+
 ## 更新已有源码仓库
 
 如果仓库已在 `~/envpilot`，执行以下命令。安装在其他位置时，修改第一行路径：
@@ -35,12 +48,12 @@ git clone https://github.com/zhangyehao/envpilot.git "$HOME/envpilot" && cd "$HO
 
 ## 改用平台包升级（Linux/macOS）
 
-平台包附带匹配的配置工具。下面命令自动选择系统与架构，下载固定的 0.4.4 版本、校验 SHA-256，并解压到新的目录。它们不会覆盖旧源码目录：
+平台包附带匹配的配置工具。下面命令自动选择系统与架构，下载固定的 0.4.5 版本、校验 SHA-256，并解压到新的目录。它们不会覆盖旧源码目录：
 
 ```bash
 (
   set -eu
-  version=0.4.4
+  version=0.4.5
   case "$(uname -s)" in Linux) os=linux ;; Darwin) os=darwin ;; *) echo '请使用匹配系统的平台包'; exit 1 ;; esac
   case "$(uname -m)" in x86_64|amd64) arch=amd64 ;; aarch64|arm64) arch=arm64 ;; armv7l) arch=armv7 ;; *) echo '不支持此架构'; exit 1 ;; esac
   asset="envpilot-$version-$os-$arch.tar.gz"
@@ -62,7 +75,7 @@ git clone https://github.com/zhangyehao/envpilot.git "$HOME/envpilot" && cd "$HO
 上一步全部成功后进入解压目录；目标目录已存在时，请先检查原有内容，不要强行覆盖：
 
 ```bash
-cd "$HOME/.local/share/envpilot/releases/envpilot-0.4.4"
+cd "$HOME/.local/share/envpilot/releases/envpilot-0.4.5"
 ```
 
 ## 登记入口并应用配置

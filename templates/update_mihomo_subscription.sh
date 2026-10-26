@@ -7,6 +7,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 mihomo_init_runtime
 
 subscription_url="${1:-${ENVPILOT_MIHOMO_SUBSCRIPTION_URL:-}}"
+import_file="${ENVPILOT_MIHOMO_IMPORT_FILE:-}"
+if [ -n "$import_file" ]; then
+    [ -z "${1:-}" ] || mihomo_die 'Use a subscription URL or --file, not both.'
+    subscription_url=""
+fi
+if [ -z "$import_file" ]; then
 if [ -z "$subscription_url" ] && [ -n "${ENVPILOT_SUBSCRIPTION_ENV:-}" ]; then
     subscription_url="$(printenv "$ENVPILOT_SUBSCRIPTION_ENV" 2>/dev/null || true)"
 fi
@@ -24,6 +30,7 @@ case "$subscription_url" in
     http://*|https://*) ;;
     *) mihomo_die "provide a Clash/Mihomo subscription URL beginning with http:// or https://" ;;
 esac
+fi
 
 mkdir -p "$MIHOMO_SOURCE_CONFIG"
 chmod 700 "$MIHOMO_SOURCE_CONFIG"
@@ -37,7 +44,12 @@ if [ -z "$core" ] && [ -r "${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}/core-p
     IFS= read -r core < "${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}/core-path" || true
 fi
 [ -x "$core" ] || mihomo_die 'envpilot-core is required; run envpilot setup-command first'
-printf '%s' "$subscription_url" | "$core" protected-download --target "$new_config"
+config_file="${ENVPILOT_CONFIG_FILE:-${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}/config.yaml}"
+if [ -n "$import_file" ]; then
+    "$core" subscription-import --config "$config_file" --source "$import_file" --target "$new_config"
+else
+    printf '%s' "$subscription_url" | "$core" protected-download --config "$config_file" --target "$new_config"
+fi
 
 [ -s "$new_config" ] || mihomo_die "downloaded subscription config is empty"
 if grep -qiE '^[[:space:]]*<(html|!doctype)' "$new_config"; then
@@ -45,6 +57,7 @@ if grep -qiE '^[[:space:]]*<(html|!doctype)' "$new_config"; then
 fi
 mihomo_apply_local_config "$new_config"
 chmod 600 "$new_config"
+"$core" mihomo-validate --config "$config_file" --target "$new_config"
 
 if [ -e "$MIHOMO_SOURCE_CONFIG/config.yaml" ]; then
     backup="$MIHOMO_SOURCE_CONFIG/config.yaml.bak.$(date +%Y%m%d%H%M%S)"
@@ -60,6 +73,7 @@ trap - EXIT
 
 if [ "$was_running" = "1" ]; then
     if ! "$SCRIPT_DIR/start_mihomo.sh"; then
+        ENVPILOT_MIHOMO_SKIP_SELECTION_SAVE=1 "$SCRIPT_DIR/stop_mihomo.sh" || true
         if [ -n "$backup" ] && [ -f "$backup" ]; then
             cp -p "$backup" "$MIHOMO_SOURCE_CONFIG/config.yaml"
             printf '[WARN] restored previous subscription after restart failure.\n' >&2
@@ -69,9 +83,17 @@ if [ "$was_running" = "1" ]; then
     fi
 fi
 
-mihomo_save_subscription_url "$subscription_url"
+if [ -z "$import_file" ]; then
+    mihomo_save_subscription_url "$subscription_url"
+fi
 
 printf '[OK] Mihomo subscription updated.\n'
-printf '[OK] subscription source saved at %s (value not displayed).\n' "$MIHOMO_SUBSCRIPTION_FILE"
+if [ -z "$import_file" ]; then
+    printf '[OK] subscription source saved at %s (value not displayed).\n' "$MIHOMO_SUBSCRIPTION_FILE"
+fi
+printf '[OK] View nodes: envpilot mihomo nodes; choose a node: envpilot mihomo select\n'
+if [ "$was_running" != 1 ]; then
+    printf '[OK] Mihomo is stopped. Run envpilot mihomo start before selecting a node.\n'
+fi
 printf '[OK] proxy: %s:%s\n' "$MIHOMO_PROXY_HOST" "$MIHOMO_PROXY_PORT"
 printf '[OK] API:   %s:%s\n' "$MIHOMO_PROXY_HOST" "$MIHOMO_API_PORT"

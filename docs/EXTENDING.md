@@ -36,11 +36,19 @@ Subscription URLs, API keys, controller credentials, auth files and runtime logs
 
 Mihomo installs before network-dependent components. Preserve selected ports and managed configuration, and restart a previously running instance after updates. The curated downloads cache includes Linux/Windows amd64 Mihomo plus country.mmdb and geoip.metadb; other offline assets remain user-provided.
 
+Mihomo listing, selection and probing use the configuration helper to handle controller JSON, without Python/jq runtime dependencies. Read controller credentials from the YAML without printing them. Non-interactive selection requires explicit group and node names; probing must not change the selection.
+
+Store selections per host under the configuration directory's `mihomo-selections/`, separate from disposable runtime caches. After restart or subscription replacement, restore only still-existing groups and nodes. Report missing choices without guessing substitutes. Hosts sharing HOME must not overwrite one another's choices.
+
+Subscription downloads support `auto/direct/proxy`, with direct access before proxy fallback by default so a broken old node cannot block its own update. Classify and redact network failures; retry transient failures with bounded backoff. Downloads and local complete-YAML imports share validation, backup and replacement. Do not stop a running proxy or overwrite old configuration before validation succeeds. Local imports preserve the saved subscription reference.
+
 Conda defaults to Miniconda and selects compatible archives on old glibc. Preserve environments during an in-place base upgrade. Mamba preserves user .condarc and uses its isolated bootstrap channel/solver. Git/Python/tmux prefer compatible existing tools and user-space upgrades, without replacing system glibc.
 
 ## Tests and release
 
 Run Go tests, Bash and PowerShell regression/integration tests, Python maintenance tests, ShellCheck, actionlint and git diff --check. Include fresh and upgraded profiles, arbitrary user commands, non-interactive flows, malformed configuration, real socket/process behavior, and network/transaction failures.
+
+Mihomo regressions cover Unicode group/node names, interactive/non-interactive selection, controller authentication, restoration after restart, removed subscription nodes, shared-HOME host isolation, direct/proxy fallback, stale proxy variables, rate-limit retries, HTML/invalid YAML and offline import. Diagnostic assertions must also verify that credentials stay out of output.
 
 PR tests use read-only permissions. Scheduled updaters stage and validate complete changes before replacing files and use a private GitHub App installed only on envpilot, with Contents/Pull requests write permissions. Repository variable ENVPILOT_APP_ID and secret ENVPILOT_APP_PRIVATE_KEY configure it. Never put tokens or keys into files committed to the repository.
 

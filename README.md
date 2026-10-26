@@ -71,9 +71,22 @@ envpilot codex remote enable         # 仅已使用 Codex 远程服务时需要
 
 Git 自更新要求工作区干净、可快进至稳定标签；平台包自更新校验 SHA-256，并切换到新版本目录。[升级与恢复](docs/UPGRADE.zh-CN.md) 包含完整平台包命令和恢复方法。
 
+### 更新代理订阅与选择节点
+
+0.4.5 起，不需要手写控制接口命令：
+
+```bash
+envpilot mihomo update-subscription  # 从受保护引用读取链接，先直连、再尝试代理
+envpilot mihomo start                # 原来停止时需要
+envpilot mihomo select               # 按编号选择策略组和节点，自动保存
+envpilot mihomo status
+```
+
+`nodes` 查看候选项，`test "策略组"` 测试组内直接代理节点，`restart` 重启后恢复有效选择。嵌套组和 DIRECT/REJECT 需用 `test "策略组" "成员名"` 明确指定。无法在服务器下载订阅时，可上传完整 Clash YAML，先执行 `chmod 600 ~/subscription.yaml`，再执行 `envpilot mihomo update-subscription --file ~/subscription.yaml`。[Mihomo 使用说明](docs/MIHOMO.zh-CN.md) 包含 PowerShell 选项、指定网络路径和恢复流程。
+
 ### 定时检查与夜间自动安装
 
-0.4.4 默认每 **3 天**检查一次，自动安装窗口默认 **03:00–05:00**。默认仅检查；需要无人值守安装时，在主配置中设置：
+从 0.4.4 起，默认每 **3 天**检查一次，自动安装窗口默认 **03:00–05:00**。默认仅检查；需要无人值守安装时，在主配置中设置：
 
 ```yaml
 updates:
@@ -145,7 +158,8 @@ command -v python3
 | 独立子进程环境 | `envpilot run -- COMMAND ...` |
 | 诊断 / 快照 / 恢复 | `envpilot doctor`；`envpilot snapshot`；`envpilot restore` |
 | Codex 服务 | `envpilot codex remote status/enable/verify/restart/stop` |
-| 代理 | `envpilot mihomo start/stop/status/ports/update-subscription` |
+| 代理服务 / 订阅 | `envpilot mihomo start/stop/restart/status/ports/update-subscription` |
+| 代理节点 | `envpilot mihomo nodes/select/test` |
 | 中断安装 / 状态重置 | `envpilot resume`；`envpilot reset`（不卸载） |
 
 表格中的 `/` 表示可选子命令，执行时选择一个。[命令说明](docs/COMMAND.zh-CN.md) 提供具体示例。
@@ -154,7 +168,7 @@ command -v python3
 
 | 软件 | 用途与文档 |
 | --- | --- |
-| [Mihomo](docs/MIHOMO.zh-CN.md) | 代理、订阅与端口 |
+| [Mihomo](docs/MIHOMO.zh-CN.md) | 代理、订阅、节点选择与端口 |
 | [Git / Python](docs/GIT-PYTHON.zh-CN.md) | 兼容的用户态工具，保留系统安装 |
 | [Conda / Mamba](docs/CONDA-MAMBA.zh-CN.md) | 包与环境管理，保留已有环境 |
 | [Codex](docs/CODEX.zh-CN.md) | CLI、完整节点运行目录与 app-server |

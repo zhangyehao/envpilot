@@ -6,7 +6,7 @@ Run `envpilot init --lang en`, then `envpilot config edit`. Init never overwrite
 
 The default file is `~/.config/envpilot/config.yaml`. `ENVPILOT_CONFIG_DIR` changes the configuration directory; `--config PATH` selects a file for the current invocation.
 
-Precedence is explicit arguments, declared environment overrides, YAML, then defaults. Supported overrides include `ENVPILOT_LANG`, `ENVPILOT_MODE`, `ENVPILOT_PREFIX`, `ENVPILOT_RELEASE_SOURCE`, `ENVPILOT_CONDA_DISTRIBUTION`, `CODEX_HOME`, `ENVPILOT_CODEX_RUNTIME_DIR`, `ENVPILOT_CODEX_REMOTE_READY_TIMEOUT`, `MIHOMO_PROXY_PORT`, and `MIHOMO_API_PORT`.
+Precedence is explicit arguments, declared environment overrides, YAML, then defaults. Supported overrides include `ENVPILOT_LANG`, `ENVPILOT_MODE`, `ENVPILOT_PREFIX`, `ENVPILOT_RELEASE_SOURCE`, `ENVPILOT_CONDA_DISTRIBUTION`, `CODEX_HOME`, `ENVPILOT_CODEX_RUNTIME_DIR`, `ENVPILOT_CODEX_REMOTE_READY_TIMEOUT`, `MIHOMO_PROXY_PORT`, `MIHOMO_API_PORT`, and `ENVPILOT_SUBSCRIPTION_NETWORK`.
 
 | Setting | Meaning/default |
 | --- | --- |
@@ -29,6 +29,7 @@ Precedence is explicit arguments, declared environment overrides, YAML, then def
 | `mihomo.proxy_port/api_port` | 42290/60290; distinct integers between 1 and 65535. |
 | `mihomo.socks` | Export a SOCKS proxy; false. |
 | `mihomo.subscription.file/env` | Subscription file or environment reference, not both. |
+| `mihomo.subscription_network` | Subscription download route: `auto` (default; direct, then proxy on failure), `direct` or `proxy`; override with `--network`. |
 | `conda.distribution` | `miniconda` or `anaconda`. |
 | `conda.prefix` | Optional existing Conda location. |
 | `codex.remote` | Apply node-local Codex integration; false. |
@@ -73,3 +74,7 @@ ${EDITOR:-vi} "$HOME/.config/mihomo/subscription.url"
 Put `OPENAI_API_KEY='your-real-key'` inside `api.env`; put just the actual subscription URL on one line inside `subscription.url`. Keep only references in YAML: `secrets.file`, `mihomo.subscription.file`, and `codex.api_key.env: OPENAI_API_KEY`. Codex does not require globally enabling `shell.load_secrets`.
 
 Alternatively set `codex.api_key.file: ~/.config/secrets/codex.key`, containing just the key, and clear `codex.api_key.env`. For a subscription environment reference, set `mihomo.subscription.env: MIHOMO_SUBSCRIPTION_URL` and clear `file`. Scheduled tasks do not inherit variables temporarily exported by an interactive terminal; protected file references are recommended. `secrets` supports only an assignment file, never executable shell content. On Windows, protect the same referenced files using user ACLs.
+
+`mihomo.subscription_network` controls subscription downloads only, not networking for the whole shell or every tool. Override it with `ENVPILOT_SUBSCRIPTION_NETWORK` or `--network` (PowerShell: `-Network`). Stopping Mihomo leaves existing proxy variables in the calling shell; `--network direct` ignores them. Use `envpilot mihomo update-subscription --file PATH` (PowerShell: `-SubscriptionFile PATH`) for offline import without configuring another URL. On Unix, the input must belong to the current user with mode 600/400; first run `chmod 600 PATH`.
+
+Use `envpilot mihomo select` to choose a node. Choices are saved per host under the configuration directory's `mihomo-selections/`, rather than adding group or node names to the main YAML. Removed or renamed choices prompt you to select again. See [Mihomo](MIHOMO.md).

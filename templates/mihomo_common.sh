@@ -191,14 +191,35 @@ mihomo_runtime_running()
 
 mihomo_api_healthy()
 {
+    if mihomo_core_path >/dev/null 2>&1; then
+        mihomo_core_control health >/dev/null 2>&1
+        return
+    fi
     mihomo_command_exists curl || return 1
     curl \
         --noproxy '*' \
         --connect-timeout 1 \
         --max-time 2 \
-        -sS \
+        -fsS \
         -o /dev/null \
         "http://${MIHOMO_PROXY_HOST}:${MIHOMO_API_PORT}/version" 2>/dev/null
+}
+
+mihomo_core_path()
+{
+    local core="${ENVPILOT_CORE:-}"
+    if [ -z "$core" ] && [ -r "${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}/core-path" ]; then
+        IFS= read -r core < "${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}/core-path" || true
+    fi
+    [ -n "$core" ] && [ -x "$core" ] || return 1
+    printf '%s' "$core"
+}
+
+mihomo_core_control()
+{
+    local core
+    core="$(mihomo_core_path)" || return 1
+    "$core" mihomo --config "${ENVPILOT_CONFIG_FILE:-${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}/config.yaml}" --format text -- "$@"
 }
 
 mihomo_set_yaml_key()
@@ -211,7 +232,7 @@ mihomo_set_yaml_key()
     tmp="$(mktemp "${file}.tmp.XXXXXX")"
     awk -v key="$key" -v value="$value" '
         BEGIN { done = 0 }
-        $0 ~ "^[[:space:]]*" key ":[[:space:]]*" {
+        $0 ~ "^" key ":[[:space:]]*" {
             if (!done) print key ": " value
             done = 1
             next

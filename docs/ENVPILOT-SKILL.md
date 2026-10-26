@@ -33,6 +33,16 @@ Keep persistent auth, sessions, configuration and control state separate from ve
 
 Mihomo ports must be distinct and real listeners must be checked before exporting proxies. Preserve no_proxy, subscription files and configured ports. Conda upgrades preserve environments; Mamba preserves .condarc. Never replace system glibc or unrelated system tools.
 
+## Mihomo subscriptions and node selection (0.4.5)
+
+Use `envpilot mihomo nodes`, `select` and `test` to inspect and choose nodes. Prefer the numbered interactive menu for users; scripts supply exact group and node names. `test GROUP` probes directly listed proxy nodes, excluding nested groups and DIRECT/REJECT; use `test GROUP NODE` to explicitly probe those members. A policy group is not another network endpoint, and an automatic group containing one real node provides no alternative route.
+
+Save selections per host under the envpilot configuration directory's `mihomo-selections/`, outside temporary runtime files. Restore valid selections across stop/start, restart and subscription replacement; report deleted or renamed choices without guessing. Do not leak controller credentials or overwrite another host's selections on a shared home.
+
+For subscription failures, inspect direct access separately from the current proxy. `mihomo.subscription_network: auto` tries direct access before proxy fallback; `--network direct|proxy|auto` overrides one command. A stopped proxy can leave stale variables in the caller's shell. Distinguish DNS, connection, TLS, HTTP and configuration failures without printing the URL or credentials.
+
+When the host cannot download, import a protected complete Clash YAML with `envpilot mihomo update-subscription --file PATH`. Require current-user ownership and mode 600/400 on Unix (`chmod 600 PATH`); use user ACLs on Windows. PowerShell uses `-Network`/`-SubscriptionFile`, with `--network`/`--file` aliases. Keep the saved subscription reference. Stage and validate downloads/imports before changing live configuration or stopping the proxy, restore the previous configuration on restart failure, and preserve prior running/stopped state. Verify real API state and proxy reachability separately.
+
 ## Delivery
 
 Verify Bash, PowerShell, Go, Python, ShellCheck and workflow checks. Publish only verified immutable tags, source/platform packages and checksums. Confirm matching GitHub/Gitee remote refs and actual Actions/Release results. The maintenance GitHub App is repository-scoped; credentials belong only in protected local storage and repository Secrets.

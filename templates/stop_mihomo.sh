@@ -12,6 +12,9 @@ if ! mihomo_runtime_running; then
 fi
 
 printf '[INFO] stopping envpilot-managed mihomo:\n'
+if [ "${ENVPILOT_MIHOMO_SKIP_SELECTION_SAVE:-0}" != 1 ] && mihomo_core_path >/dev/null 2>&1; then
+    mihomo_core_control selection-save || printf '[WARN] Could not capture Mihomo selections; the previous saved choices remain.\n' >&2
+fi
 pgrep -u "${USER:-$(id -un)}" -af "$MIHOMO_RUNTIME_BIN" || true
 pkill -TERM -u "${USER:-$(id -un)}" -f "$MIHOMO_RUNTIME_BIN" 2>/dev/null || true
 
