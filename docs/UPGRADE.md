@@ -13,9 +13,11 @@ envpilot plan
 
 Git checkouts must be clean and fast-forwardable to the stable release. Diverged branches and local edits are preserved. Platform-package upgrades verify SHA-256 and install into a new version directory. Update individual components separately with `envpilot update COMPONENT`.
 
-### Use Mihomo after upgrading to 0.4.6
+### Use Mihomo after upgrading to 0.4.7
 
-Version 0.4.6 fixes empty-argument handling on older Bash: in 0.4.5, running `envpilot mihomo nodes`, `select` or `test` without a group name on Bash 4.2, including 4.2.46, can fail with `args[@]: unbound variable`. This is a command-forwarding error and does not mean Mihomo has stopped. Run `self-update` above and confirm 0.4.6 with `envpilot version`; reinstalling Mihomo or clearing the subscription is unnecessary.
+Version 0.4.7 adds optional group display priority. Run `self-update` above and confirm 0.4.7 with `envpilot version`. Add `group_order: ["烟火云"]` to the existing `mihomo` section to show that group first on the next `nodes` and `select` invocation. Default `[]` preserves name ordering; remaining groups sort by name and absent names are ignored. Node selections and routing are unchanged. See [Mihomo](MIHOMO.md#put-frequently-used-groups-first) for the complete steps.
+
+The 0.4.6 fix for older Bash remains included: in 0.4.5, running `envpilot mihomo nodes`, `select` or `test` without a group name on Bash 4.2, including 4.2.46, can fail with `args[@]: unbound variable`. This is a command-forwarding error and does not mean Mihomo has stopped; upgrading does not require reinstalling Mihomo or clearing the subscription.
 
 `self-update` refreshes installed management scripts while preserving subscription references, configuration and ports. With Mihomo running:
 
@@ -50,12 +52,12 @@ Run `bash envpilot.sh ...` inside the checkout, or use `bash "$HOME/envpilot/env
 
 ## Upgrade using a platform package (Linux/macOS)
 
-This downloads the fixed 0.4.6 release for your OS and architecture, verifies SHA-256, and extracts to a new directory. The package includes the configuration helper and leaves the old checkout available:
+This downloads the fixed 0.4.7 release for your OS and architecture, verifies SHA-256, and extracts to a new directory. The package includes the configuration helper and leaves the old checkout available:
 
 ```bash
 (
   set -eu
-  version=0.4.6
+  version=0.4.7
   case "$(uname -s)" in Linux) os=linux ;; Darwin) os=darwin ;; *) echo 'Select a package for your OS'; exit 1 ;; esac
   case "$(uname -m)" in x86_64|amd64) arch=amd64 ;; aarch64|arm64) arch=arm64 ;; armv7l) arch=armv7 ;; *) echo 'Unsupported architecture'; exit 1 ;; esac
   asset="envpilot-$version-$os-$arch.tar.gz"
@@ -77,7 +79,7 @@ This downloads the fixed 0.4.6 release for your OS and architecture, verifies SH
 After all commands succeed, enter the extracted directory. If it already exists, inspect its contents instead of overwriting it:
 
 ```bash
-cd "$HOME/.local/share/envpilot/releases/envpilot-0.4.6"
+cd "$HOME/.local/share/envpilot/releases/envpilot-0.4.7"
 ```
 
 ## Register the command and apply configuration

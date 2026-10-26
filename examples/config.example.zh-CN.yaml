@@ -1,4 +1,4 @@
-# envpilot 0.4.5 — complete configuration example / 完整配置样例
+# envpilot 0.4.7 — complete configuration example / 完整配置样例
 # Copy selected settings into ~/.config/envpilot/config.yaml; keep existing user settings.
 # See docs/CONFIG.md or docs/CONFIG.zh-CN.md for protected-file setup.
 
@@ -54,6 +54,10 @@ mihomo:
   api_port: 60290
   # 启用代理集成时，是否同时导出 SOCKS5 all_proxy。
   socks: false
+  # nodes 列表与 select 策略组菜单的优先顺序；例如 ["烟火云"] 将该组放到前面。
+  # 完整组名须非空且不重复，按列表顺序优先；其余组按名称排序，不存在的组名忽略。默认 []。
+  # 只改变组的显示顺序，不改变组内节点顺序、实际选择或路由；保存后下次命令生效。
+  group_order: []
   # 订阅下载：auto 先直连、失败后尝试代理；direct 仅直连；proxy 使用代理。
   # 可用 update-subscription --network（PowerShell: -Network）或 ENVPILOT_SUBSCRIPTION_NETWORK 覆盖。
   # 只控制订阅下载，不改变整个 Shell 的联网方式。
@@ -64,7 +68,7 @@ mihomo:
     file: ~/.config/mihomo/subscription.url
     # 也可填 MIHOMO_SUBSCRIPTION_URL；使用时将 file 设为 ""。
     env: ""
-  # 代理节点用 envpilot mihomo select 选择；状态按节点保存到 mihomo-selections/，无需写在 YAML。
+  # 实际节点用 envpilot mihomo select 选择；状态按服务器保存到 mihomo-selections/，与上面的显示排序分开。
 
 # Conda/Mamba 保留已有环境。
 conda:

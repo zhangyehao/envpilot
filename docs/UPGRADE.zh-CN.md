@@ -13,9 +13,11 @@ envpilot plan
 
 Git 安装要求工作区干净且可快进到稳定版；分叉或未提交修改会保留，不强制覆盖。平台包安装验证 SHA-256 后使用新的版本目录。更新 envpilot 不会自动更新所有组件；组件更新使用 `envpilot update COMPONENT`。
 
-### 升级到 0.4.6 后使用 Mihomo
+### 升级到 0.4.7 后使用 Mihomo
 
-0.4.6 修复了旧版 Bash 的空参数兼容性问题：0.4.5 在 Bash 4.2（如 4.2.46）下，不带组名运行 `envpilot mihomo nodes`、`select` 或 `test` 可能报 `args[@]: unbound variable`。这是命令转发错误，不能据此判断 Mihomo 服务已停止。执行上方 `self-update` 并用 `envpilot version` 确认已更新到 0.4.6；不需要重新安装 Mihomo 或清除订阅。
+0.4.7 增加可选的策略组显示顺序。执行上方 `self-update` 并用 `envpilot version` 确认已更新到 0.4.7；在已有 `mihomo` 配置段中加入 `group_order: ["烟火云"]`，下次 `nodes` 和 `select` 即将该组优先显示。默认 `[]` 保留按名称排序，其余组仍按名称排序，暂不存在的名称忽略。此设置不改变节点选择或路由，具体步骤见 [Mihomo](MIHOMO.zh-CN.md#把常用策略组放到前面)。
+
+0.4.6 的旧 Bash 修复继续保留：0.4.5 在 Bash 4.2（如 4.2.46）下，不带组名运行 `envpilot mihomo nodes`、`select` 或 `test` 可能报 `args[@]: unbound variable`。这是命令转发错误，不能据此判断 Mihomo 服务已停止；升级无需重新安装 Mihomo 或清除订阅。
 
 `self-update` 会刷新已安装的管理脚本，保留订阅引用、配置和端口。Mihomo 已在运行时：
 
@@ -50,12 +52,12 @@ git clone https://github.com/zhangyehao/envpilot.git "$HOME/envpilot" && cd "$HO
 
 ## 改用平台包升级（Linux/macOS）
 
-平台包附带匹配的配置工具。下面命令自动选择系统与架构，下载固定的 0.4.6 版本、校验 SHA-256，并解压到新的目录。它们不会覆盖旧源码目录：
+平台包附带匹配的配置工具。下面命令自动选择系统与架构，下载固定的 0.4.7 版本、校验 SHA-256，并解压到新的目录。它们不会覆盖旧源码目录：
 
 ```bash
 (
   set -eu
-  version=0.4.6
+  version=0.4.7
   case "$(uname -s)" in Linux) os=linux ;; Darwin) os=darwin ;; *) echo '请使用匹配系统的平台包'; exit 1 ;; esac
   case "$(uname -m)" in x86_64|amd64) arch=amd64 ;; aarch64|arm64) arch=arm64 ;; armv7l) arch=armv7 ;; *) echo '不支持此架构'; exit 1 ;; esac
   asset="envpilot-$version-$os-$arch.tar.gz"
@@ -77,7 +79,7 @@ git clone https://github.com/zhangyehao/envpilot.git "$HOME/envpilot" && cd "$HO
 上一步全部成功后进入解压目录；目标目录已存在时，请先检查原有内容，不要强行覆盖：
 
 ```bash
-cd "$HOME/.local/share/envpilot/releases/envpilot-0.4.6"
+cd "$HOME/.local/share/envpilot/releases/envpilot-0.4.7"
 ```
 
 ## 登记入口并应用配置

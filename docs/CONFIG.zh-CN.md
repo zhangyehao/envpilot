@@ -28,6 +28,7 @@
 | `shell.paths` | 追加的路径列表，不覆盖现有命令优先级。 |
 | `mihomo.proxy_port/api_port` | 默认 42290/60290，须不同且在 1–65535 范围内。 |
 | `mihomo.socks` | 是否导出 SOCKS 代理，默认 false。 |
+| `mihomo.group_order` | 策略组显示顺序，字符串列表（名称不得空白或重复），默认 `[]`。例如 `["烟火云"]` 将该组优先显示；其余组按名称排序，不存在的组名忽略。 |
 | `mihomo.subscription.file/env` | 订阅文件或环境变量引用，二选一。 |
 | `mihomo.subscription_network` | 订阅下载路径：`auto`（默认，先直连、失败后尝试代理）、`direct` 或 `proxy`；命令行 `--network` 可覆盖。 |
 | `conda.distribution` | `miniconda` 或 `anaconda`。 |
@@ -77,4 +78,17 @@ ${EDITOR:-vi} "$HOME/.config/mihomo/subscription.url"
 
 `mihomo.subscription_network` 只控制订阅下载，不改变整个 Shell 或所有软件的联网方式；环境覆盖为 `ENVPILOT_SUBSCRIPTION_NETWORK`，命令覆盖为 `--network`（PowerShell：`-Network`）。停止 Mihomo 不会清除当前 Shell 的旧代理变量；`--network direct` 会忽略这些变量。离线导入使用 `envpilot mihomo update-subscription --file PATH`（PowerShell：`-SubscriptionFile PATH`），无需配置新 URL。导入文件在 Unix 下须属于当前用户且权限为 600/400，先执行 `chmod 600 PATH`。
 
-节点选择用 `envpilot mihomo select`，按节点保存在配置目录的 `mihomo-selections/` 下，不需要把组名或节点名写进主 YAML。新配置中已删除或改名的节点会提示重新选择。详见 [Mihomo](MIHOMO.zh-CN.md)。
+节点选择用 `envpilot mihomo select`，实际选择按服务器保存在配置目录的 `mihomo-selections/` 下。新配置中已删除或改名的节点会提示重新选择。
+
+### 常用策略组优先显示
+
+从 0.4.7 起，可以将下面字段合并到主配置已有的 `mihomo` 段，让“烟火云”排在 `nodes` 的组列表和 `select` 的策略组菜单前面：
+
+```yaml
+mihomo:
+  group_order: ["烟火云"]
+```
+
+`group_order` 是按优先顺序排列的完整组名列表，默认 `[]`。每个名称必须非空、不能重复，大小写和空格须与实际组名一致。实际存在且可显示的组先按列表顺序排列，其余组按名称排序；订阅里暂不存在的名称会被忽略，之后出现时才采用这个顺序。`select` 仍只提供可手动选择的组。保存 YAML 后下次命令生效，无需 `apply` 或重启 Mihomo。
+
+它只调整组的显示顺序，不改变组内节点顺序、已保存的节点选择、订阅配置或代理路由。详见 [Mihomo](MIHOMO.zh-CN.md)。

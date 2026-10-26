@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.7 - 2026-10-26
+
+- Add optional `mihomo.group_order` to show preferred groups first in node listings and selection menus, for example `["烟火云"]`. The default is `[]`; remaining groups sort by name and absent names are ignored.
+- Apply group display preferences on the next command without changing node order within groups, saved selections, subscription configuration or routing. No service restart is required.
+- Update bilingual configuration examples, command/upgrade guides and fixed-version platform-package instructions to 0.4.7 while retaining the 0.4.6 compatibility fix for older Bash.
+
 ## 0.4.6 - 2026-10-26
 
 - Fix empty optional-argument forwarding under `set -u` on Bash 4.2, including 4.2.46. Mihomo `nodes`, `select` and `test` without a group name now reach their intended handlers instead of failing with `args[@]: unbound variable`.

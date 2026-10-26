@@ -53,6 +53,19 @@ Selections are saved per host under `~/.config/envpilot/mihomo-selections/`, out
 
 Controller commands verify that the API listener belongs to the current user's managed Mihomo process. If another instance owns the port or ownership cannot be established, no controller request is sent. `nodes` can show the saved configuration; `select` reports the issue. Localhost ports on a shared server are not private to each user.
 
+### Put frequently used groups first
+
+Since 0.4.7, run `envpilot config edit` and merge `group_order` into the existing `mihomo` section:
+
+```yaml
+mihomo:
+  group_order: ["烟火云"]
+```
+
+After saving, run `envpilot mihomo nodes` or `envpilot mihomo select` to show “烟火云” first. List multiple complete group names in your preferred order; remaining groups sort by name and absent names are ignored. Default `[]` keeps name ordering. `select` still offers only manually selectable groups; ordering does not turn an automatic group into a manual group.
+
+This changes group display order only, preserving node order within groups, current selections, subscription rules and routing. No subscription refresh, `apply` or service restart is required. To open one group's menu directly, use `envpilot mihomo select "烟火云"`.
+
 ## Install, update and service commands
 
 ```bash
