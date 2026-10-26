@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.6 - 2026-10-26
+
+- Fix empty optional-argument forwarding under `set -u` on Bash 4.2, including 4.2.46. Mihomo `nodes`, `select` and `test` without a group name now reach their intended handlers instead of failing with `args[@]: unbound variable`.
+- Preserve empty and quoted `envpilot run` arguments on older Bash, allowing the configuration tool to report a missing command normally.
+- Add isolated argument-forwarding regressions and run them explicitly with the macOS system Bash 3.2 in CI; verify the fix against the previous release on a real Bash 4.2 host.
+- Update bilingual upgrade instructions and fixed-version platform-package examples to 0.4.6. Existing subscription references, configuration and ports remain available when upgrading from 0.4.4 or 0.4.5.
+
 ## 0.4.5 - 2026-10-26
 
 - Add Mihomo node listing, interactive/manual selection and reachability probes through `mihomo nodes/select/test`, without Python, jq or handwritten API requests.
