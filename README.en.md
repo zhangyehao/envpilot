@@ -40,6 +40,8 @@ envpilot apply
 
 ### Update an existing installation
 
+The current version, **0.4.6**, fixes `args[@]: unbound variable` when running `mihomo nodes/select/test` without a group name on Bash 4.2. Existing 0.4.4 and 0.4.5 users can follow the steps below while retaining subscription references, configuration and ports.
+
 **0.4.0 and later:**
 
 ```bash

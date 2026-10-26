@@ -40,6 +40,8 @@ envpilot apply
 
 ### 更新已有安装
 
+当前版本 **0.4.6** 修复了 Bash 4.2 环境中，不带组名运行 `mihomo nodes/select/test` 时出现的 `args[@]: unbound variable`。已安装 0.4.4 或 0.4.5 的用户可按下方步骤更新，保留已有订阅、配置和端口。
+
 **0.4.0 及以上：**
 
 ```bash

@@ -491,12 +491,14 @@ run_mihomo()
     export ENVPILOT_CORE
     case "$EP_MIHOMO_ACTION" in
         nodes|select|test)
-            local args=()
             MIHOMO_RUNTIME_DIR="$(ep_mihomo_runtime_dir)"
             export MIHOMO_RUNTIME_DIR
-            [ -z "$EP_MIHOMO_PORT" ] || args+=("$EP_MIHOMO_PORT")
-            [ -z "$EP_MIHOMO_VALUE2" ] || args+=("$EP_MIHOMO_VALUE2")
-            ep_core mihomo --format "$EP_UPDATE_FORMAT" -- "$EP_MIHOMO_ACTION" "${args[@]}"
+            # Empty arrays are unset under nounset in Bash 3.2/4.2. Positional
+            # parameters preserve zero, one or two optional names on all Bash versions.
+            set -- "$EP_MIHOMO_ACTION"
+            [ -z "$EP_MIHOMO_PORT" ] || set -- "$@" "$EP_MIHOMO_PORT"
+            [ -z "$EP_MIHOMO_VALUE2" ] || set -- "$@" "$EP_MIHOMO_VALUE2"
+            ep_core mihomo --format "$EP_UPDATE_FORMAT" -- "$@"
             return ;;
     esac
     if [ "${ENVPILOT_LANG:-auto}" = zh-CN ]; then
@@ -583,7 +585,10 @@ main()
         plan) ep_core plan ;;
         apply) ep_apply_config ;;
         snapshot) ep_snapshot ;;
-        run) "$(ep_core_path)" run --config "${EP_CONFIG_FILE:-${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}/config.yaml}" -- "${EP_RUN_ARGS[@]}" ;;
+        run)
+            # Let the core report a missing command, including on older Bash.
+            "$(ep_core_path)" run --config "${EP_CONFIG_FILE:-${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}/config.yaml}" -- ${EP_RUN_ARGS[@]+"${EP_RUN_ARGS[@]}"}
+            ;;
         shell) ep_init; ep_platform_detect; ep_core shell "${EP_ACTION:-install}" --shell "$(basename "${SHELL:-bash}")" ;;
         self-update) ep_history_begin envpilot; ep_self_update; ep_history_finish 0 ;;
         updates) ep_core updates "${EP_ACTION:-status}" --format "$EP_UPDATE_FORMAT" --days "$EP_HISTORY_DAYS" --component "$EP_HISTORY_COMPONENT" ;;

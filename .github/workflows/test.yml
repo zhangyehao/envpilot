@@ -37,6 +37,7 @@ jobs:
           bash tests/run-tests.sh
           bash tests/test-config.sh
           bash tests/test-updates.sh
+          bash tests/test-mihomo-cli.sh
           bash tests/test-mihomo.sh
       - name: Verify real Codex 0.156.0 lifecycle
         run: |
@@ -74,6 +75,13 @@ jobs:
           bash tests/run-tests.sh
           bash tests/test-config.sh
           bash tests/test-updates.sh
+      - name: Mihomo CLI regression on system Bash 3.2
+        shell: /bin/bash --noprofile --norc -e -o pipefail {0}
+        run: |
+          test "${BASH_VERSINFO[0]}" -eq 3
+          test "${BASH_VERSINFO[1]}" -eq 2
+          export PATH="/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+          /bin/bash tests/test-mihomo-cli.sh
 
   windows:
     runs-on: windows-latest

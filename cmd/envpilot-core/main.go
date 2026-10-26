@@ -14,7 +14,7 @@ import (
 	"github.com/zhangyehao/envpilot/internal/config"
 )
 
-var version = "0.4.5"
+var version = "0.4.6"
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
