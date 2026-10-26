@@ -22,3 +22,18 @@ bash "$fixture/repo/envpilot.sh" install --help | grep -F 'envpilot version' >/d
 test -z "$(find "$HOME" -mindepth 1 -print)"
 test "$(find "$ENVPILOT_CONFIG_DIR" -mindepth 1 -type f | wc -l | tr -d ' ')" = 1
 echo '[TEST] help/version work offline without a helper, valid YAML or setup side effects'
+echo '[TEST] Mihomo options accept interleaved values and never echo subscription credentials'
+subscription='https://example.invalid/subscription?token=SYNTHETIC-DO-NOT-LOG'
+test "$(bash "$fixture/repo/envpilot.sh" mihomo update-subscription --network direct "$subscription" --version)" = "envpilot $version"
+test "$(bash "$fixture/repo/envpilot.sh" mihomo select --non-interactive 'Group with spaces' --json 'Node with spaces' --version)" = "envpilot $version"
+if bash "$fixture/repo/envpilot.sh" mihomo update-subscription --network direct "$subscription" "$subscription" > "$fixture/parse.log" 2>&1; then
+    printf '[ERROR] extra subscription arguments unexpectedly accepted\n' >&2
+    exit 1
+fi
+grep -F 'Unexpected extra argument' "$fixture/parse.log" >/dev/null
+if grep -F SYNTHETIC-DO-NOT-LOG "$fixture/parse.log"; then exit 1; fi
+if bash "$fixture/repo/envpilot.sh" mihomo update-subscription "--unexpected=$subscription" > "$fixture/unknown.log" 2>&1; then
+    printf '[ERROR] unknown option unexpectedly accepted\n' >&2
+    exit 1
+fi
+if grep -F SYNTHETIC-DO-NOT-LOG "$fixture/unknown.log"; then exit 1; fi

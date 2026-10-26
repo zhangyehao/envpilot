@@ -13,6 +13,19 @@ envpilot plan
 
 Git checkouts must be clean and fast-forwardable to the stable release. Diverged branches and local edits are preserved. Platform-package upgrades verify SHA-256 and install into a new version directory. Update individual components separately with `envpilot update COMPONENT`.
 
+### Use Mihomo after upgrading to 0.4.5
+
+`self-update` refreshes installed management scripts while preserving subscription references, configuration and ports. With Mihomo running:
+
+```bash
+envpilot mihomo nodes
+envpilot mihomo select
+```
+
+The confirmed choice is saved for this host and restored after subsequent restarts and subscription updates. Choices already lost from an older temporary cache cannot be recovered; select them once again. Updating envpilot does not fetch a subscription or choose a node for you.
+
+Subscription downloads now try direct access before proxy fallback. Use `--network direct` to isolate direct access, or `envpilot mihomo update-subscription --file PATH` to import complete Clash YAML when the host cannot download it; run `chmod 600 PATH` first on Unix. PowerShell options are `-Network` and `-SubscriptionFile`. Stopping Mihomo does not clear proxy variables in the calling shell. See [Mihomo](MIHOMO.md).
+
 ## Update an existing source checkout
 
 For a checkout at `~/envpilot`, run the following command. Adjust the path when installed elsewhere:
@@ -35,12 +48,12 @@ Run `bash envpilot.sh ...` inside the checkout, or use `bash "$HOME/envpilot/env
 
 ## Upgrade using a platform package (Linux/macOS)
 
-This downloads the fixed 0.4.4 release for your OS and architecture, verifies SHA-256, and extracts to a new directory. The package includes the configuration helper and leaves the old checkout available:
+This downloads the fixed 0.4.5 release for your OS and architecture, verifies SHA-256, and extracts to a new directory. The package includes the configuration helper and leaves the old checkout available:
 
 ```bash
 (
   set -eu
-  version=0.4.4
+  version=0.4.5
   case "$(uname -s)" in Linux) os=linux ;; Darwin) os=darwin ;; *) echo 'Select a package for your OS'; exit 1 ;; esac
   case "$(uname -m)" in x86_64|amd64) arch=amd64 ;; aarch64|arm64) arch=arm64 ;; armv7l) arch=armv7 ;; *) echo 'Unsupported architecture'; exit 1 ;; esac
   asset="envpilot-$version-$os-$arch.tar.gz"
@@ -62,7 +75,7 @@ This downloads the fixed 0.4.4 release for your OS and architecture, verifies SH
 After all commands succeed, enter the extracted directory. If it already exists, inspect its contents instead of overwriting it:
 
 ```bash
-cd "$HOME/.local/share/envpilot/releases/envpilot-0.4.4"
+cd "$HOME/.local/share/envpilot/releases/envpilot-0.4.5"
 ```
 
 ## Register the command and apply configuration

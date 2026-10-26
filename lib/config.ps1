@@ -60,22 +60,24 @@ function Invoke-EnvpilotCore {
     param([Parameter(ValueFromRemainingArguments=$true)][string[]]$CoreArgs)
     $core = Get-EnvpilotCore
     $overrides = @{}
-    foreach ($entry in @{ Mode='ENVPILOT_MODE'; Prefix='ENVPILOT_PREFIX'; Lang='ENVPILOT_LANG' }.GetEnumerator()) {
+    foreach ($entry in @{ Mode='ENVPILOT_MODE'; Prefix='ENVPILOT_PREFIX'; Lang='ENVPILOT_LANG'; Network='ENVPILOT_SUBSCRIPTION_NETWORK' }.GetEnumerator()) {
         if ($Script:ExplicitParameters.ContainsKey($entry.Key)) { $overrides[$entry.Value] = [string]$Script:ExplicitParameters[$entry.Key] }
     }
     $env:ENVPILOT_OVERRIDES = ConvertTo-Json -Compress $overrides
-    $configPath = if ($Config) { $Config } else { Join-Path $Script:ConfigDir 'config.yaml' }
+    $configPath = if ($Script:Config) { $Script:Config } else { Join-Path $Script:ConfigDir 'config.yaml' }
     $previousConsoleEncoding = [Console]::OutputEncoding
+    $previousNonInteractive = $env:EP_NON_INTERACTIVE
     try {
+        if ($NonInteractive) { $env:EP_NON_INTERACTIVE = '1' }
         [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
-        & $core @CoreArgs --config $configPath --root $Script:Root
+        & $core $CoreArgs[0] --config $configPath --root $Script:Root @($CoreArgs | Select-Object -Skip 1)
         if ($LASTEXITCODE -ne 0) { throw "envpilot-core failed ($LASTEXITCODE)." }
-    } finally { [Console]::OutputEncoding = $previousConsoleEncoding }
+    } finally { [Console]::OutputEncoding = $previousConsoleEncoding; $env:EP_NON_INTERACTIVE = $previousNonInteractive }
 }
 
 function Import-EnvpilotConfig {
     $overrides = @{}
-    foreach ($entry in @{ Mode='ENVPILOT_MODE'; Prefix='ENVPILOT_PREFIX'; Lang='ENVPILOT_LANG' }.GetEnumerator()) {
+    foreach ($entry in @{ Mode='ENVPILOT_MODE'; Prefix='ENVPILOT_PREFIX'; Lang='ENVPILOT_LANG'; Network='ENVPILOT_SUBSCRIPTION_NETWORK' }.GetEnumerator()) {
         if ($Script:ExplicitParameters.ContainsKey($entry.Key)) { $overrides[$entry.Value] = [string]$Script:ExplicitParameters[$entry.Key] }
     }
     $env:ENVPILOT_OVERRIDES = ConvertTo-Json -Compress $overrides
@@ -143,7 +145,7 @@ function Update-EnvpilotSelf {
     git -C $Script:Root merge --ff-only $tag
     if ($LASTEXITCODE -ne 0) { throw 'Fast-forward update failed.' }
     $shellExe = if ($PSVersionTable.PSEdition -eq 'Core') { Join-Path $PSHOME 'pwsh.exe' } else { Join-Path $PSHOME 'powershell.exe' }
-    $configPath = if ($Config) { $Config } else { Join-Path $Script:ConfigDir 'config.yaml' }
+    $configPath = if ($Script:Config) { $Script:Config } else { Join-Path $Script:ConfigDir 'config.yaml' }
     $previousApply = $env:EP_CONFIG_APPLY
     try {
         $env:EP_CONFIG_APPLY = '1'
@@ -165,7 +167,8 @@ function Invoke-EnvpilotProtectedDownload {
     param([Parameter(ValueFromPipeline=$true)][string]$Url, [string]$Destination)
     process {
         $OutputEncoding = [Text.UTF8Encoding]::new($false)
-        $Url | & (Get-EnvpilotCore) protected-download --target $Destination
+        $configPath = if ($Script:Config) { $Script:Config } else { Join-Path $Script:ConfigDir 'config.yaml' }
+        $Url | & (Get-EnvpilotCore) protected-download --config $configPath --target $Destination
         if ($LASTEXITCODE -ne 0) { throw 'Protected subscription download failed.' }
     }
 }

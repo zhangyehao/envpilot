@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.5 - 2026-10-26
+
+- Add Mihomo node listing, interactive/manual selection and reachability probes through `mihomo nodes/select/test`, without Python, jq or handwritten API requests.
+- Persist selections per host outside the temporary runtime; restore valid group/node choices after restart and subscription replacement, and report removed or renamed choices without guessing a substitute.
+- Add `mihomo restart` and subscription network routing (`auto`, `direct`, `proxy`). Try direct downloads before proxy fallback so a failed proxy does not prevent its subscription from being refreshed.
+- Add bounded retries and separate DNS, connection, TLS, HTTP and configuration diagnostics while keeping protected URLs and credentials out of output.
+- Verify API listener ownership before controller requests on shared hosts; honor upstream retry intervals and accept interleaved CLI options without exposing subscription arguments.
+- Add local complete-YAML subscription import with `update-subscription --file PATH`. Stage and validate inputs before changing configuration or running services; preserve the saved subscription reference and existing recovery behavior.
+- Document the complete subscription-to-node workflow in Chinese and English, including protected references, download routes, per-host selection state and servers without subscription access.
+
 ## 0.4.4 - 2026-09-29
 
 - Add unified installed-component and envpilot update checks, a configurable 3-day interval, 03:00–05:00 installation window and IANA timezone support; register user scheduling explicitly.

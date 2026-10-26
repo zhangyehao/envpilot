@@ -319,6 +319,12 @@ func SnapshotCreate(c Config, extra []string) (string, error) {
 	h, _ := os.UserHomeDir()
 	paths := []string{filepath.Join(h, ".bashrc"), filepath.Join(h, ".zshrc"), filepath.Join(h, ".condarc"), filepath.Join(Dir(), "config.yaml"), filepath.Join(Dir(), "shell.local"), filepath.Join(Dir(), "command-root"), filepath.Join(h, ".local", "bin", "envpilot"), filepath.Join(h, ".local", "bin", "codex"), filepath.Join(h, ".local", "bin", "codex-remote"), filepath.Join(Expand(c.Codex.Home), "config.toml"), filepath.Join(Expand(c.Codex.Home), "auth.json"), filepath.Join(Dir(), "codex-source"), filepath.Join(Dir(), "core-path"), filepath.Join(Dir(), "state"), filepath.Join(Dir(), "state.ps1.txt"), filepath.Join(h, ".local", "bin", "envpilot.ps1"), Expand(c.Secrets.File), filepath.Join(h, ".config", "mihomo", "config.yaml"), filepath.Join(h, ".config", "mihomo", "subscription.url"), Expand(c.Mihomo.Subscription.File)}
 	paths = append(paths, extra...)
+	_ = filepath.WalkDir(filepath.Join(Dir(), "mihomo-selections"), func(p string, de os.DirEntry, e error) error {
+		if e == nil && !de.IsDir() && strings.HasSuffix(p, ".json") {
+			paths = append(paths, p)
+		}
+		return nil
+	})
 	for _, name := range []string{"init.sh", "config.sh", "init.ps1", "config.ps1"} {
 		paths = append(paths, filepath.Join(Dir(), "shell", name))
 	}

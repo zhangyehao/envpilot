@@ -1,4 +1,4 @@
-# envpilot 0.4.4 — complete configuration example / 完整配置样例
+# envpilot 0.4.5 — complete configuration example / 完整配置样例
 # Copy selected settings into ~/.config/envpilot/config.yaml; keep existing user settings.
 # See docs/CONFIG.md or docs/CONFIG.zh-CN.md for protected-file setup.
 
@@ -54,12 +54,17 @@ mihomo:
   api_port: 60290
   # 启用代理集成时，是否同时导出 SOCKS5 all_proxy。
   socks: false
+  # 订阅下载：auto 先直连、失败后尝试代理；direct 仅直连；proxy 使用代理。
+  # 可用 update-subscription --network（PowerShell: -Network）或 ENVPILOT_SUBSCRIPTION_NETWORK 覆盖。
+  # 只控制订阅下载，不改变整个 Shell 的联网方式。
+  subscription_network: auto
   # file 与 env 二选一。文件中只写一行订阅链接，不写变量赋值。
   subscription:
     # Unix 下文件属于当前用户，chmod 600；不要提交到 Git。
     file: ~/.config/mihomo/subscription.url
     # 也可填 MIHOMO_SUBSCRIPTION_URL；使用时将 file 设为 ""。
     env: ""
+  # 代理节点用 envpilot mihomo select 选择；状态按节点保存到 mihomo-selections/，无需写在 YAML。
 
 # Conda/Mamba 保留已有环境。
 conda:

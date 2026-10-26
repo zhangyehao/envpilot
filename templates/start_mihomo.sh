@@ -76,6 +76,9 @@ while [ "$count" -lt "$MIHOMO_STARTUP_TIMEOUT" ]; do
         exit 1
     fi
     if mihomo_api_healthy && mihomo_port_reachable "$MIHOMO_PROXY_PORT"; then
+        if mihomo_core_path >/dev/null 2>&1; then
+            mihomo_core_control selection-restore || printf '[WARN] Could not restore saved Mihomo selections; run envpilot mihomo select.\n' >&2
+        fi
         if [ "${MIHOMO_QUIET_START:-0}" != "1" ]; then
             printf '[OK] mihomo is ready. PID=%s\n' "$mihomo_pid"
             printf '[OK] runtime: %s\n' "$MIHOMO_RUNTIME_DIR"

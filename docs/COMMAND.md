@@ -14,4 +14,10 @@ Configure once with `envpilot init`, `envpilot config edit`, `envpilot config va
 
 Codex remote lifecycle: `status`, `enable`, `verify`, `ready`, `restart`, `stop`, `repair`, `disable`. `update codex` already restarts a previously running server. See [Codex](CODEX.md).
 
+Mihomo 0.4.5 commands: `envpilot mihomo select` prompts for a group/node; `nodes` lists candidates and `test "GROUP"` probes directly listed proxy nodes only. Explicitly use `test "GROUP" "MEMBER"` for nested groups or DIRECT/REJECT. Scripts use `envpilot mihomo select "GROUP" "NODE" --non-interactive`; these node commands support `--json`. Saved choices survive restart and subscription refresh when the names still exist.
+
+`envpilot mihomo update-subscription` refreshes complete YAML using the protected URL reference. Use `--network direct|proxy|auto` to choose the download route, or `--file PATH` to import a file downloaded elsewhere. On Unix, first run `chmod 600 PATH` to protect the imported file. Failed downloads preserve the old configuration and running service.
+
+PowerShell options are `-Network`, `-SubscriptionFile`, `-Json` and `-NonInteractive`; their double-dash aliases above are also supported. See [Mihomo](MIHOMO.md).
+
 Version aliases: `version`, `-v`, `-V`, `-version`, `--version`. Help aliases: `help`, `-h`, `-H`, `-help`, `--help`. They work offline without a valid YAML or helper.

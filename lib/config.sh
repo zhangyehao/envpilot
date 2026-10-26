@@ -62,9 +62,10 @@ ep_ensure_core()
 
 ep_core()
 {
-    local executable
+    local executable command="$1"
+    shift
     executable="$(ep_core_path)" || { ep_ensure_core; executable="$(ep_core_path)"; }
-    "$executable" "$@" --config "${EP_CONFIG_FILE:-${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}/config.yaml}" --root "$ENVPILOT_ROOT"
+    "$executable" "$command" --config "${EP_CONFIG_FILE:-${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}/config.yaml}" --root "$ENVPILOT_ROOT" "$@"
 }
 
 ep_config_load()

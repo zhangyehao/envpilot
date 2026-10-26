@@ -29,6 +29,8 @@ param(
     [Alias("-days")][int]$Days = 30,
     [Alias("-json")][switch]$Json,
     [Alias("-component")][string]$HistoryComponent,
+    [Alias("-network")][ValidateSet("auto","direct","proxy")][string]$Network,
+    [Alias("-file")][string]$SubscriptionFile,
     [Parameter(ValueFromRemainingArguments=$true)][string[]]$CommandArgs
 )
 
@@ -279,7 +281,7 @@ function Set-YamlScalar {
     }
     $found = $false
     for ($i = 0; $i -lt $lines.Count; $i++) {
-        if ($lines[$i] -match "^\s*$([regex]::Escape($Key))\s*:") {
+        if ($lines[$i] -match "^$([regex]::Escape($Key))\s*:") {
             $lines[$i] = "${Key}: $Value"
             $found = $true
         }
@@ -439,13 +441,17 @@ function Test-MihomoPort {
 }
 
 function Stop-MihomoProcesses {
-    param([switch]$Quiet)
+    param([switch]$Quiet, [switch]$SkipSelectionSave)
     $bin = Get-MihomoBin
     $resolvedBin = if (Test-Path -LiteralPath $bin) { (Resolve-Path -LiteralPath $bin).Path } else { $null }
     $stopped = 0
     Get-Process -Name "mihomo" -ErrorAction SilentlyContinue | ForEach-Object {
         try {
-            if (($resolvedBin -and $_.Path -eq $resolvedBin) -or ($_.Path -like "*\software\mihomo\mihomo.exe")) {
+            if ($resolvedBin -and $_.Path -eq $resolvedBin) {
+                if (-not $SkipSelectionSave) {
+                    try { Invoke-EnvpilotCore mihomo --format text -- selection-save }
+                    catch { Write-Warn "Could not capture Mihomo selections; the previous saved choices remain." }
+                }
                 Stop-Process -Id $_.Id -Force
                 $stopped += 1
                 Write-Info "Stopped Mihomo process: $($_.Id)"
@@ -459,12 +465,8 @@ function Stop-MihomoProcesses {
 function Test-MihomoApi {
     param([int]$Port = (Get-MihomoApiPort))
     try {
-        $request = [System.Net.WebRequest]::Create("http://127.0.0.1:$Port/version")
-        $request.Proxy = $null
-        $request.Timeout = 2000
-        $response = $request.GetResponse()
-        $response.Close()
-        return $true
+        & (Get-EnvpilotCore) mihomo --config $(if ($Script:Config) { $Script:Config } else { Join-Path $Script:ConfigDir 'config.yaml' }) -- health 2>$null
+        return $LASTEXITCODE -eq 0
     } catch {
         return $false
     }
@@ -485,9 +487,11 @@ function Start-MihomoProcess {
     if (-not (Test-Path -LiteralPath $bin)) { Stop-Envpilot "Mihomo executable not found: $bin" }
     if (-not (Test-Path -LiteralPath $config)) { Stop-Envpilot "Mihomo config not found: $config" }
     Set-MihomoConfigPorts -ProxyPort $ProxyPort -ApiPort $ApiPort
-    Start-Process -WindowStyle Hidden -FilePath $bin -ArgumentList @("-d", $configDir) | Out-Null
+    Start-Process -WindowStyle Hidden -FilePath $bin -ArgumentList @("-d", ('"{0}"' -f $configDir)) | Out-Null
     for ($i = 0; $i -lt 30; $i++) {
         if ((Test-MihomoPort -Port $ProxyPort) -and (Test-MihomoApi -Port $ApiPort)) {
+            try { Invoke-EnvpilotCore mihomo --format text -- selection-restore }
+            catch { Write-Warn "Could not restore saved Mihomo selections; run envpilot mihomo select." }
             Write-Info "Mihomo is ready: proxy=127.0.0.1:$ProxyPort API=127.0.0.1:$ApiPort"
             return
         }
@@ -506,7 +510,7 @@ function Show-MihomoStatus {
     Write-Host ""
     Write-Host "Mihomo process:"
     $processes = @(Get-Process -Name "mihomo" -ErrorAction SilentlyContinue | Where-Object {
-        try { ($resolvedBin -and $_.Path -eq $resolvedBin) -or ($_.Path -like "*\software\mihomo\mihomo.exe") } catch { $false }
+        try { $resolvedBin -and $_.Path -eq $resolvedBin } catch { $false }
     })
     if ($processes.Count -eq 0) { Write-Host "  not running" }
     else { foreach ($process in $processes) { Write-Host "  $($process.Id) $($process.Path)" } }
@@ -549,17 +553,22 @@ function Set-MihomoPort {
 
 function Update-MihomoSubscription {
     param([string]$Url)
+    if ($SubscriptionFile -and $Url) { Stop-Envpilot "Use a subscription URL or --file, not both." }
+    if (-not $SubscriptionFile) {
     if ([string]::IsNullOrWhiteSpace($Url)) { $Url = Get-EnvpilotSubscription }
-    if ([string]::IsNullOrWhiteSpace($Url)) { if ($NonInteractive -or $Script:ConfigApply) { throw "E_INPUT_REQUIRED: mihomo.subscription" }; $Url = Read-Host (Convert-EnvpilotMessage "Paste Clash/Mihomo subscription URL") }
+    if ([string]::IsNullOrWhiteSpace($Url)) { if ($NonInteractive -or $Script:ConfigApply -or [Console]::IsInputRedirected) { throw "E_INPUT_REQUIRED: mihomo.subscription" }; $Url = Read-Host (Convert-EnvpilotMessage "Paste Clash/Mihomo subscription URL") }
     if ($Url -notmatch '^https?://') { Stop-Envpilot "Provide a Clash/Mihomo subscription URL beginning with http:// or https://." }
+    }
     $config = Get-MihomoConfigPath
     $configDir = Split-Path -Parent $config
     New-Item -ItemType Directory -Force -Path $configDir | Out-Null
     $newConfig = Join-Path $configDir ("config.yaml.new." + [guid]::NewGuid().ToString("N"))
     $backup = $null
-    $wasRunning = @(Get-Process -Name "mihomo" -ErrorAction SilentlyContinue | Where-Object { try { $_.Path -like "*\software\mihomo\mihomo.exe" } catch { $false } }).Count -gt 0
+    $managedBin = Get-MihomoBin
+    $wasRunning = @(Get-Process -Name "mihomo" -ErrorAction SilentlyContinue | Where-Object { try { $_.Path -eq $managedBin } catch { $false } }).Count -gt 0
     try {
-        $Url | Invoke-EnvpilotProtectedDownload -Destination $newConfig
+        if ($SubscriptionFile) { Invoke-EnvpilotCore subscription-import --source $SubscriptionFile --target $newConfig }
+        else { $Url | Invoke-EnvpilotProtectedDownload -Destination $newConfig }
         if ((Get-Item -LiteralPath $newConfig).Length -eq 0) { Stop-Envpilot "Downloaded subscription config is empty." }
         if ((Get-Content -LiteralPath $newConfig -TotalCount 1) -match '^\s*<(?:html|!doctype)') { Stop-Envpilot "Downloaded content looks like HTML, not a Mihomo configuration." }
         if (Test-Path -LiteralPath $config) {
@@ -572,11 +581,13 @@ function Update-MihomoSubscription {
         Set-YamlScalar -Path $newConfig -Key "mixed-port" -Value ([string](Get-MihomoProxyPort))
         Set-YamlScalar -Path $newConfig -Key "bind-address" -Value "127.0.0.1"
         Set-YamlScalar -Path $newConfig -Key "external-controller" -Value "127.0.0.1:$(Get-MihomoApiPort)"
+        Invoke-EnvpilotCore mihomo-validate --target $newConfig
         Stop-MihomoProcesses -Quiet
         Move-Item -LiteralPath $newConfig -Destination $config -Force
         if ($wasRunning) {
             try { Start-MihomoProcess }
             catch {
+                Stop-MihomoProcesses -Quiet -SkipSelectionSave
                 if ($backup) {
                     Copy-Item -LiteralPath $backup -Destination $config -Force
                     Start-MihomoProcess
@@ -584,8 +595,12 @@ function Update-MihomoSubscription {
                 throw
             }
         }
-        [IO.File]::WriteAllText((Join-Path $configDir "subscription.url"), $Url + "`n", [Text.UTF8Encoding]::new($false))
+        if (-not $SubscriptionFile) {
+            [IO.File]::WriteAllText((Join-Path $configDir "subscription.url"), $Url + "`n", [Text.UTF8Encoding]::new($false))
+        }
         Write-Info "Mihomo subscription updated."
+        Write-Info "View nodes: envpilot mihomo nodes; choose a node: envpilot mihomo select"
+        if (-not $wasRunning) { Write-Info "Mihomo is stopped. Run envpilot mihomo start before selecting a node." }
     } finally {
         Remove-Item -LiteralPath $newConfig -Force -ErrorAction SilentlyContinue
     }
@@ -596,11 +611,18 @@ function Invoke-MihomoCommand {
     switch ($action) {
         "start" { Start-MihomoProcess }
         "stop" { Stop-MihomoProcesses }
+        "restart" { Stop-MihomoProcesses; Start-MihomoProcess }
         "status" { Show-MihomoStatus }
+        { $_ -in @("nodes","select","test") } {
+            $arguments = @("mihomo", "--format", $(if ($Json) { "json" } else { "text" }), "--", $action)
+            if ($Value) { $arguments += $Value }
+            if ($Value2) { $arguments += $Value2 }
+            Invoke-EnvpilotCore @arguments
+        }
         "port" { Set-MihomoPort -Port $Value }
         "ports" { Set-MihomoPorts -ProxyPort $Value -ApiPort $Value2 }
         { $_ -in @("update-subscription","subscription") } { Update-MihomoSubscription -Url $Value }
-        default { Stop-Envpilot "Unknown Mihomo action: $Component. Use start, stop, status, port PORT, ports PROXY_PORT API_PORT, or update-subscription [URL]." }
+        default { Stop-Envpilot "Unknown Mihomo action: $Component. Use start, stop, restart, status, nodes, select, test, port PORT, ports PROXY_PORT API_PORT, or update-subscription [URL]." }
     }
 }
 function Restore-BaselineTool {
@@ -762,7 +784,7 @@ function Install-Mihomo {
     $config = Join-Path $configDir "config.yaml"
     $configBefore = Test-Path -LiteralPath $config
     $managedProcesses = @(Get-Process -Name "mihomo" -ErrorAction SilentlyContinue | Where-Object {
-        try { $_.Path -eq $bin -or $_.Path -like "*\software\mihomo\mihomo.exe" } catch { $false }
+        try { $_.Path -eq $bin } catch { $false }
     })
     $wasRunning = $managedProcesses.Count -gt 0
     $reportStatus = if ($Script:Upgrade) { "updated" } else { "installed" }
@@ -1172,6 +1194,10 @@ envpilot — 用户态环境安装与维护
   envpilot run -- 命令 参数               在配置环境中运行子进程
   envpilot self-update                   更新 envpilot 和管理脚本
   envpilot updates check|run|status|history|enable|disable  检查更新和管理定时任务
+  envpilot mihomo nodes|select|test       查看节点、交互选择或测试连通性
+  envpilot mihomo start|stop|restart|status  管理代理进程
+  envpilot mihomo update-subscription [-Network auto|direct|proxy]
+  envpilot mihomo update-subscription -SubscriptionFile 路径  导入本地配置
 
 选项：-Config 路径，-Lang auto|en|zh-CN，-Mode online|offline，-Prefix 路径。
 "@
@@ -1202,8 +1228,13 @@ Usage:
       Restore the most recent envpilot-managed backup.
   .\envpilot.ps1 restore
       Restore a managed-file snapshot, with legacy baseline support.
-  .\envpilot.ps1 mihomo [start|stop|status|port PORT|ports PROXY_PORT API_PORT|update-subscription [URL]]
+  .\envpilot.ps1 mihomo [start|stop|restart|status|port PORT|ports PROXY_PORT API_PORT|update-subscription [URL]]
       Manage Mihomo, its two local ports, and subscription config.
+  .\envpilot.ps1 mihomo nodes|select|test [GROUP] [NODE] [-Json]
+      List nodes, select interactively or test reachability; selections persist per host.
+  .\envpilot.ps1 mihomo update-subscription [-Network auto|direct|proxy]
+  .\envpilot.ps1 mihomo update-subscription -SubscriptionFile PATH
+      Refresh online or import a complete local Clash/Mihomo configuration.
   .\envpilot.ps1 codex remote [status|enable|stage|ready|warm|stop|repair|disable]
       Codex node-local runtime management is available through the Unix entrypoint.
   .\envpilot.ps1 resume
@@ -1227,7 +1258,8 @@ try {
     }
     if ($Command -eq 'help') { Show-Usage; exit 0 }
     if ($Command -notin @("help","self-test","update-manifests","update-mihomo-cache","init","config","plan")) { Import-EnvpilotConfig }
-    if ($Command -in @('install','update','upgrade','self-update','apply') -and $env:ENVPILOT_UPDATE_LOCK_HELD -ne '1') {
+    $needsUpdateLock = $Command -in @('install','update','upgrade','self-update','apply') -or ($Command -eq 'mihomo' -and $Component -in @('start','stop','restart','select','port','ports','update-subscription','subscription'))
+    if ($needsUpdateLock -and $env:ENVPILOT_UPDATE_LOCK_HELD -ne '1') {
         $reentry = @()
         foreach ($entry in $Script:ExplicitParameters.GetEnumerator()) {
             if ($entry.Key -eq 'CommandArgs') { continue }

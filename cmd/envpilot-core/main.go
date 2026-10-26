@@ -14,7 +14,7 @@ import (
 	"github.com/zhangyehao/envpilot/internal/config"
 )
 
-var version = "0.4.4"
+var version = "0.4.5"
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
@@ -151,14 +151,6 @@ func run(args []string) error {
 	if cmd == "install-core" {
 		return config.InstallCore(root)
 	}
-	if cmd == "protected-download" {
-		data, err := io.ReadAll(io.LimitReader(os.Stdin, 64*1024))
-		if err != nil {
-			return err
-		}
-		return config.DownloadSubscription(string(data), target)
-	}
-
 	if cmd == "probe" {
 		result, err := config.Probe(target)
 		if err != nil {
@@ -213,6 +205,24 @@ func run(args []string) error {
 	}
 	c := r.Config
 	switch cmd {
+	case "protected-download":
+		data, err := io.ReadAll(io.LimitReader(os.Stdin, 64*1024))
+		if err != nil {
+			return fmt.Errorf("E_SUBSCRIPTION_INPUT: could not read the protected reference")
+		}
+		return config.DownloadSubscriptionWithOptions(string(data), target, config.SubscriptionDownloadOptions{
+			Network: c.Mihomo.SubscriptionNetwork, ProxyPort: c.Mihomo.ProxyPort,
+			Language: c.Language, Progress: os.Stderr,
+		})
+	case "subscription-import":
+		return config.ImportSubscription(runtimeSource, target)
+	case "mihomo-validate":
+		return config.ValidateMihomoConfig(c, target)
+	case "mihomo":
+		if len(rest) == 0 {
+			return fmt.Errorf("E_INPUT_REQUIRED: mihomo action")
+		}
+		return config.MihomoCommand(c, rest[0], rest[1:], format)
 	case "latest-component":
 		v, err := config.LatestComponent(target)
 		if err == nil {

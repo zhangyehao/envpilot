@@ -46,7 +46,9 @@ envpilot — 用户态环境安装与维护
   envpilot shell remove                 移除受管加载块
   envpilot run -- 命令 参数              在选定环境中运行子进程
   envpilot codex remote status|enable|verify|ready|restart|stop|repair|disable
-  envpilot mihomo start|stop|status|ports|update-subscription
+  envpilot mihomo start|stop|restart|status|nodes|select|test
+  envpilot mihomo update-subscription [--network auto|direct|proxy]
+                                       更新订阅；--file 路径可导入本地配置
   envpilot self-update                  更新 envpilot 和受管脚本
   envpilot updates check|run|status|history|enable|disable
                                        检查更新、按配置运行或管理定时任务
@@ -84,7 +86,13 @@ Usage:
   envpilot setup-command      Install ~/.local/bin/envpilot without replacing the shell profile.
   envpilot rollback           Restore the most recent envpilot-managed backup.
   envpilot restore            Restore a managed-file snapshot, with legacy baseline support.
-  envpilot mihomo [start|stop|status|port PORT|ports PROXY_PORT API_PORT|update-subscription [URL]]
+  envpilot mihomo [start|stop|restart|status|port PORT|ports PROXY_PORT API_PORT|update-subscription [URL]]
+  envpilot mihomo nodes [GROUP]          List groups and available nodes.
+  envpilot mihomo select [GROUP] [NODE]  Select interactively or by exact name; remember per host.
+  envpilot mihomo test [GROUP] [NODE]    Test reachability without changing the selection.
+  envpilot mihomo update-subscription [URL] [--network auto|direct|proxy]
+  envpilot mihomo update-subscription --file PATH
+                                       Refresh online or import a complete local Clash/Mihomo YAML.
                                       Manage Mihomo, its two local ports, and subscription config.
   envpilot codex remote [status|enable|stage|verify|ready|warm|restart|stop|repair|disable]
                                       Stage Codex on node-local storage and manage app-server warmup.
@@ -129,6 +137,7 @@ parse_args()
     EP_UPDATE_FORMAT=text
     EP_HISTORY_DAYS=30
     EP_HISTORY_COMPONENT=""
+    EP_MIHOMO_FILE=""
     case "$EP_COMMAND" in
         config|shell|restore|updates)
             if [ -n "${1:-}" ] && [[ "$1" != -* ]]; then EP_ACTION="$1"; shift; fi ;;
@@ -147,19 +156,9 @@ parse_args()
             shift
         fi
     fi
-    if [ "$EP_COMMAND" = "mihomo" ] && [ "${1:-}" != "" ]; then
-        arg="${1%$'\r'}"
-        if [ "${arg#-}" = "$arg" ]; then
-            EP_MIHOMO_PORT="$arg"
-            shift
-        fi
-    fi
-    if [ "$EP_COMMAND" = "mihomo" ] && [ "${1:-}" != "" ]; then
-        arg="${1%$'\r'}"
-        if [ "${arg#-}" = "$arg" ]; then
-            EP_MIHOMO_VALUE2="$arg"
-            shift
-        fi
+    if [ "$EP_COMMAND" = "mihomo" ]; then
+        EP_MIHOMO_PORT=""
+        EP_MIHOMO_VALUE2=""
     fi
     if [ "$EP_COMMAND" = "codex" ] && [ "${1:-}" != "" ]; then
         arg="${1%$'\r'}"
@@ -179,6 +178,22 @@ parse_args()
     while [ "$#" -gt 0 ]; do
         arg="${1%$'\r'}"
         case "$arg" in
+            --network)
+                case "$EP_COMMAND:$EP_MIHOMO_ACTION" in
+                    mihomo:update-subscription|mihomo:subscription) ;;
+                    *) ep_die '--network is for mihomo update-subscription' ;;
+                esac
+                case "${2:-}" in auto|direct|proxy) ;; *) ep_die '--network requires auto, direct or proxy' ;; esac
+                export ENVPILOT_SUBSCRIPTION_NETWORK="$2"
+                unset ENVPILOT_MANAGED_ENVPILOT_SUBSCRIPTION_NETWORK
+                shift 2 ;;
+            --file)
+                case "$EP_COMMAND:$EP_MIHOMO_ACTION" in
+                    mihomo:update-subscription|mihomo:subscription) ;;
+                    *) ep_die '--file is for mihomo update-subscription' ;;
+                esac
+                [ -n "${2:-}" ] || ep_die '--file requires a path'
+                export EP_MIHOMO_FILE="$2"; shift 2 ;;
             --days)
                 [ -n "${2:-}" ] || ep_die '--days requires a value'
                 EP_HISTORY_DAYS="$2"; shift 2 ;;
@@ -236,7 +251,13 @@ parse_args()
             --non-interactive)
                 EP_NON_INTERACTIVE=1; export EP_NON_INTERACTIVE; shift ;;
             --)
-                shift; EP_RUN_ARGS=("$@"); break ;;
+                shift
+                if [ "$EP_COMMAND" = mihomo ]; then
+                    while [ "$#" -gt 0 ]; do parse_mihomo_value "$1"; shift; done
+                else
+                    EP_RUN_ARGS=("$@")
+                fi
+                break ;;
             -h|-H|-help|--help)
                 usage
                 exit 0
@@ -246,10 +267,34 @@ parse_args()
                 exit 0
                 ;;
             *)
-                ep_die "Unknown option: $arg"
+                if [ "$EP_COMMAND" = mihomo ] && [[ "$arg" != -* ]]; then
+                    parse_mihomo_value "$arg"; shift
+                else
+                    # Arguments may contain subscription credentials; never echo
+                    # unrecognized input into terminal output or log files.
+                    ep_die "Unknown option or unexpected argument; run envpilot help."
+                fi
                 ;;
         esac
     done
+}
+
+parse_mihomo_value()
+{
+    case "$EP_MIHOMO_ACTION" in
+        nodes|port|update-subscription|subscription)
+            [ -z "$EP_MIHOMO_PORT" ] || ep_die "Unexpected extra argument for Mihomo; argument values are not displayed."
+            EP_MIHOMO_PORT="$1" ;;
+        select|test|ports)
+            if [ -z "$EP_MIHOMO_PORT" ]; then
+                EP_MIHOMO_PORT="$1"
+            elif [ -z "$EP_MIHOMO_VALUE2" ]; then
+                EP_MIHOMO_VALUE2="$1"
+            else
+                ep_die "Unexpected extra argument for Mihomo; argument values are not displayed."
+            fi ;;
+        *) ep_die "This Mihomo action takes no positional arguments; run envpilot help." ;;
+    esac
 }
 
 run_doctor()
@@ -442,6 +487,18 @@ run_mihomo()
 {
     ep_init
     ep_platform_detect
+    ENVPILOT_CORE="$(ep_core_path)"
+    export ENVPILOT_CORE
+    case "$EP_MIHOMO_ACTION" in
+        nodes|select|test)
+            local args=()
+            MIHOMO_RUNTIME_DIR="$(ep_mihomo_runtime_dir)"
+            export MIHOMO_RUNTIME_DIR
+            [ -z "$EP_MIHOMO_PORT" ] || args+=("$EP_MIHOMO_PORT")
+            [ -z "$EP_MIHOMO_VALUE2" ] || args+=("$EP_MIHOMO_VALUE2")
+            ep_core mihomo --format "$EP_UPDATE_FORMAT" -- "$EP_MIHOMO_ACTION" "${args[@]}"
+            return ;;
+    esac
     if [ "${ENVPILOT_LANG:-auto}" = zh-CN ]; then
         ep_mihomo_cli "$EP_MIHOMO_ACTION" "$EP_MIHOMO_PORT" "$EP_MIHOMO_VALUE2" | "$(ep_core_path)" message --stream --lang zh-CN
     else
@@ -502,6 +559,14 @@ main()
         *) ep_config_load || return ;;
     esac
     case "$EP_COMMAND" in
+        mihomo)
+            case "$EP_MIHOMO_ACTION" in
+                start|stop|restart|select|port|ports|update-subscription|subscription)
+                    if [ "${ENVPILOT_UPDATE_LOCK_HELD:-0}" != 1 ]; then
+                        "$(ep_core_path)" update-lock -- bash "$ENVPILOT_ROOT/envpilot.sh" "${original_args[@]}"
+                        return
+                    fi ;;
+            esac ;;
         install|update|upgrade|self-update|apply)
             if [ "${ENVPILOT_UPDATE_LOCK_HELD:-0}" != 1 ]; then
                 "$(ep_core_path)" update-lock -- bash "$ENVPILOT_ROOT/envpilot.sh" "${original_args[@]}"

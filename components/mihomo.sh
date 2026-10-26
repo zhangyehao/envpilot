@@ -853,12 +853,16 @@ ep_status_mihomo()
 ep_update_mihomo_subscription()
 {
     local subscription="${1:-${ENVPILOT_MIHOMO_SUBSCRIPTION_URL:-}}" proxy_port api_port update_script
+    if [ -n "${EP_MIHOMO_FILE:-}" ]; then
+        [ -z "${1:-}" ] || ep_die 'Use a subscription URL or --file, not both.'
+        subscription=""
+    fi
     proxy_port="$(ep_mihomo_proxy_port)"
     api_port="$(ep_mihomo_api_port)"
     ep_mihomo_refresh_scripts
     update_script="$(ep_mihomo_script update_mihomo_subscription.sh)"
     [ -x "$update_script" ] || ep_die "Mihomo subscription update script not found: $update_script"
-    MIHOMO_PROXY_PORT="$proxy_port" MIHOMO_API_PORT="$api_port" ENVPILOT_CORE="${ENVPILOT_CORE:-$(ep_core_path)}" ENVPILOT_MIHOMO_SUBSCRIPTION_URL="$subscription" "$update_script"
+    MIHOMO_PROXY_PORT="$proxy_port" MIHOMO_API_PORT="$api_port" ENVPILOT_CORE="${ENVPILOT_CORE:-$(ep_core_path)}" ENVPILOT_MIHOMO_IMPORT_FILE="${EP_MIHOMO_FILE:-}" ENVPILOT_MIHOMO_SUBSCRIPTION_URL="$subscription" "$update_script"
 }
 
 ep_switch_mihomo_ports()
@@ -915,11 +919,12 @@ ep_mihomo_cli()
     case "$action" in
         start) ep_start_mihomo ;;
         stop) ep_stop_mihomo ;;
+        restart) ep_stop_mihomo; ep_start_mihomo ;;
         status) ep_status_mihomo ;;
         port) ep_switch_mihomo_port "$value1" ;;
         ports) ep_switch_mihomo_ports "$value1" "$value2" ;;
         update-subscription|subscription) ep_update_mihomo_subscription "$value1" ;;
-        *) ep_die "Unknown Mihomo action: $action. Use start, stop, status, port PORT, ports PROXY_PORT API_PORT, or update-subscription [URL]." ;;
+        *) ep_die "Unknown Mihomo action: $action. Use start, stop, restart, status, nodes, select, test, port PORT, ports PROXY_PORT API_PORT, or update-subscription [URL]." ;;
     esac
 }
 ep_doctor_mihomo()

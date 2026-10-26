@@ -6,7 +6,7 @@
 
 默认文件为 `~/.config/envpilot/config.yaml`；`ENVPILOT_CONFIG_DIR` 修改配置目录，`--config PATH` 选择本次使用的配置文件。
 
-优先级：显式参数 → 声明的环境变量 → YAML → 默认值。支持 `ENVPILOT_LANG`、`ENVPILOT_MODE`、`ENVPILOT_PREFIX`、`ENVPILOT_RELEASE_SOURCE`、`ENVPILOT_CONDA_DISTRIBUTION`、`CODEX_HOME`、`ENVPILOT_CODEX_RUNTIME_DIR`、`ENVPILOT_CODEX_REMOTE_READY_TIMEOUT`、`MIHOMO_PROXY_PORT` 和 `MIHOMO_API_PORT`。
+优先级：显式参数 → 声明的环境变量 → YAML → 默认值。支持 `ENVPILOT_LANG`、`ENVPILOT_MODE`、`ENVPILOT_PREFIX`、`ENVPILOT_RELEASE_SOURCE`、`ENVPILOT_CONDA_DISTRIBUTION`、`CODEX_HOME`、`ENVPILOT_CODEX_RUNTIME_DIR`、`ENVPILOT_CODEX_REMOTE_READY_TIMEOUT`、`MIHOMO_PROXY_PORT`、`MIHOMO_API_PORT` 和 `ENVPILOT_SUBSCRIPTION_NETWORK`。
 
 | 配置 | 含义与默认值 |
 | --- | --- |
@@ -29,6 +29,7 @@
 | `mihomo.proxy_port/api_port` | 默认 42290/60290，须不同且在 1–65535 范围内。 |
 | `mihomo.socks` | 是否导出 SOCKS 代理，默认 false。 |
 | `mihomo.subscription.file/env` | 订阅文件或环境变量引用，二选一。 |
+| `mihomo.subscription_network` | 订阅下载路径：`auto`（默认，先直连、失败后尝试代理）、`direct` 或 `proxy`；命令行 `--network` 可覆盖。 |
 | `conda.distribution` | `miniconda` 或 `anaconda`。 |
 | `conda.prefix` | 可选的现有 Conda 位置。 |
 | `codex.remote` | 是否应用 Codex 节点本地运行设置，默认 false。 |
@@ -73,3 +74,7 @@ ${EDITOR:-vi} "$HOME/.config/mihomo/subscription.url"
 `api.env` 内写 `OPENAI_API_KEY='你的真实密钥'`；`subscription.url` 内只写一行真实订阅 URL。配置保留 `secrets.file` 和 `mihomo.subscription.file` 的路径，`codex.api_key.env` 填 `OPENAI_API_KEY`。不需要 `shell.load_secrets: true` 才能给 Codex 使用受保护文件。
 
 另一种密钥方案：`codex.api_key.file: ~/.config/secrets/codex.key`，文件仅一行密钥；同时设置 `codex.api_key.env: ""`。订阅也可配置 `mihomo.subscription.env: MIHOMO_SUBSCRIPTION_URL`，同时清空 `file`。定时任务不继承交互终端临时导出的变量，建议使用文件引用。`secrets` 仅支持赋值文件 `file`；不执行命令。Windows 同样使用这些路径和引用，通过用户 ACL 保护文件。
+
+`mihomo.subscription_network` 只控制订阅下载，不改变整个 Shell 或所有软件的联网方式；环境覆盖为 `ENVPILOT_SUBSCRIPTION_NETWORK`，命令覆盖为 `--network`（PowerShell：`-Network`）。停止 Mihomo 不会清除当前 Shell 的旧代理变量；`--network direct` 会忽略这些变量。离线导入使用 `envpilot mihomo update-subscription --file PATH`（PowerShell：`-SubscriptionFile PATH`），无需配置新 URL。导入文件在 Unix 下须属于当前用户且权限为 600/400，先执行 `chmod 600 PATH`。
+
+节点选择用 `envpilot mihomo select`，按节点保存在配置目录的 `mihomo-selections/` 下，不需要把组名或节点名写进主 YAML。新配置中已删除或改名的节点会提示重新选择。详见 [Mihomo](MIHOMO.zh-CN.md)。

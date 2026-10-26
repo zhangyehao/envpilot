@@ -40,10 +40,11 @@ type Shell struct {
 	Paths           []string `yaml:"paths" json:"paths"`
 }
 type Mihomo struct {
-	ProxyPort    int       `yaml:"proxy_port" json:"proxy_port"`
-	APIPort      int       `yaml:"api_port" json:"api_port"`
-	SOCKS        bool      `yaml:"socks" json:"socks"`
-	Subscription Reference `yaml:"subscription" json:"subscription"`
+	ProxyPort           int       `yaml:"proxy_port" json:"proxy_port"`
+	APIPort             int       `yaml:"api_port" json:"api_port"`
+	SOCKS               bool      `yaml:"socks" json:"socks"`
+	Subscription        Reference `yaml:"subscription" json:"subscription"`
+	SubscriptionNetwork string    `yaml:"subscription_network" json:"subscription_network"`
 }
 type Conda struct {
 	Distribution string `yaml:"distribution" json:"distribution"`
@@ -96,6 +97,7 @@ var environmentFields = map[string]string{
 	"CODEX_HOME": "codex.home", "ENVPILOT_CODEX_RUNTIME_DIR": "codex.runtime",
 	"ENVPILOT_CODEX_REMOTE_READY_TIMEOUT": "codex.ready_timeout", "ENVPILOT_CODEX_BASE_URL": "codex.base_url",
 	"ENVPILOT_CODEX_SECRETS_FILE": "secrets.file", "MIHOMO_PROXY_PORT": "mihomo.proxy_port", "MIHOMO_API_PORT": "mihomo.api_port",
+	"ENVPILOT_SUBSCRIPTION_NETWORK": "mihomo.subscription_network",
 }
 
 func externalEnvironment(name string) (string, bool) {
@@ -146,7 +148,7 @@ func Expand(p string) string {
 	return filepath.Clean(p)
 }
 func Defaults() Config {
-	return Config{Version: 1, Language: "auto", Install: Install{Components: []string{}, Mode: "online", Prefix: "~/software", ReleaseSource: "github"}, Shell: Shell{Enabled: true, Modules: []string{}, Paths: []string{}}, Mihomo: Mihomo{ProxyPort: 42290, APIPort: 60290, Subscription: Reference{File: "~/.config/mihomo/subscription.url"}}, Conda: Conda{Distribution: "miniconda"}, Codex: Codex{Home: "~/.codex", ReadyTimeout: 60, APIKey: Reference{Env: "OPENAI_API_KEY"}}, Updates: Updates{Enabled: true, IntervalDays: 3, Components: append([]string{}, Names...), Envpilot: true, WindowStart: "03:00", WindowEnd: "05:00", Timezone: "Local"}, Secrets: Reference{File: "~/.config/secrets/api.env"}, Env: map[string]string{}}
+	return Config{Version: 1, Language: "auto", Install: Install{Components: []string{}, Mode: "online", Prefix: "~/software", ReleaseSource: "github"}, Shell: Shell{Enabled: true, Modules: []string{}, Paths: []string{}}, Mihomo: Mihomo{ProxyPort: 42290, APIPort: 60290, SubscriptionNetwork: "auto", Subscription: Reference{File: "~/.config/mihomo/subscription.url"}}, Conda: Conda{Distribution: "miniconda"}, Codex: Codex{Home: "~/.codex", ReadyTimeout: 60, APIKey: Reference{Env: "OPENAI_API_KEY"}}, Updates: Updates{Enabled: true, IntervalDays: 3, Components: append([]string{}, Names...), Envpilot: true, WindowStart: "03:00", WindowEnd: "05:00", Timezone: "Local"}, Secrets: Reference{File: "~/.config/secrets/api.env"}, Env: map[string]string{}}
 }
 func Load(path string, overrides map[string]string) (Resolved, error) {
 	if path == "" {
@@ -197,6 +199,7 @@ func Load(path string, overrides map[string]string) (Resolved, error) {
 	set("ENVPILOT_MODE", "install.mode", &c.Install.Mode)
 	set("ENVPILOT_PREFIX", "install.prefix", &c.Install.Prefix)
 	set("ENVPILOT_RELEASE_SOURCE", "install.release_source", &c.Install.ReleaseSource)
+	set("ENVPILOT_SUBSCRIPTION_NETWORK", "mihomo.subscription_network", &c.Mihomo.SubscriptionNetwork)
 	set("ENVPILOT_CONDA_DISTRIBUTION", "conda.distribution", &c.Conda.Distribution)
 	set("CODEX_HOME", "codex.home", &c.Codex.Home)
 	set("ENVPILOT_CODEX_RUNTIME_DIR", "codex.runtime", &c.Codex.Runtime)
@@ -283,6 +286,11 @@ func Validate(c Config) error {
 	if c.Mihomo.ProxyPort < 1 || c.Mihomo.ProxyPort > 65535 || c.Mihomo.APIPort < 1 || c.Mihomo.APIPort > 65535 || c.Mihomo.ProxyPort == c.Mihomo.APIPort {
 		return fmt.Errorf("mihomo ports must be distinct integers between 1 and 65535")
 	}
+	switch c.Mihomo.SubscriptionNetwork {
+	case "auto", "direct", "proxy":
+	default:
+		return fmt.Errorf("mihomo.subscription_network: use auto, direct or proxy")
+	}
 	if c.Conda.Distribution != "miniconda" && c.Conda.Distribution != "anaconda" {
 		return fmt.Errorf("conda.distribution: use miniconda or anaconda")
 	}
@@ -359,7 +367,7 @@ func flag(b bool) string {
 	return "0"
 }
 func (c Config) Environment() map[string]string {
-	m := map[string]string{"ENVPILOT_CONFIG_FILE": c.SourcePath, "EP_MODE": c.Install.Mode, "EP_PREFIX": Expand(c.Install.Prefix), "EP_CONDA_DISTRIBUTION": c.Conda.Distribution, "ENVPILOT_LANG": c.Language, "ENVPILOT_COMPONENTS": strings.Join(c.Install.Components, " "), "ENVPILOT_RELEASE_SOURCE": c.Install.ReleaseSource, "ENVPILOT_SHELL_ENABLED": flag(c.Shell.Enabled), "BASHRC_INIT_CONDA": flag(c.Shell.Conda), "BASHRC_AUTO_LOAD_MODULES": flag(len(c.Shell.Modules) > 0), "BASHRC_AUTO_START_MIHOMO": flag(c.Shell.AutoStartProxy), "BASHRC_AUTO_ENABLE_PROXY": flag(c.Shell.AutoEnableProxy), "BASHRC_AUTO_LOAD_SECRETS": flag(c.Shell.LoadSecrets), "BASHRC_ENABLE_HISTORY_SYNC": flag(c.Shell.HistorySync), "ENVPILOT_LEGACY_ALIASES": flag(c.Shell.LegacyAliases), "ENVPILOT_LEGACY_LOCAL": flag(c.Shell.LegacyLocal), "MIHOMO_PROXY_PORT": strconv.Itoa(c.Mihomo.ProxyPort), "MIHOMO_API_PORT": strconv.Itoa(c.Mihomo.APIPort), "BASHRC_PROXY_ENABLE_SOCKS": flag(c.Mihomo.SOCKS), "BASHRC_CONDA_PRIMARY_PREFIX": Expand(c.Conda.Prefix), "BASHRC_SECRETS_FILE": Expand(c.Secrets.File), "CODEX_HOME": Expand(c.Codex.Home), "ENVPILOT_CODEX_RUNTIME_DIR": Expand(c.Codex.Runtime), "ENVPILOT_CODEX_REMOTE_READY_TIMEOUT": strconv.Itoa(c.Codex.ReadyTimeout), "ENVPILOT_CODEX_SECRETS_FILE": Expand(c.Secrets.File), "ENVPILOT_CODEX_ENABLED": flag(c.Codex.Remote), "ENVPILOT_SUBSCRIPTION_FILE": Expand(c.Mihomo.Subscription.File), "ENVPILOT_SUBSCRIPTION_ENV": c.Mihomo.Subscription.Env, "ENVPILOT_API_KEY_ENV": c.Codex.APIKey.Env, "ENVPILOT_API_KEY_FILE": Expand(c.Codex.APIKey.File)}
+	m := map[string]string{"ENVPILOT_CONFIG_FILE": c.SourcePath, "EP_MODE": c.Install.Mode, "EP_PREFIX": Expand(c.Install.Prefix), "EP_CONDA_DISTRIBUTION": c.Conda.Distribution, "ENVPILOT_LANG": c.Language, "ENVPILOT_COMPONENTS": strings.Join(c.Install.Components, " "), "ENVPILOT_RELEASE_SOURCE": c.Install.ReleaseSource, "ENVPILOT_SHELL_ENABLED": flag(c.Shell.Enabled), "BASHRC_INIT_CONDA": flag(c.Shell.Conda), "BASHRC_AUTO_LOAD_MODULES": flag(len(c.Shell.Modules) > 0), "BASHRC_AUTO_START_MIHOMO": flag(c.Shell.AutoStartProxy), "BASHRC_AUTO_ENABLE_PROXY": flag(c.Shell.AutoEnableProxy), "BASHRC_AUTO_LOAD_SECRETS": flag(c.Shell.LoadSecrets), "BASHRC_ENABLE_HISTORY_SYNC": flag(c.Shell.HistorySync), "ENVPILOT_LEGACY_ALIASES": flag(c.Shell.LegacyAliases), "ENVPILOT_LEGACY_LOCAL": flag(c.Shell.LegacyLocal), "MIHOMO_PROXY_PORT": strconv.Itoa(c.Mihomo.ProxyPort), "MIHOMO_API_PORT": strconv.Itoa(c.Mihomo.APIPort), "BASHRC_PROXY_ENABLE_SOCKS": flag(c.Mihomo.SOCKS), "BASHRC_CONDA_PRIMARY_PREFIX": Expand(c.Conda.Prefix), "BASHRC_SECRETS_FILE": Expand(c.Secrets.File), "CODEX_HOME": Expand(c.Codex.Home), "ENVPILOT_CODEX_RUNTIME_DIR": Expand(c.Codex.Runtime), "ENVPILOT_CODEX_REMOTE_READY_TIMEOUT": strconv.Itoa(c.Codex.ReadyTimeout), "ENVPILOT_CODEX_SECRETS_FILE": Expand(c.Secrets.File), "ENVPILOT_CODEX_ENABLED": flag(c.Codex.Remote), "ENVPILOT_SUBSCRIPTION_FILE": Expand(c.Mihomo.Subscription.File), "ENVPILOT_SUBSCRIPTION_ENV": c.Mihomo.Subscription.Env, "ENVPILOT_SUBSCRIPTION_NETWORK": c.Mihomo.SubscriptionNetwork, "ENVPILOT_API_KEY_ENV": c.Codex.APIKey.Env, "ENVPILOT_API_KEY_FILE": Expand(c.Codex.APIKey.File)}
 	m["ENVPILOT_PREFER_MANAGED_TOOLS"] = strings.Join(c.Shell.PreferManaged, " ")
 	if c.Codex.BaseURL != "" {
 		m["EP_CODEX_BASE_URL"] = c.Codex.BaseURL
@@ -405,46 +413,47 @@ func Encode(c Config) ([]byte, error) {
 		return nil, err
 	}
 	comments := map[string][2]string{
-		"version":                 {"Configuration format version; not the application version.", "配置格式版本，不是软件版本。"},
-		"language":                {"auto, en or zh-CN", "auto 自动选择、en 英文、zh-CN 简体中文。"},
-		"install.components":      {"Choose components: mihomo, git, python, conda, mamba, codex, github, tmux.", "选择安装组件：mihomo、git、python、conda、mamba、codex、github、tmux。"},
-		"install.mode":            {"Offline requires a platform package and matching component assets.", "offline 需要完整平台包和对应组件离线资源。"},
-		"install.prefix":          {"User-space installation directory.", "用户态软件安装目录。"},
-		"install.release_source":  {"Where to download envpilot releases: github or gitee.", "envpilot 发布包来源：github 或 gitee。"},
-		"shell":                   {"Opt in to environment changes; the original profile is preserved.", "按需启用环境变化；原 profile 内容保持不变。"},
-		"shell.enabled":           {"Install a short loader in the existing profile; true/false.", "是否在原 profile 中安装短加载块；true/false。"},
-		"shell.conda":             {"Initialize Conda in interactive shells, without activating base.", "在交互 Shell 中初始化 Conda，不自动激活 base。"},
-		"shell.modules":           {"Names passed to module load in interactive shells; [] disables it.", "交互 Shell 中传给 module load 的模块名；[] 表示不加载。"},
-		"shell.auto_start_proxy":  {"Start configured Mihomo in interactive shells; false by default.", "交互 Shell 中自动启动已配置的 Mihomo，默认 false。"},
-		"shell.auto_enable_proxy": {"Export proxy variables only when the proxy port is listening.", "仅在代理端口就绪时导出代理环境变量。"},
-		"shell.load_secrets":      {"Load secrets.file in the shell; false limits secret exposure.", "是否向当前 Shell 加载 secrets.file；默认 false。"},
-		"shell.history_sync":      {"Synchronize interactive Bash history; false by default.", "是否同步交互 Bash 历史记录；默认 false。"},
-		"shell.legacy_aliases":    {"Add legacy shortcuts only when their names are unclaimed.", "只在名称未被占用时添加旧快捷命令。"},
-		"shell.paths":             {"Append paths without replacing existing command priority.", "追加路径，保留原命令优先级。"},
-		"shell.prefer_managed":    {"Choose [git, python] to prefer installed managed tools; activated Python environments stay first.", "填 [git, python] 让受管工具在普通 Shell 中优先；已激活的 Python 环境仍优先。"},
-		"shell.legacy_local":      {"Load the previous user-owned shell.local interactively.", "交互时加载已有的用户自定义 shell.local。"},
-		"mihomo.subscription":     {"Choose file or env. Keep the actual subscription URL out of this YAML.", "file 或 env 二选一，实际订阅地址不写入本 YAML。"},
-		"mihomo.proxy_port":       {"HTTP/mixed proxy port, 1-65535; must differ from api_port.", "HTTP/混合代理端口，1–65535；必须与 api_port 不同。"},
-		"mihomo.api_port":         {"Local controller API port, 1-65535.", "本地控制 API 端口，1–65535。"},
-		"mihomo.socks":            {"Also export all_proxy as SOCKS5 when enabling the proxy.", "启用代理时是否同时导出 SOCKS5 all_proxy。"},
-		"conda.distribution":      {"miniconda or anaconda; existing environments are preserved.", "miniconda 或 anaconda；保留已有环境。"},
-		"conda.prefix":            {"Optional existing Conda directory; empty means automatic discovery.", "已有 Conda 目录；留空则自动寻找。"},
-		"codex.remote":            {"Enable node-local runtime on Linux/macOS/WSL.", "在 Linux/macOS/WSL 启用节点本地运行目录。"},
-		"codex.home":              {"Persistent configuration, auth and sessions; not the disposable runtime.", "持久保存配置、认证和会话的目录，不是可清理的运行缓存。"},
-		"codex.runtime":           {"Optional node-local cache root; empty selects a per-user/node location.", "节点本地运行缓存根目录；留空按用户/节点自动选择。"},
-		"codex.ready_timeout":     {"Protocol readiness timeout in seconds, 1-600.", "协议就绪等待秒数，1–600。"},
-		"codex.base_url":          {"Provider URL used only for a new Codex configuration; not a model catalog URL.", "仅用于新建 Codex 配置的供应商地址，不是模型目录地址。"},
-		"codex.api_key":           {"Reference an API-key environment variable or protected file.", "引用存放 API key 的环境变量或受保护文件。"},
-		"secrets":                 {"Assignment-only environment file; Unix mode 600/400, current user owner.", "仅含变量赋值的文件；Unix 权限 600/400，属于当前用户。"},
-		"updates.enabled":         {"Allow scheduled checks; register the timer with envpilot updates enable.", "允许定时检查；用 envpilot updates enable 登记定时任务。"},
-		"updates.interval_days":   {"Days between successful checks, 1-365; failures retry after one hour.", "成功检查的间隔天数，1–365；失败后 1 小时重试。"},
-		"updates.auto_apply":      {"Automatically install new stable releases; Codex restarts may interrupt tasks.", "是否自动安装新稳定版；Codex 重启可能中断任务。"},
-		"updates.components":      {"Components to check/update; only installed managed tools are updated automatically.", "需要检查/更新的组件；只自动更新已安装且受管的工具。"},
-		"updates.envpilot":        {"Check/update envpilot and copied management scripts.", "是否检查/更新 envpilot 及已复制的管理脚本。"},
-		"updates.window_start":    {"Automatic installations may start from this HH:MM (inclusive).", "允许开始自动安装的时间 HH:MM（包含此时刻）。"},
-		"updates.window_end":      {"Do not start automatic installations at/after this HH:MM; running installs may finish.", "自动安装的截止时间 HH:MM（不包含）；已开始的安装可继续完成。"},
-		"updates.timezone":        {"Local uses the machine time zone; use Asia/Shanghai for Beijing time or an IANA zone.", "Local 使用本机时区；北京时间请填 Asia/Shanghai，也可填其他 IANA 时区。"},
-		"env":                     {"Ordinary environment variables only; credentials use references above.", "只放常规环境变量；密钥使用上面的受保护引用。"},
+		"version":                     {"Configuration format version; not the application version.", "配置格式版本，不是软件版本。"},
+		"language":                    {"auto, en or zh-CN", "auto 自动选择、en 英文、zh-CN 简体中文。"},
+		"install.components":          {"Choose components: mihomo, git, python, conda, mamba, codex, github, tmux.", "选择安装组件：mihomo、git、python、conda、mamba、codex、github、tmux。"},
+		"install.mode":                {"Offline requires a platform package and matching component assets.", "offline 需要完整平台包和对应组件离线资源。"},
+		"install.prefix":              {"User-space installation directory.", "用户态软件安装目录。"},
+		"install.release_source":      {"Where to download envpilot releases: github or gitee.", "envpilot 发布包来源：github 或 gitee。"},
+		"shell":                       {"Opt in to environment changes; the original profile is preserved.", "按需启用环境变化；原 profile 内容保持不变。"},
+		"shell.enabled":               {"Install a short loader in the existing profile; true/false.", "是否在原 profile 中安装短加载块；true/false。"},
+		"shell.conda":                 {"Initialize Conda in interactive shells, without activating base.", "在交互 Shell 中初始化 Conda，不自动激活 base。"},
+		"shell.modules":               {"Names passed to module load in interactive shells; [] disables it.", "交互 Shell 中传给 module load 的模块名；[] 表示不加载。"},
+		"shell.auto_start_proxy":      {"Start configured Mihomo in interactive shells; false by default.", "交互 Shell 中自动启动已配置的 Mihomo，默认 false。"},
+		"shell.auto_enable_proxy":     {"Export proxy variables only when the proxy port is listening.", "仅在代理端口就绪时导出代理环境变量。"},
+		"shell.load_secrets":          {"Load secrets.file in the shell; false limits secret exposure.", "是否向当前 Shell 加载 secrets.file；默认 false。"},
+		"shell.history_sync":          {"Synchronize interactive Bash history; false by default.", "是否同步交互 Bash 历史记录；默认 false。"},
+		"shell.legacy_aliases":        {"Add legacy shortcuts only when their names are unclaimed.", "只在名称未被占用时添加旧快捷命令。"},
+		"shell.paths":                 {"Append paths without replacing existing command priority.", "追加路径，保留原命令优先级。"},
+		"shell.prefer_managed":        {"Choose [git, python] to prefer installed managed tools; activated Python environments stay first.", "填 [git, python] 让受管工具在普通 Shell 中优先；已激活的 Python 环境仍优先。"},
+		"shell.legacy_local":          {"Load the previous user-owned shell.local interactively.", "交互时加载已有的用户自定义 shell.local。"},
+		"mihomo.subscription":         {"Choose file or env. Keep the actual subscription URL out of this YAML.", "file 或 env 二选一，实际订阅地址不写入本 YAML。"},
+		"mihomo.subscription_network": {"auto tries direct access before proxy fallback; direct/proxy selects one route.", "auto 先直连，失败再尝试代理；direct/proxy 固定使用对应通路。"},
+		"mihomo.proxy_port":           {"HTTP/mixed proxy port, 1-65535; must differ from api_port.", "HTTP/混合代理端口，1–65535；必须与 api_port 不同。"},
+		"mihomo.api_port":             {"Local controller API port, 1-65535.", "本地控制 API 端口，1–65535。"},
+		"mihomo.socks":                {"Also export all_proxy as SOCKS5 when enabling the proxy.", "启用代理时是否同时导出 SOCKS5 all_proxy。"},
+		"conda.distribution":          {"miniconda or anaconda; existing environments are preserved.", "miniconda 或 anaconda；保留已有环境。"},
+		"conda.prefix":                {"Optional existing Conda directory; empty means automatic discovery.", "已有 Conda 目录；留空则自动寻找。"},
+		"codex.remote":                {"Enable node-local runtime on Linux/macOS/WSL.", "在 Linux/macOS/WSL 启用节点本地运行目录。"},
+		"codex.home":                  {"Persistent configuration, auth and sessions; not the disposable runtime.", "持久保存配置、认证和会话的目录，不是可清理的运行缓存。"},
+		"codex.runtime":               {"Optional node-local cache root; empty selects a per-user/node location.", "节点本地运行缓存根目录；留空按用户/节点自动选择。"},
+		"codex.ready_timeout":         {"Protocol readiness timeout in seconds, 1-600.", "协议就绪等待秒数，1–600。"},
+		"codex.base_url":              {"Provider URL used only for a new Codex configuration; not a model catalog URL.", "仅用于新建 Codex 配置的供应商地址，不是模型目录地址。"},
+		"codex.api_key":               {"Reference an API-key environment variable or protected file.", "引用存放 API key 的环境变量或受保护文件。"},
+		"secrets":                     {"Assignment-only environment file; Unix mode 600/400, current user owner.", "仅含变量赋值的文件；Unix 权限 600/400，属于当前用户。"},
+		"updates.enabled":             {"Allow scheduled checks; register the timer with envpilot updates enable.", "允许定时检查；用 envpilot updates enable 登记定时任务。"},
+		"updates.interval_days":       {"Days between successful checks, 1-365; failures retry after one hour.", "成功检查的间隔天数，1–365；失败后 1 小时重试。"},
+		"updates.auto_apply":          {"Automatically install new stable releases; Codex restarts may interrupt tasks.", "是否自动安装新稳定版；Codex 重启可能中断任务。"},
+		"updates.components":          {"Components to check/update; only installed managed tools are updated automatically.", "需要检查/更新的组件；只自动更新已安装且受管的工具。"},
+		"updates.envpilot":            {"Check/update envpilot and copied management scripts.", "是否检查/更新 envpilot 及已复制的管理脚本。"},
+		"updates.window_start":        {"Automatic installations may start from this HH:MM (inclusive).", "允许开始自动安装的时间 HH:MM（包含此时刻）。"},
+		"updates.window_end":          {"Do not start automatic installations at/after this HH:MM; running installs may finish.", "自动安装的截止时间 HH:MM（不包含）；已开始的安装可继续完成。"},
+		"updates.timezone":            {"Local uses the machine time zone; use Asia/Shanghai for Beijing time or an IANA zone.", "Local 使用本机时区；北京时间请填 Asia/Shanghai，也可填其他 IANA 时区。"},
+		"env":                         {"Ordinary environment variables only; credentials use references above.", "只放常规环境变量；密钥使用上面的受保护引用。"},
 	}
 	var annotate func(*yaml.Node, string)
 	annotate = func(n *yaml.Node, prefix string) {

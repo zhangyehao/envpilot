@@ -71,9 +71,22 @@ envpilot codex remote enable         # Only when using the remote service.
 
 Git self-update requires a clean, fast-forwardable checkout. Package self-update verifies SHA-256 and activates a new version directory. See [upgrade and recovery](docs/UPGRADE.md).
 
+### Refresh a proxy subscription and choose a node
+
+Since 0.4.5, no handwritten API requests are needed:
+
+```bash
+envpilot mihomo update-subscription  # Read the protected URL; try direct, then proxy routes.
+envpilot mihomo start                # Needed when the service was stopped.
+envpilot mihomo select               # Choose a group and node by number; save the choice.
+envpilot mihomo status
+```
+
+Use `nodes` to list candidates, `test "GROUP"` to probe directly listed proxy nodes and `restart` to restart with valid choices restored. To probe nested groups or DIRECT/REJECT, specify `test "GROUP" "MEMBER"`. When the host cannot download a subscription, upload complete Clash YAML, run `chmod 600 ~/subscription.yaml`, then `envpilot mihomo update-subscription --file ~/subscription.yaml`. See the [Mihomo guide](docs/MIHOMO.md) for PowerShell options, download routes and recovery.
+
 ### Scheduled checks and overnight installation
 
-0.4.4 checks every **3 days** by default. Automatic installations start during **03:00–05:00**. The default only checks; enable unattended installation explicitly:
+Since 0.4.4, checks run every **3 days** by default. Automatic installations start during **03:00–05:00**. The default only checks; enable unattended installation explicitly:
 
 ```yaml
 updates:
@@ -137,7 +150,8 @@ Validate edits with `envpilot config validate`. Apply installation/shell changes
 | Child environment | `envpilot run -- COMMAND ...` |
 | Diagnose / snapshot / restore | `envpilot doctor`; `envpilot snapshot`; `envpilot restore` |
 | Codex service | `envpilot codex remote status/enable/verify/restart/stop` |
-| Proxy | `envpilot mihomo start/stop/status/ports/update-subscription` |
+| Proxy service / subscription | `envpilot mihomo start/stop/restart/status/ports/update-subscription` |
+| Proxy nodes | `envpilot mihomo nodes/select/test` |
 | Resume / reset install state | `envpilot resume`; `envpilot reset` (does not uninstall) |
 
 Slashes mean alternative subcommands; choose one when running. See [command guide](docs/COMMAND.md).
@@ -146,7 +160,7 @@ Slashes mean alternative subcommands; choose one when running. See [command guid
 
 | Software | Documentation |
 | --- | --- |
-| [Mihomo](docs/MIHOMO.md) | Proxy, subscription and ports |
+| [Mihomo](docs/MIHOMO.md) | Proxy, subscription, node selection and ports |
 | [Git / Python](docs/GIT-PYTHON.md) | User-space tools; preserve system installations |
 | [Conda / Mamba](docs/CONDA-MAMBA.md) | Environment and package management |
 | [Codex](docs/CODEX.md) | CLI, complete node-local runtime and app-server |

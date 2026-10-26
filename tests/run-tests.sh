@@ -25,6 +25,12 @@ if [ "${1:-}" = protected-download ]; then
     url="$(cat)"
     exec curl -fsSL "$url" -o "$destination"
 fi
+if [ "${1:-}" = mihomo ] && [ -n "${MIHOMO_TEST_MARKER:-}" ]; then
+    case "${*: -1}" in
+        health) test -f "$MIHOMO_TEST_MARKER"; exit $? ;;
+        selection-save|selection-restore) exit 0 ;;
+    esac
+fi
 exec "$ENVPILOT_TEST_REAL_CORE" "$@"
 EOF
 chmod 700 "$private_mock/envpilot-core"
@@ -1608,6 +1614,10 @@ tmp_home="$(mktemp -d)"
 tmp_bin="$(mktemp -d)"
 subscription_url_log="$tmp_home/subscription-urls"
 mkdir -p "$tmp_home/software/mihomo" "$tmp_home/.config/mihomo"
+# This fixture tests reference storage; real engine validation and lifecycle
+# behavior are exercised by test-mihomo.sh.
+printf '#!/bin/sh\n[ "$1" = "-t" ]\n' > "$tmp_home/software/mihomo/mihomo"
+chmod 700 "$tmp_home/software/mihomo/mihomo"
 cp "$ROOT/templates/mihomo_common.sh" "$tmp_home/software/mihomo/mihomo_common.sh"
 cp "$ROOT/templates/update_mihomo_subscription.sh" "$tmp_home/software/mihomo/update_mihomo_subscription.sh"
 cp "$ROOT/templates/start_mihomo.sh" "$tmp_home/software/mihomo/start_mihomo.sh"
@@ -1783,6 +1793,7 @@ if command -v pgrep >/dev/null 2>&1 && command -v pkill >/dev/null 2>&1 && [ -n 
     mkdir -p "$tmp_home/software/mihomo" "$tmp_home/.config/mihomo"
     cat > "$tmp_home/software/mihomo/mihomo" <<'EOF'
 #!/usr/bin/env bash
+if [ "${1:-}" = -t ]; then exit 0; fi
 : > "$MIHOMO_TEST_MARKER"
 trap 'rm -f "$MIHOMO_TEST_MARKER"' EXIT
 trap 'rm -f "$MIHOMO_TEST_MARKER"; exit 0' INT TERM

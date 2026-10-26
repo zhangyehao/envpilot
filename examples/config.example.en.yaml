@@ -1,4 +1,4 @@
-# envpilot 0.4.4 — complete configuration example / 完整配置样例
+# envpilot 0.4.5 — complete configuration example / 完整配置样例
 # Copy selected settings into ~/.config/envpilot/config.yaml; keep existing user settings.
 # See docs/CONFIG.md or docs/CONFIG.zh-CN.md for protected-file setup.
 
@@ -54,12 +54,17 @@ mihomo:
   api_port: 60290
   # Also export SOCKS5 all_proxy when proxy integration is enabled.
   socks: false
+  # Subscription downloads: auto tries direct, then proxy; direct bypasses proxies; proxy uses a proxy.
+  # Override with update-subscription --network (PowerShell: -Network) or ENVPILOT_SUBSCRIPTION_NETWORK.
+  # This controls subscription downloads only, not whole-shell networking.
+  subscription_network: auto
   # Use file OR env. The file contains only one subscription URL, no variable assignment.
   subscription:
     # Unix: owned by you, chmod 600. Never commit this file.
     file: ~/.config/mihomo/subscription.url
     # Alternative: MIHOMO_SUBSCRIPTION_URL; set file: "" when using this.
     env: ""
+  # Select nodes with envpilot mihomo select; per-host choices live in mihomo-selections/, not this YAML.
 
 # Conda/Mamba keep existing environments.
 conda:

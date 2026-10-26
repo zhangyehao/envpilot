@@ -34,11 +34,19 @@ Doctor 只诊断。修改受管文件前创建新快照，不覆盖旧恢复点�
 
 Mihomo 优先安装，保留已选端口和受管配置；更新后恢复原运行状态。仓库只保留既有 Linux/Windows amd64 Mihomo 及 country.mmdb、geoip.metadb 缓存。其他离线资源由用户提供。
 
+Mihomo 节点列表、选择及测试使用配置工具处理控制接口 JSON，不引入 Python/jq 运行依赖。读取订阅 YAML 中的控制凭据时不输出值。非交互选择必须显式提供组与节点；测试不修改选择。
+
+选择记录按主机保存在配置目录的 `mihomo-selections/` 下，不依赖可删除的运行缓存。重启或订阅替换后仅恢复仍存在的组和节点，缺失时提示用户重新选择，不猜测替代值。共享 HOME 的节点不能覆盖彼此的选择。
+
+订阅下载支持 `auto/direct/proxy`，默认先直连再尝试代理，避免不可用的旧节点阻断更新。网络错误分类并脱敏，可重试失败使用有界退避。完整 YAML 下载和本地文件导入共用校验、备份与替换流程；验证完成前不能停止运行中的代理或覆盖旧配置。本地导入保留原订阅引用。
+
 Conda 默认 Miniconda，在旧 glibc 使用兼容安装器并保留环境。Mamba 保留 .condarc，使用隔离频道和求解器。Git/Python/tmux 优先复用兼容工具，升级写入用户目录，不替换系统 glibc。
 
 ## 测试和发布
 
 运行 Go、Bash、PowerShell、Python 测试，以及 ShellCheck、actionlint、git diff --check。覆盖新装、旧配置、复杂 profile、静默模式、无效配置、真实 socket/进程和网络事务失败。
+
+Mihomo 回归覆盖 Unicode 组名/节点名、交互与非交互选择、控制接口鉴权、重启后的选择恢复、订阅删除节点、共享 HOME 的节点隔离、直连/代理回退、残留代理变量、限流重试、HTML/无效 YAML 和离线导入。所有诊断断言同时检查凭据不会进入输出。
 
 PR 测试使用只读权限。更新任务暂存并校验完整结果后提交，使用仅安装到 envpilot 的 GitHub App。配置 ENVPILOT_APP_ID 变量和 ENVPILOT_APP_PRIVATE_KEY Secret，不提交密钥或令牌。
 
