@@ -57,59 +57,59 @@
     "runtime_model": "persistent-home-node-local-tmp"
   },
   "latest": {
-    "version": "v1.19.31",
-    "name": "v1.19.31",
-    "published_at": "2026-09-14T13:34:02Z",
-    "html_url": "https://github.com/MetaCubeX/mihomo/releases/tag/v1.19.31",
-    "checked_at": "2026-09-15T11:19:51Z",
+    "version": "v1.19.33",
+    "name": "v1.19.33",
+    "published_at": "2026-10-21T16:56:13Z",
+    "html_url": "https://github.com/MetaCubeX/mihomo/releases/tag/v1.19.33",
+    "checked_at": "2026-10-26T08:54:43Z",
     "assets": {
       "linux-amd64": {
-        "name": "mihomo-linux-amd64-compatible-v1.19.31.gz",
-        "url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.31/mihomo-linux-amd64-compatible-v1.19.31.gz",
-        "size": 22821836,
-        "digest": "sha256:04cf9f09671704f839ddbee2e93069dc831a4123a75281e725d1d96ab9ac1afc",
+        "name": "mihomo-linux-amd64-compatible-v1.19.33.gz",
+        "url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.33/mihomo-linux-amd64-compatible-v1.19.33.gz",
+        "size": 22893972,
+        "digest": "sha256:386508bfb1c72c43b6a0eda73708ecdce82546581b0ebcb16366c53757c622b6",
         "content_type": "application/gzip",
-        "updated_at": "2026-09-14T13:34:00Z"
+        "updated_at": "2026-10-21T16:56:10Z"
       },
       "linux-arm64": {
-        "name": "mihomo-linux-arm64-v1.19.31.gz",
-        "url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.31/mihomo-linux-arm64-v1.19.31.gz",
-        "size": 20757911,
-        "digest": "sha256:9e0f11afbf38426b8bd88fdc594678f8161c57eccb4e1b77acb12b493904f1d4",
+        "name": "mihomo-linux-arm64-v1.19.33.gz",
+        "url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.33/mihomo-linux-arm64-v1.19.33.gz",
+        "size": 20824326,
+        "digest": "sha256:ba408b317080ee265c46cb923a50018c1b82cbd708551cdd46a1e3e307396187",
         "content_type": "application/gzip",
-        "updated_at": "2026-09-14T13:33:59Z"
+        "updated_at": "2026-10-21T16:56:09Z"
       },
       "darwin-amd64": {
-        "name": "mihomo-darwin-amd64-compatible-v1.19.31.gz",
-        "url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.31/mihomo-darwin-amd64-compatible-v1.19.31.gz",
-        "size": 22244332,
-        "digest": "sha256:fb6fca0e105b4310a21eaacd3a8d3853d3d8b87fa4c69737bea52a30a435aac7",
+        "name": "mihomo-darwin-amd64-compatible-v1.19.33.gz",
+        "url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.33/mihomo-darwin-amd64-compatible-v1.19.33.gz",
+        "size": 22333953,
+        "digest": "sha256:eefe967b74312f70b64efa0dfa54929d00c7af8e94416e1b12df09863a40f35b",
         "content_type": "application/gzip",
-        "updated_at": "2026-09-14T13:34:00Z"
+        "updated_at": "2026-10-21T16:56:10Z"
       },
       "darwin-arm64": {
-        "name": "mihomo-darwin-arm64-go120-v1.19.31.gz",
-        "url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.31/mihomo-darwin-arm64-go120-v1.19.31.gz",
-        "size": 24814510,
-        "digest": "sha256:451ebd7b41e0ab0fd0c66658469f6f9a947ac8b6ced3693a71df3f32891a208b",
+        "name": "mihomo-darwin-arm64-go120-v1.19.33.gz",
+        "url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.33/mihomo-darwin-arm64-go120-v1.19.33.gz",
+        "size": 24904012,
+        "digest": "sha256:e3f999eea69c921bf6c7fbd265973e7c01aef0cc17962b00feb52b1a53a79109",
         "content_type": "application/gzip",
-        "updated_at": "2026-09-14T13:34:00Z"
+        "updated_at": "2026-10-21T16:56:10Z"
       },
       "windows-amd64": {
-        "name": "mihomo-windows-amd64-compatible-v1.19.31.zip",
-        "url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.31/mihomo-windows-amd64-compatible-v1.19.31.zip",
-        "size": 22460803,
-        "digest": "sha256:93d14e9a13b49b2f2d256202d02cc8d14a7c4695edf084cae0f941986bc9c218",
+        "name": "mihomo-windows-amd64-compatible-v1.19.33.zip",
+        "url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.33/mihomo-windows-amd64-compatible-v1.19.33.zip",
+        "size": 22543546,
+        "digest": "sha256:7aaf636a4f2172dcd8ec34ac4f52797b059195e5afd6409508c963e545f8864d",
         "content_type": "application/zip",
-        "updated_at": "2026-09-14T13:34:00Z"
+        "updated_at": "2026-10-21T16:56:10Z"
       },
       "windows-arm64": {
-        "name": "mihomo-windows-arm64-v1.19.31.zip",
-        "url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.31/mihomo-windows-arm64-v1.19.31.zip",
-        "size": 20136226,
-        "digest": "sha256:68659624a38ae1dbc4e1b92f45d4dc75da0eaedd4d732b0a6f01a308da945792",
+        "name": "mihomo-windows-arm64-v1.19.33.zip",
+        "url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.33/mihomo-windows-arm64-v1.19.33.zip",
+        "size": 20212418,
+        "digest": "sha256:a2a26869a14634c49f3fbcecc593b498ed8591fbdd7616b24475b3d60b148da3",
         "content_type": "application/zip",
-        "updated_at": "2026-09-14T13:33:59Z"
+        "updated_at": "2026-10-21T16:56:09Z"
       }
     }
   }
