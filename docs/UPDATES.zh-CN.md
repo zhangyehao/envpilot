@@ -65,6 +65,14 @@ Linux 的 cron 服务必须在运行；systemd 用户实例是否在退出登录
 
 同一用户使用一个 envpilot 更新任务；再次 `enable --config PATH` 切换到指定配置。修改配置内容后无需重建定时任务。`updates.enabled: false` 暂停执行，`updates disable` 注销任务；历史保留。迁移主目录或命令入口后重新登记。
 
+### 保存主配置后何时生效
+
+已有全局 `updates.auto_apply: true` 时，可将 `updates.policies.git.auto_apply` 设为 `false`，并保留 `updates.components` 中的 `git`。Git 继续按配置检查，只在手动运行 `envpilot update git` 时安装。用 `envpilot config edit` 编辑时，保存并退出编辑器会立即校验文件，列出改变的生效字段和组件策略。直接用 vim 等编辑同一文件时，可运行 `envpilot config validate` 校验，运行 `envpilot doctor` 查看当前策略和真实调度登记。
+
+普通维护任务每分钟唤醒，旧的每小时任务按原频次唤醒。它们在下次唤醒时读取保存的 YAML。0.5.1 在每项到期检查和开始自动安装或订阅刷新前也会重新核对配置。期间修改了生效设置，当前已启动的构建可完成，后续工作留给下一次唤醒。错误 YAML 会阻止新的维护操作，修正后可继续运行。只需在首次登记、切换配置文件路径或修复调度器时执行 `updates enable`。
+
+维护所需的额外工具目录通过当前主配置的 `shell.paths` 提供，Git 的工具链和依赖位置可写入 `git` 配置段。重新登记时，内容发生变化的原启动脚本会备份至调度器目录的 `run.sh.previous-*` 或 `run.ps1.previous-*`。可据此对照旧版手工加入的设置。
+
 ## 组件范围与兼容性
 
 定时任务只处理 `updates.components` 中已经安装的组件。受管 Git/Python、Mihomo、GitHub CLI、tmux，以及已有 Conda/Mamba 和 Codex 使用各自的升级路径。外部或系统安装显示 `external`，交给原包管理器维护；不会偷偷取得管理员权限或替换系统目录。

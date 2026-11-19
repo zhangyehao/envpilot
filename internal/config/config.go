@@ -26,6 +26,11 @@ type Install struct {
 	Prefix        string   `yaml:"prefix" json:"prefix"`
 	ReleaseSource string   `yaml:"release_source" json:"release_source"`
 }
+type GitBuild struct {
+	DependencyPrefix string `yaml:"dependency_prefix" json:"dependency_prefix"`
+	ToolchainBin     string `yaml:"toolchain_bin" json:"toolchain_bin"`
+	BuildJobs        int    `yaml:"build_jobs" json:"build_jobs"`
+}
 type Shell struct {
 	PreferManaged   []string `yaml:"prefer_managed" json:"prefer_managed"`
 	Enabled         bool     `yaml:"enabled" json:"enabled"`
@@ -91,6 +96,7 @@ type Config struct {
 	Version    int               `yaml:"version" json:"version"`
 	Language   string            `yaml:"language" json:"language"`
 	Install    Install           `yaml:"install" json:"install"`
+	Git        GitBuild          `yaml:"git" json:"git"`
 	Shell      Shell             `yaml:"shell" json:"shell"`
 	Mihomo     Mihomo            `yaml:"mihomo" json:"mihomo"`
 	Conda      Conda             `yaml:"conda" json:"conda"`
@@ -110,8 +116,11 @@ var variable = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 var sensitive = regexp.MustCompile(`(?i)key|token|secret|password|passwd|auth|subscription`)
 
 var environmentFields = map[string]string{
-	"ENVPILOT_CONDA_CONDARC_POLICY": "conda.condarc_policy",
-	"ENVPILOT_LANG":                 "language", "ENVPILOT_MODE": "install.mode", "ENVPILOT_PREFIX": "install.prefix",
+	"ENVPILOT_GIT_DEPENDENCY_PREFIX": "git.dependency_prefix",
+	"ENVPILOT_GIT_TOOLCHAIN_BIN":     "git.toolchain_bin",
+	"ENVPILOT_GIT_BUILD_JOBS":        "git.build_jobs",
+	"ENVPILOT_CONDA_CONDARC_POLICY":  "conda.condarc_policy",
+	"ENVPILOT_LANG":                  "language", "ENVPILOT_MODE": "install.mode", "ENVPILOT_PREFIX": "install.prefix",
 	"ENVPILOT_RELEASE_SOURCE": "install.release_source", "ENVPILOT_CONDA_DISTRIBUTION": "conda.distribution",
 	"CODEX_HOME": "codex.home", "ENVPILOT_CODEX_RUNTIME_DIR": "codex.runtime",
 	"ENVPILOT_CODEX_REMOTE_READY_TIMEOUT": "codex.ready_timeout", "ENVPILOT_CODEX_BASE_URL": "codex.base_url",
@@ -203,6 +212,8 @@ func Load(path string, overrides map[string]string) (Resolved, error) {
 	set("ENVPILOT_LANG", "language", &c.Language)
 	set("ENVPILOT_MODE", "install.mode", &c.Install.Mode)
 	set("ENVPILOT_PREFIX", "install.prefix", &c.Install.Prefix)
+	set("ENVPILOT_GIT_DEPENDENCY_PREFIX", "git.dependency_prefix", &c.Git.DependencyPrefix)
+	set("ENVPILOT_GIT_TOOLCHAIN_BIN", "git.toolchain_bin", &c.Git.ToolchainBin)
 	set("ENVPILOT_RELEASE_SOURCE", "install.release_source", &c.Install.ReleaseSource)
 	set("ENVPILOT_SUBSCRIPTION_NETWORK", "mihomo.subscription_network", &c.Mihomo.SubscriptionNetwork)
 	set("ENVPILOT_CONDA_DISTRIBUTION", "conda.distribution", &c.Conda.Distribution)
@@ -214,7 +225,7 @@ func Load(path string, overrides map[string]string) (Resolved, error) {
 	for _, entry := range []struct {
 		env, key string
 		dst      *int
-	}{{"MIHOMO_PROXY_PORT", "mihomo.proxy_port", &c.Mihomo.ProxyPort}, {"MIHOMO_API_PORT", "mihomo.api_port", &c.Mihomo.APIPort}, {"ENVPILOT_CODEX_REMOTE_READY_TIMEOUT", "codex.ready_timeout", &c.Codex.ReadyTimeout}} {
+	}{{"MIHOMO_PROXY_PORT", "mihomo.proxy_port", &c.Mihomo.ProxyPort}, {"MIHOMO_API_PORT", "mihomo.api_port", &c.Mihomo.APIPort}, {"ENVPILOT_CODEX_REMOTE_READY_TIMEOUT", "codex.ready_timeout", &c.Codex.ReadyTimeout}, {"ENVPILOT_GIT_BUILD_JOBS", "git.build_jobs", &c.Git.BuildJobs}} {
 		v, ok := externalEnvironment(entry.env)
 		if v == "" {
 			ok = false
@@ -293,6 +304,17 @@ func Validate(c Config) error {
 	}
 	if c.Install.Prefix == "" {
 		return fmt.Errorf("install.prefix is required")
+	}
+	for _, setting := range []struct{ key, path string }{
+		{"git.dependency_prefix", c.Git.DependencyPrefix}, {"git.toolchain_bin", c.Git.ToolchainBin},
+	} {
+		if setting.path != "" && (strings.ContainsAny(setting.path, "\x00\r\n") ||
+			(!filepath.IsAbs(Expand(setting.path)) && !strings.HasPrefix(setting.path, "/"))) {
+			return fmt.Errorf("%s: use an absolute path or ~/path", setting.key)
+		}
+	}
+	if c.Git.BuildJobs < 0 {
+		return fmt.Errorf("git.build_jobs must be zero or a positive integer")
 	}
 	preferred := map[string]bool{}
 	for _, name := range c.Shell.PreferManaged {
@@ -416,6 +438,12 @@ func flag(b bool) string {
 func (c Config) Environment() map[string]string {
 	m := map[string]string{"ENVPILOT_CONFIG_FILE": c.SourcePath, "EP_MODE": c.Install.Mode, "EP_PREFIX": Expand(c.Install.Prefix), "EP_CONDA_DISTRIBUTION": c.Conda.Distribution, "ENVPILOT_LANG": c.Language, "ENVPILOT_COMPONENTS": strings.Join(c.Install.Components, " "), "ENVPILOT_RELEASE_SOURCE": c.Install.ReleaseSource, "ENVPILOT_SHELL_ENABLED": flag(c.Shell.Enabled), "BASHRC_INIT_CONDA": flag(c.Shell.Conda), "BASHRC_AUTO_LOAD_MODULES": flag(len(c.Shell.Modules) > 0), "BASHRC_AUTO_START_MIHOMO": flag(c.Shell.AutoStartProxy), "BASHRC_AUTO_ENABLE_PROXY": flag(c.Shell.AutoEnableProxy), "BASHRC_AUTO_LOAD_SECRETS": flag(c.Shell.LoadSecrets), "BASHRC_ENABLE_HISTORY_SYNC": flag(c.Shell.HistorySync), "ENVPILOT_LEGACY_ALIASES": flag(c.Shell.LegacyAliases), "ENVPILOT_LEGACY_LOCAL": flag(c.Shell.LegacyLocal), "MIHOMO_PROXY_PORT": strconv.Itoa(c.Mihomo.ProxyPort), "MIHOMO_API_PORT": strconv.Itoa(c.Mihomo.APIPort), "BASHRC_PROXY_ENABLE_SOCKS": flag(c.Mihomo.SOCKS), "BASHRC_CONDA_PRIMARY_PREFIX": Expand(c.Conda.Prefix), "BASHRC_SECRETS_FILE": Expand(c.Secrets.File), "CODEX_HOME": Expand(c.Codex.Home), "ENVPILOT_CODEX_RUNTIME_DIR": Expand(c.Codex.Runtime), "ENVPILOT_CODEX_REMOTE_READY_TIMEOUT": strconv.Itoa(c.Codex.ReadyTimeout), "ENVPILOT_CODEX_SECRETS_FILE": Expand(c.Secrets.File), "ENVPILOT_CODEX_ENABLED": flag(c.Codex.Remote), "ENVPILOT_SUBSCRIPTION_FILE": Expand(c.Mihomo.Subscription.File), "ENVPILOT_SUBSCRIPTION_ENV": c.Mihomo.Subscription.Env, "ENVPILOT_SUBSCRIPTION_NETWORK": c.Mihomo.SubscriptionNetwork, "ENVPILOT_API_KEY_ENV": c.Codex.APIKey.Env, "ENVPILOT_API_KEY_FILE": Expand(c.Codex.APIKey.File)}
 	m["ENVPILOT_PREFER_MANAGED_TOOLS"] = strings.Join(c.Shell.PreferManaged, " ")
+	m["ENVPILOT_GIT_DEPENDENCY_PREFIX"] = Expand(c.Git.DependencyPrefix)
+	m["ENVPILOT_GIT_TOOLCHAIN_BIN"] = Expand(c.Git.ToolchainBin)
+	m["ENVPILOT_GIT_BUILD_JOBS"] = ""
+	if c.Git.BuildJobs > 0 {
+		m["ENVPILOT_GIT_BUILD_JOBS"] = strconv.Itoa(c.Git.BuildJobs)
+	}
 	m["ENVPILOT_CONDA_CONDARC_POLICY"] = c.Conda.CondarcPolicy
 	if c.Codex.BaseURL != "" {
 		m["EP_CODEX_BASE_URL"] = c.Codex.BaseURL
@@ -481,6 +509,9 @@ func Encode(c Config) ([]byte, error) {
 		"install.components":          {"Choose components: mihomo, git, python, conda, mamba, codex, github, tmux.", "选择安装组件：mihomo、git、python、conda、mamba、codex、github、tmux。"},
 		"install.mode":                {"Offline requires a platform package and matching component assets.", "offline 需要完整平台包和对应组件离线资源。"},
 		"install.prefix":              {"User-space installation directory.", "用户态软件安装目录。"},
+		"git.dependency_prefix":       {"Optional Git build dependencies prefix, e.g. ~/anaconda3. Empty uses host discovery.", "Git 构建依赖的可选前缀，如 ~/anaconda3。留空时自动探测。"},
+		"git.toolchain_bin":           {"Optional directory of compiler/build commands, used for manual and scheduled Git builds.", "编译器、make 等命令所在的可选目录，手动和定时构建 Git 时使用。"},
+		"git.build_jobs":              {"Parallel Git build jobs. Zero selects the installer default.", "Git 编译并行数。0 使用安装器默认值。"},
 		"install.release_source":      {"Where to download envpilot releases: github or gitee.", "envpilot 发布包来源：github 或 gitee。"},
 		"shell":                       {"Opt in to environment changes; the original profile is preserved.", "按需启用环境变化；原 profile 内容保持不变。"},
 		"shell.enabled":               {"Install a short loader in the existing profile; true/false.", "是否在原 profile 中安装短加载块；true/false。"},

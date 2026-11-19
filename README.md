@@ -40,6 +40,8 @@ envpilot apply
 
 ### 更新已有安装
 
+**0.5.1** 在受管 Git 构建前探测本机工具链，独立 Python 解压前校验下载文件的 SHA-256。在 Linux/macOS 维护节点运行 `envpilot preflight git` 和 `envpilot preflight python` 检查安装条件。已有 Anaconda 开发库的旧集群可配置 `git.dependency_prefix: ~/anaconda3`。[Git 和 Python](docs/GIT-PYTHON.zh-CN.md)
+
 **0.5.0** 将自动维护放进 `envpilot doctor`。升级时会为已有主配置补上新增字段、默认值和说明，保留已有值和注释。升级后打开新终端，可用 Tab 补全命令，例如输入 `envpilot codex mo` 后按 Tab 得到 `models`。
 
 **0.4.0 及以上：**
@@ -96,6 +98,8 @@ mihomo:
 保存后，下次 `nodes` 和 `select` 即采用这个组顺序。默认 `[]` 按名称排序；指定组优先，其余组仍按名称排序，暂不存在的组名忽略。这个设置只调整组的显示顺序，不改变组内节点顺序、当前选择或代理路由，无需重启服务。
 
 ### 定时检查与夜间自动安装
+
+已登记的任务每次唤醒都会读取主配置。只让 Git 检查版本时，在已有的 `updates.policies.git` 下设 `auto_apply: false`。保存后运行 `envpilot doctor` 即可查看生效策略和登记情况。首次登记或切换主配置文件路径时执行 `envpilot updates enable`。
 
 首次运行 `envpilot init` 时选择「仅检查」或「夜间安装」。脚本中可显式运行 `envpilot init --policy check --non-interactive` 或将 `check` 换为 `nightly`。默认每 3 天检查，安装窗口为本机时间 03:00–05:00。**选择策略后，还要在负责维护的服务器上执行一次 `envpilot updates enable` 登记定时任务。**
 

@@ -20,10 +20,16 @@ ep_core_sha256()
     else openssl dgst -sha256 "$1" | awk '{print $NF}'; fi
 }
 
+ep_fetch_core_pair()
+{
+    curl -fsSL --connect-timeout 10 --max-time 180 --retry 3 "$1" -o "$3" &&
+        curl -fsSL --connect-timeout 10 --max-time 90 --retry 3 "$2" -o "$4"
+}
+
 ep_ensure_core()
 {
     ep_core_path >/dev/null && return 0
-    local version platform arch suffix="" name base directory tmp expected binary_url checksum_url release_id binary_id checksum_id
+    local version platform arch suffix="" name base directory tmp expected release_id binary_id checksum_id
     version="$(cat "$ENVPILOT_ROOT/VERSION")"
     case "$(uname -s)" in Linux) platform=linux ;; Darwin) platform=darwin ;; MINGW*|MSYS*|CYGWIN*) platform=windows; suffix=.exe ;; *) ep_die 'Unsupported platform for envpilot-core.' ;; esac
     arch="$(ep_normalize_arch "$(uname -m)")"
@@ -32,32 +38,31 @@ ep_ensure_core()
     if [ "${EP_MODE:-online}" = offline ]; then ep_die 'Offline configuration requires the matching envpilot platform package (including bin/envpilot-core).'; fi
     mkdir -p "$directory"
     tmp="$(mktemp -d "$directory/.download.XXXXXX")" || return 1
-    case "${ENVPILOT_RELEASE_SOURCE:-github}" in
-        gitee)
-            base='https://gitee.com/api/v5/repos/zhangyehao0422/envpilot'
-            if ! curl -fsSL --connect-timeout 10 --max-time 90 --retry 3 "$base/releases/tags/v$version" -o "$tmp/release.json"; then rm -rf "$tmp"; ep_die 'Could not resolve the Gitee release.'; fi
-            release_id="$(awk -v mode=release -f "$ENVPILOT_ROOT/lib/bootstrap-json.awk" "$tmp/release.json")"
-            [ "$(awk -v mode=tag -f "$ENVPILOT_ROOT/lib/bootstrap-json.awk" "$tmp/release.json")" = "v$version" ] || { rm -rf "$tmp"; ep_die 'Gitee release tag mismatch.'; }
-            case "$release_id" in ''|*[!0-9]*) rm -rf "$tmp"; ep_die 'Invalid Gitee release ID.' ;; esac
-            if ! curl -fsSL --connect-timeout 10 --max-time 90 --retry 3 "$base/releases/$release_id/attach_files?per_page=100" -o "$tmp/assets.json"; then rm -rf "$tmp"; ep_die 'Could not resolve Gitee attachments.'; fi
-            binary_id="$(awk -v mode=asset -v wanted="$name" -f "$ENVPILOT_ROOT/lib/bootstrap-json.awk" "$tmp/assets.json")"
-            checksum_id="$(awk -v mode=asset -v wanted=SHA256SUMS -f "$ENVPILOT_ROOT/lib/bootstrap-json.awk" "$tmp/assets.json")"
-            case "$binary_id:$checksum_id" in *[!0-9:]*|:*|*:) rm -rf "$tmp"; ep_die 'Required Gitee attachments are missing; use a complete platform package.' ;; esac
-            binary_url="$base/releases/$release_id/attach_files/$binary_id/download"
-            checksum_url="$base/releases/$release_id/attach_files/$checksum_id/download"
-            ;;
-        *)
-            base="https://github.com/zhangyehao/envpilot/releases/download/v$version"
-            binary_url="$base/$name"; checksum_url="$base/SHA256SUMS"
-            ;;
-    esac
-    if ! curl -fSL --connect-timeout 10 --max-time 180 --retry 3 "$binary_url" -o "$tmp/$name" || ! curl -fsSL --connect-timeout 10 --max-time 90 --retry 3 "$checksum_url" -o "$tmp/SHA256SUMS"; then rm -rf "$tmp"; ep_die 'Could not fetch envpilot-core; use a complete platform package.'; fi
+    if [ "${ENVPILOT_RELEASE_SOURCE:-github}" = gitee ]; then
+        base="https://gitee.com/zhangyehao0422/envpilot/releases/download/v$version"
+    else
+        base="https://github.com/zhangyehao/envpilot/releases/download/v$version"
+    fi
+    if ! ep_fetch_core_pair "$base/$name" "$base/SHA256SUMS" "$tmp/$name" "$tmp/SHA256SUMS"; then
+        [ "${ENVPILOT_RELEASE_SOURCE:-github}" = gitee ] || { rm -rf "$tmp"; ep_die 'Could not fetch envpilot-core; use a complete platform package.'; }
+        base='https://gitee.com/api/v5/repos/zhangyehao0422/envpilot'
+        if ! curl -fsSL --connect-timeout 10 --max-time 90 --retry 3 "$base/releases/tags/v$version" -o "$tmp/release.json"; then rm -rf "$tmp"; ep_die 'Could not resolve the Gitee release.'; fi
+        release_id="$(awk -v mode=release -f "$ENVPILOT_ROOT/lib/bootstrap-json.awk" "$tmp/release.json")"
+        [ "$(awk -v mode=tag -f "$ENVPILOT_ROOT/lib/bootstrap-json.awk" "$tmp/release.json")" = "v$version" ] || { rm -rf "$tmp"; ep_die 'Gitee release tag mismatch.'; }
+        case "$release_id" in ''|*[!0-9]*) rm -rf "$tmp"; ep_die 'Invalid Gitee release ID.' ;; esac
+        if ! curl -fsSL --connect-timeout 10 --max-time 90 --retry 3 "$base/releases/$release_id/attach_files?per_page=100" -o "$tmp/assets.json"; then rm -rf "$tmp"; ep_die 'Could not resolve Gitee attachments.'; fi
+        binary_id="$(awk -v mode=asset -v wanted="$name" -f "$ENVPILOT_ROOT/lib/bootstrap-json.awk" "$tmp/assets.json")"
+        checksum_id="$(awk -v mode=asset -v wanted=SHA256SUMS -f "$ENVPILOT_ROOT/lib/bootstrap-json.awk" "$tmp/assets.json")"
+        case "$binary_id:$checksum_id" in *[!0-9:]*|:*|*:) rm -rf "$tmp"; ep_die 'Required Gitee attachments are missing; use a complete platform package.' ;; esac
+        base="$base/releases/$release_id/attach_files"
+        if ! ep_fetch_core_pair "$base/$binary_id/download" "$base/$checksum_id/download" "$tmp/$name" "$tmp/SHA256SUMS"; then rm -rf "$tmp"; ep_die 'Could not fetch envpilot-core; use a complete platform package.'; fi
+    fi
     expected="$(awk -v name="$name" '$2 == name { print $1 }' "$tmp/SHA256SUMS")"
     if [ -z "$expected" ] || [ "$(ep_core_sha256 "$tmp/$name")" != "$expected" ]; then rm -rf "$tmp"; ep_die 'envpilot-core checksum verification failed.'; fi
     chmod 700 "$tmp/$name"
+    [ "$("$tmp/$name" version)" = "$version" ] || { rm -rf "$tmp"; ep_die 'envpilot-core version mismatch.'; }
     mv "$tmp/$name" "$directory/envpilot-core$suffix"
     rm -rf "$tmp"
-    [ "$("$directory/envpilot-core$suffix" version)" = "$version" ] || ep_die 'envpilot-core version mismatch.'
 }
 
 ep_core()

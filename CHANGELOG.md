@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.1 - 2026-11-19
+
+- Validate saved configuration after `config edit`, report effective policy changes, and re-read configuration before starting queued installations. Scheduler invocations pick up changes to maintenance paths without re-registration.
+- Add `preflight git` and `preflight python`. Managed Git probes the maintenance toolchain, supports an optional dependency prefix, falls back to OpenSSL on older Linux hosts, and validates a staged generation before atomic activation.
+- Verify standalone Python archives against release-specific SHA-256 checksums before extraction. Test executable and symlink support in the destination, and retain existing interpreters on validation failure.
+- Bootstrap a pinned configuration helper directly from Gitee release downloads when using the mirror, verifying the checksum and version before activation.
+
 ## 0.5.0 - 2026-11-19
 
 - Show live scheduler registration, actual timer invocations and each component’s check/install times in `doctor`. Choose check-only or overnight updates at init, override policy per component, and designate a shared-home maintenance host.

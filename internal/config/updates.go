@@ -243,15 +243,16 @@ func installedUpdate(c Config, root, component string) (string, error) {
 }
 
 type updateRunner struct {
-	now       func() time.Time
-	latest    func(Config, string) (string, error)
-	installed func(Config, string, string) (string, error)
-	apply     func(Config, string, string, string) error
-	task      func(Config, string, string, string) error
+	now          func() time.Time
+	latest       func(Config, string) (string, error)
+	installed    func(Config, string, string) (string, error)
+	apply        func(Config, string, string, string) error
+	task         func(Config, string, string, string) error
+	verifyConfig func(bool) error
 }
 
 func defaultUpdateRunner() updateRunner {
-	return updateRunner{time.Now, latestUpdate, installedUpdate, applyUpdate, applyUpdate}
+	return updateRunner{now: time.Now, latest: latestUpdate, installed: installedUpdate, apply: applyUpdate, task: applyUpdate}
 }
 func applyUpdate(c Config, root, path, component string) error {
 	command := []string{"update", component}

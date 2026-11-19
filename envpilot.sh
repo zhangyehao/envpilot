@@ -38,7 +38,7 @@ envpilot — 用户态环境安装与维护
   envpilot config edit|validate|show     编辑、校验或查看配置
   envpilot config migrate --preview     预览新增字段；用 --yes 写入主配置
   envpilot config export --portable     导出可迁移的偏好 YAML
-  envpilot preflight [--json]           在新主机检查运行条件
+  envpilot preflight [git|python] [--json] 检查主机或受管组件的安装条件
   envpilot completion bash|zsh|powershell 生成 Tab 补全脚本
   envpilot codex models status|refresh  查看或刷新模型目录
   envpilot plan                         查看拟议变更
@@ -73,7 +73,7 @@ Configuration workflow:
   envpilot config edit|validate|show     Edit, validate or inspect configuration.
   envpilot config migrate --preview     Preview new fields; --yes writes missing defaults.
   envpilot config export --portable     Export preferences for another host.
-  envpilot preflight [--json]           Check the current host before migration.
+  envpilot preflight [git|python] [--json]  Check host or managed tool prerequisites.
   envpilot completion bash|zsh|powershell  Print the Tab completion script.
   envpilot codex models status|refresh  Inspect or refresh model catalogs.
   envpilot plan                         Preview changes.
@@ -153,7 +153,7 @@ parse_args()
     EP_PORTABLE=0
     EP_CODEX_PREFERENCES=0
     case "$EP_COMMAND" in
-        config|shell|restore|updates|completion)
+        config|shell|restore|updates|completion|preflight)
             if [ -n "${1:-}" ] && [[ "$1" != -* ]]; then EP_ACTION="$1"; shift; fi ;;
     esac
     if { [ "$EP_COMMAND" = "install" ] || [ "$EP_COMMAND" = "update" ] || [ "$EP_COMMAND" = "upgrade" ]; } && [ "${1:-}" != "" ]; then
@@ -351,10 +351,6 @@ install_one()
             git)
                 if [ -x "$(ep_git_managed_bin)" ] || [[ " ${ENVPILOT_PREFER_MANAGED_TOOLS:-} " == *" git "* ]]; then
                     EP_GIT_VERSION="$(ep_core latest-component --target git)"
-                fi ;;
-            python)
-                if [ -x "$(ep_python_managed_bin)" ] || [[ " ${ENVPILOT_PREFER_MANAGED_TOOLS:-} " == *" python "* ]]; then
-                    EP_PYTHON_VERSION="$(ep_core latest-component --target python)"
                 fi ;;
             tmux) EP_TMUX_VERSION="$(ep_core latest-component --target tmux)" ;;
         esac
@@ -607,7 +603,7 @@ main()
             ep_core init --policy "$policy" --lang "${ENVPILOT_LANG:-auto}"; return ;;
         config)
             case "${EP_ACTION:-show}" in
-                edit) "${EDITOR:-vi}" "${EP_CONFIG_FILE:-${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}/config.yaml}" ;;
+                edit) ep_core config-edit ;;
                 show|validate) ep_core "${EP_ACTION:-show}" ;;
                 migrate)
                     if [ "$EP_PREVIEW" != 1 ] && [ "${EP_ASSUME_YES:-0}" = 1 ]; then ep_core config-migrate --apply
@@ -621,7 +617,7 @@ main()
             esac
             return ;;
         completion) ep_core completion "$EP_ACTION"; return ;;
-        preflight) ep_core host-preflight --format "$EP_UPDATE_FORMAT"; return ;;
+        preflight) ep_core host-preflight --target "$EP_ACTION" --format "$EP_UPDATE_FORMAT"; return ;;
         doctor) if [ "$EP_UPDATE_FORMAT" = json ]; then ep_core updates status --format json; return; fi; ep_config_load || return ;;
         plan) ep_core plan; return ;;
 

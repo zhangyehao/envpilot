@@ -28,7 +28,7 @@ var commandWords = map[string]string{
 	"codex models": "refresh status", "mihomo": "nodes port ports restart select start status stop test update-subscription",
 	"mihomo update-subscription": "--file --network", "--network": "auto direct proxy",
 	"shell": "install remove", "updates": "check disable enable history run status", "updates history": "--component --days --json",
-	"doctor": "--json", "preflight": "--json", "--lang": "auto en zh-CN", "--mode": "offline online",
+	"doctor": "--json", "preflight": "git python --json", "--lang": "auto en zh-CN", "--mode": "offline online",
 }
 
 func CommandCandidates(context []string, word string, fuzzy bool) []string {

@@ -47,6 +47,39 @@ func TestArchiveTraversalRejected(t *testing.T) {
 	}
 }
 
+func TestInstallCoreUsesSelectedExecutable(t *testing.T) {
+	home := testHome(t)
+	root := filepath.Join(home, "checkout")
+	name := "envpilot-core"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	if err := os.MkdirAll(filepath.Join(root, "bin"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "VERSION"), []byte("0.5.1\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "bin", name), []byte("stale helper"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := InstallCore(root); err != nil {
+		t.Fatal(err)
+	}
+	bin, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	running, err := os.ReadFile(bin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	copied, err := os.ReadFile(filepath.Join(home, ".local", "lib", "envpilot", "0.5.1", name))
+	if err != nil || !bytes.Equal(running, copied) {
+		t.Fatal("installed helper differs from selected executable", err)
+	}
+}
+
 func TestBundleUpdateTransaction(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Unix executable fixtures; native Windows installation has a separate integration test")
@@ -65,7 +98,7 @@ func TestBundleUpdateTransaction(t *testing.T) {
 			}
 			archive := testArchive(t, map[string]string{
 				"envpilot-0.4.1/VERSION":           "0.4.1\n",
-				"envpilot-0.4.1/bin/envpilot-core": "#!/bin/sh\nexit 0\n",
+				"envpilot-0.4.1/bin/envpilot-core": "#!/bin/sh\nif [ \"$1\" = refresh ]; then touch \"$HOME/new-core-refreshed\"; fi\nexit 0\n",
 				"envpilot-0.4.1/envpilot.sh":       script,
 			})
 			digest := sha256.Sum256(archive)
@@ -96,6 +129,9 @@ func TestBundleUpdateTransaction(t *testing.T) {
 			if mode == "success" {
 				if err != nil || string(body) != "modified" {
 					t.Fatalf("successful update failed: %v", err)
+				}
+				if _, err := os.Stat(filepath.Join(home, "new-core-refreshed")); err != nil {
+					t.Fatal("new helper did not finish package refresh", err)
 				}
 			} else {
 				if err == nil {
