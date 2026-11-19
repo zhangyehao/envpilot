@@ -17,8 +17,8 @@ import (
 )
 
 type Reference struct {
-	File string `yaml:"file,omitempty" json:"file,omitempty"`
-	Env  string `yaml:"env,omitempty" json:"env,omitempty"`
+	File string `yaml:"file" json:"file,omitempty"`
+	Env  string `yaml:"env" json:"env,omitempty"`
 }
 type Install struct {
 	Components    []string `yaml:"components" json:"components"`
@@ -48,26 +48,43 @@ type Mihomo struct {
 	GroupOrder          []string  `yaml:"group_order" json:"group_order"`
 }
 type Conda struct {
-	Distribution string `yaml:"distribution" json:"distribution"`
-	Prefix       string `yaml:"prefix,omitempty" json:"prefix,omitempty"`
+	Distribution  string `yaml:"distribution" json:"distribution"`
+	CondarcPolicy string `yaml:"condarc_policy" json:"condarc_policy"`
+	Prefix        string `yaml:"prefix" json:"prefix,omitempty"`
 }
 type Codex struct {
 	Remote       bool      `yaml:"remote" json:"remote"`
 	Home         string    `yaml:"home" json:"home"`
-	Runtime      string    `yaml:"runtime,omitempty" json:"runtime,omitempty"`
+	Runtime      string    `yaml:"runtime" json:"runtime,omitempty"`
 	ReadyTimeout int       `yaml:"ready_timeout" json:"ready_timeout"`
-	BaseURL      string    `yaml:"base_url,omitempty" json:"base_url,omitempty"`
+	BaseURL      string    `yaml:"base_url" json:"base_url,omitempty"`
 	APIKey       Reference `yaml:"api_key" json:"api_key"`
 }
 type Updates struct {
-	Enabled      bool     `yaml:"enabled" json:"enabled"`
-	IntervalDays int      `yaml:"interval_days" json:"interval_days"`
-	AutoApply    bool     `yaml:"auto_apply" json:"auto_apply"`
-	Components   []string `yaml:"components" json:"components"`
-	Envpilot     bool     `yaml:"envpilot" json:"envpilot"`
-	WindowStart  string   `yaml:"window_start" json:"window_start"`
-	WindowEnd    string   `yaml:"window_end" json:"window_end"`
-	Timezone     string   `yaml:"timezone" json:"timezone"`
+	MaintenanceHost string                     `yaml:"maintenance_host" json:"maintenance_host"`
+	Policies        map[string]ComponentPolicy `yaml:"policies" json:"policies"`
+	Subscription    RefreshPolicy              `yaml:"subscription" json:"subscription"`
+	Models          RefreshPolicy              `yaml:"models" json:"models"`
+	Enabled         bool                       `yaml:"enabled" json:"enabled"`
+	IntervalDays    int                        `yaml:"interval_days" json:"interval_days"`
+	AutoApply       bool                       `yaml:"auto_apply" json:"auto_apply"`
+	Components      []string                   `yaml:"components" json:"components"`
+	Envpilot        bool                       `yaml:"envpilot" json:"envpilot"`
+	WindowStart     string                     `yaml:"window_start" json:"window_start"`
+	WindowEnd       string                     `yaml:"window_end" json:"window_end"`
+	Timezone        string                     `yaml:"timezone" json:"timezone"`
+}
+
+// A nil override inherits the corresponding global setting, including false.
+type ComponentPolicy struct {
+	IntervalDays *int    `yaml:"interval_days" json:"interval_days"`
+	AutoApply    *bool   `yaml:"auto_apply" json:"auto_apply"`
+	WindowStart  *string `yaml:"window_start" json:"window_start"`
+	WindowEnd    *string `yaml:"window_end" json:"window_end"`
+}
+type RefreshPolicy struct {
+	Enabled      bool `yaml:"enabled" json:"enabled"`
+	IntervalDays int  `yaml:"interval_days" json:"interval_days"`
 }
 type Config struct {
 	SourcePath string            `yaml:"-" json:"-"`
@@ -93,7 +110,8 @@ var variable = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 var sensitive = regexp.MustCompile(`(?i)key|token|secret|password|passwd|auth|subscription`)
 
 var environmentFields = map[string]string{
-	"ENVPILOT_LANG": "language", "ENVPILOT_MODE": "install.mode", "ENVPILOT_PREFIX": "install.prefix",
+	"ENVPILOT_CONDA_CONDARC_POLICY": "conda.condarc_policy",
+	"ENVPILOT_LANG":                 "language", "ENVPILOT_MODE": "install.mode", "ENVPILOT_PREFIX": "install.prefix",
 	"ENVPILOT_RELEASE_SOURCE": "install.release_source", "ENVPILOT_CONDA_DISTRIBUTION": "conda.distribution",
 	"CODEX_HOME": "codex.home", "ENVPILOT_CODEX_RUNTIME_DIR": "codex.runtime",
 	"ENVPILOT_CODEX_REMOTE_READY_TIMEOUT": "codex.ready_timeout", "ENVPILOT_CODEX_BASE_URL": "codex.base_url",
@@ -149,7 +167,11 @@ func Expand(p string) string {
 	return filepath.Clean(p)
 }
 func Defaults() Config {
-	return Config{Version: 1, Language: "auto", Install: Install{Components: []string{}, Mode: "online", Prefix: "~/software", ReleaseSource: "github"}, Shell: Shell{Enabled: true, Modules: []string{}, Paths: []string{}}, Mihomo: Mihomo{ProxyPort: 42290, APIPort: 60290, SubscriptionNetwork: "auto", Subscription: Reference{File: "~/.config/mihomo/subscription.url"}, GroupOrder: []string{}}, Conda: Conda{Distribution: "miniconda"}, Codex: Codex{Home: "~/.codex", ReadyTimeout: 60, APIKey: Reference{Env: "OPENAI_API_KEY"}}, Updates: Updates{Enabled: true, IntervalDays: 3, Components: append([]string{}, Names...), Envpilot: true, WindowStart: "03:00", WindowEnd: "05:00", Timezone: "Local"}, Secrets: Reference{File: "~/.config/secrets/api.env"}, Env: map[string]string{}}
+	policies := map[string]ComponentPolicy{"envpilot": {}}
+	for _, name := range Names {
+		policies[name] = ComponentPolicy{}
+	}
+	return Config{Version: 1, Language: "auto", Install: Install{Components: []string{}, Mode: "online", Prefix: "~/software", ReleaseSource: "github"}, Shell: Shell{Enabled: true, Modules: []string{}, Paths: []string{}}, Mihomo: Mihomo{ProxyPort: 42290, APIPort: 60290, SubscriptionNetwork: "auto", Subscription: Reference{File: "~/.config/mihomo/subscription.url"}, GroupOrder: []string{}}, Conda: Conda{Distribution: "miniconda", CondarcPolicy: "preserve"}, Codex: Codex{Home: "~/.codex", ReadyTimeout: 60, APIKey: Reference{Env: "OPENAI_API_KEY"}}, Updates: Updates{Enabled: true, IntervalDays: 3, Components: append([]string{}, Names...), Envpilot: true, WindowStart: "03:00", WindowEnd: "05:00", Timezone: "Local", Policies: policies, Models: RefreshPolicy{Enabled: true, IntervalDays: 3}, Subscription: RefreshPolicy{IntervalDays: 3}}, Secrets: Reference{File: "~/.config/secrets/api.env"}, Env: map[string]string{}}
 }
 func Load(path string, overrides map[string]string) (Resolved, error) {
 	if path == "" {
@@ -162,26 +184,8 @@ func Load(path string, overrides map[string]string) (Resolved, error) {
 		return r, err
 	}
 	if err == nil {
-		var node yaml.Node
-		if err = yaml.Unmarshal(data, &node); err != nil {
-			return r, fmt.Errorf("%s: %w", path, err)
-		}
-		sourceFields(&node, "", r.Sources)
-		// References replace the default choice as a unit. Otherwise specifying
-		// a file would accidentally retain the default env (and vice versa).
-		for key, ref := range map[string]*Reference{"codex.api_key": &r.Config.Codex.APIKey, "mihomo.subscription": &r.Config.Mihomo.Subscription, "secrets": &r.Config.Secrets} {
-			if _, present := r.Sources[key]; present {
-				*ref = Reference{}
-			}
-		}
-		d := yaml.NewDecoder(bytes.NewReader(data))
-		d.KnownFields(true)
-		if err = d.Decode(&r.Config); err != nil {
-			return r, fmt.Errorf("%s: %w", path, err)
-		}
-		var extra any
-		if err = d.Decode(&extra); err != io.EOF {
-			return r, fmt.Errorf("one YAML document is required")
+		if err := decodeStored(data, path, &r); err != nil {
+			return r, err
 		}
 	}
 	c := &r.Config
@@ -202,6 +206,7 @@ func Load(path string, overrides map[string]string) (Resolved, error) {
 	set("ENVPILOT_RELEASE_SOURCE", "install.release_source", &c.Install.ReleaseSource)
 	set("ENVPILOT_SUBSCRIPTION_NETWORK", "mihomo.subscription_network", &c.Mihomo.SubscriptionNetwork)
 	set("ENVPILOT_CONDA_DISTRIBUTION", "conda.distribution", &c.Conda.Distribution)
+	set("ENVPILOT_CONDA_CONDARC_POLICY", "conda.condarc_policy", &c.Conda.CondarcPolicy)
 	set("CODEX_HOME", "codex.home", &c.Codex.Home)
 	set("ENVPILOT_CODEX_RUNTIME_DIR", "codex.runtime", &c.Codex.Runtime)
 	set("ENVPILOT_CODEX_BASE_URL", "codex.base_url", &c.Codex.BaseURL)
@@ -231,6 +236,31 @@ func Load(path string, overrides map[string]string) (Resolved, error) {
 	}
 	return r, Validate(*c)
 }
+func decodeStored(data []byte, path string, r *Resolved) error {
+	var node yaml.Node
+	if err := yaml.Unmarshal(data, &node); err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	sourceFields(&node, "", r.Sources)
+	// References replace the default choice as a unit. Otherwise specifying
+	// a file would accidentally retain the default env (and vice versa).
+	for key, ref := range map[string]*Reference{"codex.api_key": &r.Config.Codex.APIKey, "mihomo.subscription": &r.Config.Mihomo.Subscription, "secrets": &r.Config.Secrets} {
+		if _, present := r.Sources[key]; present {
+			*ref = Reference{}
+		}
+	}
+	d := yaml.NewDecoder(bytes.NewReader(data))
+	d.KnownFields(true)
+	if err := d.Decode(&r.Config); err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	var extra any
+	if err := d.Decode(&extra); err != io.EOF {
+		return fmt.Errorf("one YAML document is required")
+	}
+	return nil
+}
+
 func sourceFields(n *yaml.Node, prefix string, dst map[string]string) {
 	if n.Kind == yaml.DocumentNode {
 		for _, v := range n.Content {
@@ -304,6 +334,12 @@ func Validate(c Config) error {
 	}
 	if c.Conda.Distribution != "miniconda" && c.Conda.Distribution != "anaconda" {
 		return fmt.Errorf("conda.distribution: use miniconda or anaconda")
+	}
+	if c.Conda.CondarcPolicy != "preserve" && c.Conda.CondarcPolicy != "template" {
+		return fmt.Errorf("conda.condarc_policy: use preserve or template")
+	}
+	if err := validateMaintenance(c.Updates); err != nil {
+		return err
 	}
 	if c.Codex.ReadyTimeout < 1 || c.Codex.ReadyTimeout > 600 {
 		return fmt.Errorf("codex.ready_timeout must be between 1 and 600")
@@ -380,6 +416,7 @@ func flag(b bool) string {
 func (c Config) Environment() map[string]string {
 	m := map[string]string{"ENVPILOT_CONFIG_FILE": c.SourcePath, "EP_MODE": c.Install.Mode, "EP_PREFIX": Expand(c.Install.Prefix), "EP_CONDA_DISTRIBUTION": c.Conda.Distribution, "ENVPILOT_LANG": c.Language, "ENVPILOT_COMPONENTS": strings.Join(c.Install.Components, " "), "ENVPILOT_RELEASE_SOURCE": c.Install.ReleaseSource, "ENVPILOT_SHELL_ENABLED": flag(c.Shell.Enabled), "BASHRC_INIT_CONDA": flag(c.Shell.Conda), "BASHRC_AUTO_LOAD_MODULES": flag(len(c.Shell.Modules) > 0), "BASHRC_AUTO_START_MIHOMO": flag(c.Shell.AutoStartProxy), "BASHRC_AUTO_ENABLE_PROXY": flag(c.Shell.AutoEnableProxy), "BASHRC_AUTO_LOAD_SECRETS": flag(c.Shell.LoadSecrets), "BASHRC_ENABLE_HISTORY_SYNC": flag(c.Shell.HistorySync), "ENVPILOT_LEGACY_ALIASES": flag(c.Shell.LegacyAliases), "ENVPILOT_LEGACY_LOCAL": flag(c.Shell.LegacyLocal), "MIHOMO_PROXY_PORT": strconv.Itoa(c.Mihomo.ProxyPort), "MIHOMO_API_PORT": strconv.Itoa(c.Mihomo.APIPort), "BASHRC_PROXY_ENABLE_SOCKS": flag(c.Mihomo.SOCKS), "BASHRC_CONDA_PRIMARY_PREFIX": Expand(c.Conda.Prefix), "BASHRC_SECRETS_FILE": Expand(c.Secrets.File), "CODEX_HOME": Expand(c.Codex.Home), "ENVPILOT_CODEX_RUNTIME_DIR": Expand(c.Codex.Runtime), "ENVPILOT_CODEX_REMOTE_READY_TIMEOUT": strconv.Itoa(c.Codex.ReadyTimeout), "ENVPILOT_CODEX_SECRETS_FILE": Expand(c.Secrets.File), "ENVPILOT_CODEX_ENABLED": flag(c.Codex.Remote), "ENVPILOT_SUBSCRIPTION_FILE": Expand(c.Mihomo.Subscription.File), "ENVPILOT_SUBSCRIPTION_ENV": c.Mihomo.Subscription.Env, "ENVPILOT_SUBSCRIPTION_NETWORK": c.Mihomo.SubscriptionNetwork, "ENVPILOT_API_KEY_ENV": c.Codex.APIKey.Env, "ENVPILOT_API_KEY_FILE": Expand(c.Codex.APIKey.File)}
 	m["ENVPILOT_PREFER_MANAGED_TOOLS"] = strings.Join(c.Shell.PreferManaged, " ")
+	m["ENVPILOT_CONDA_CONDARC_POLICY"] = c.Conda.CondarcPolicy
 	if c.Codex.BaseURL != "" {
 		m["EP_CODEX_BASE_URL"] = c.Codex.BaseURL
 	}
@@ -423,7 +460,22 @@ func Encode(c Config) ([]byte, error) {
 	if err := node.Encode(c); err != nil {
 		return nil, err
 	}
+	// The shared Reference type also serves individual keys and subscriptions.
+	// The global secrets block accepts only a file.
+	if secrets := yamlField(&node, "secrets"); secrets != nil {
+		for i := 0; i < len(secrets.Content); i += 2 {
+			if secrets.Content[i].Value == "env" {
+				secrets.Content = append(secrets.Content[:i], secrets.Content[i+2:]...)
+				break
+			}
+		}
+	}
 	comments := map[string][2]string{
+		"conda.condarc_policy":        {"preserve keeps an existing .condarc; template previews changes, backs up and replaces it.", "preserve 保留已有 .condarc；template 预览差异后备份并采用模板。"},
+		"updates.maintenance_host":    {"Host allowed to install shared tools or refresh subscriptions automatically; empty allows this node.", "允许自动更新共享安装和订阅的主机名；空值允许本节点。"},
+		"updates.policies":            {"Per-component overrides: null inherits updates.interval_days, auto_apply, window_start or window_end. Use true/false for auto_apply.", "各组件可独立覆盖天数、自动安装开关、窗口起止时间；null 继承全局设置，auto_apply 可填 true/false。"},
+		"updates.subscription":        {"Refresh the saved protected Mihomo subscription at the configured interval during Mihomo's window. Opt in explicitly.", "在 Mihomo 维护窗口内按指定天数刷新已保存的受保护订阅。enabled 为 true 时启用。"},
+		"updates.models":              {"Check model catalogs for an installed Codex at this interval (days).", "按指定间隔天数检查已安装 Codex 的模型目录。"},
 		"version":                     {"Configuration format version; not the application version.", "配置格式版本，不是软件版本。"},
 		"language":                    {"auto, en or zh-CN", "auto 自动选择、en 英文、zh-CN 简体中文。"},
 		"install.components":          {"Choose components: mihomo, git, python, conda, mamba, codex, github, tmux.", "选择安装组件：mihomo、git、python、conda、mamba、codex、github、tmux。"},

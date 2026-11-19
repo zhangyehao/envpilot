@@ -15,7 +15,7 @@ START_LOCK="$CONTROL_DIR/.envpilot-app-server-start.lock"
 READY_TIMEOUT="${ENVPILOT_CODEX_REMOTE_READY_TIMEOUT:-60}"
 RUNTIME_ROOT="${ENVPILOT_CODEX_RUNTIME_DIR:-}"
 QUIET="${ENVPILOT_CODEX_REMOTE_QUIET:-0}"
-CORE_BIN="${ENVPILOT_CORE:-$HOME/.local/lib/envpilot/0.4.4/envpilot-core}"
+CORE_BIN="${ENVPILOT_CORE:-}"
 SOURCE_RECORD="${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}/codex-source"
 if [ -z "${ENVPILOT_CORE:-}" ] && [ -r "${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}/core-path" ]; then
     IFS= read -r CORE_BIN < "${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}/core-path" || true
@@ -246,9 +246,10 @@ source_bin()
                 Darwin:arm64) triple=aarch64-apple-darwin ;;
                 *) return 1 ;;
             esac
-            for vendor in "$package/vendor" "$package"/../codex-*/vendor; do
-                native="$vendor/$triple/codex/codex"
-                if [ -x "$native" ]; then printf '%s' "$(dirname "$native")"; return 0; fi
+            for vendor in "$package/vendor" "$package"/../codex-*/vendor "$package"/node_modules/@openai/codex-*/vendor; do
+                for native in "$vendor/$triple/bin/codex" "$vendor/$triple/codex/codex"; do
+                    if [ -x "$native" ]; then printf '%s' "$(dirname "$native")"; return 0; fi
+                done
             done
             return 1
         fi
@@ -581,7 +582,8 @@ stage_runtime()
     source="$(source_bin 2>/dev/null || true)"
     [ -n "$source" ] || die "Persistent Codex source is unavailable; refusing to silently reuse an unverified cache."
     staged="$("$CORE_BIN" runtime-stage --source "$source" --target "$RUNTIME_ROOT" --stage-mode "$force")" || return 1
-    [ -z "$staged" ] || log "Staged complete Codex runtime: $staged"
+    if [ "$force" = prepare ] || [ "$force" = prepare-fast ]; then printf '%s\n' "$staged"
+    elif [ -n "$staged" ]; then log "Staged complete Codex runtime: $staged"; fi
 )
 
 wait_for_socket()
@@ -604,12 +606,13 @@ wait_for_socket()
 
 start_server_locked()
 {
-    local attempt
+    local attempt result
     # Desktop/SSH may reconnect between discovery, socket cleanup and spawn.
     # Retry discovery within the same lock; never unlink an active endpoint.
     for attempt in 1 2 3; do
         SERVER_START_ERROR=""
-        if start_server_once; then return 0; fi
+        if start_server_once; then return 0; else result=$?; fi
+        if [ "$result" = 75 ]; then return 75; fi
         [ "$attempt" = 3 ] || sleep 0.2
     done
     [ -z "$SERVER_START_ERROR" ] || warn "$SERVER_START_ERROR"
@@ -627,7 +630,7 @@ start_server_once()
             log "Codex app-server is ready: PID $pid"
             return 0
         fi
-        stop_server 1 || return 1
+        stop_server 1 || return $?
     fi
     if [ -S "$SOCKET" ] || [ -L "$SOCKET" ]; then
         socket_listener_state || state=$?
@@ -652,6 +655,8 @@ start_server_once()
         pid=$!
         printf '%s\n' "$pid" > "$PID_FILE"
         process_identity "$pid" > "$PID_FILE.identity"
+        started_pid="$pid"
+        started_identity="$(cat "$PID_FILE.identity")"
     fi
     if [ -n "$pid" ] && wait_for_socket "$pid"; then
         record_server "$pid"
@@ -677,6 +682,22 @@ stop_server()
         return 0
     fi
     identity="$(process_identity "$pid")"
+    # A Desktop client can submit a turn during the candidate's integrity
+    # check. Recheck this exact socket immediately before requesting a stop.
+    if [ "${guard_idle:-0}" = 1 ]; then
+        local state_now
+        state_now="$("$CORE_BIN" codex-activity --socket "$SOCKET" --expected-home "$CODEX_HOME_DIR" 2>/dev/null || true)"
+        # A candidate we just spawned may fail the handshake altogether. It
+        # belongs to this switch and must vacate the socket for rollback.
+        if [ -z "$state_now" ] && [ "$pid" = "${started_pid:-}" ] && [ -n "$identity" ] && [ "$identity" = "${started_identity:-}" ]; then
+            state_now=failed_candidate
+        fi
+        if { [ "$state_now" != idle ] && [ "$state_now" != failed_candidate ]; } ||
+           ! pid_owns_socket "$pid" || [ "$(process_identity "$pid")" != "$identity" ]; then
+            warn "Codex runtime prepared. Active or unknown task state; switch deferred."
+            return 75
+        fi
+    fi
     if [ -x "$(local_bin)" ] && native_daemon; then
         run_bounded 10 env CODEX_HOME="$CODEX_HOME_DIR" "$(local_bin)" app-server daemon stop >>"$SERVER_LOG" 2>&1 || true
     fi
@@ -726,7 +747,7 @@ clean_unused_generations()
 
 server_operation()
 {
-    local operation="$1" old_pid new_pid status=0 stage_mode=0
+    local operation="$1" old_pid new_pid status=0 stage_mode=0 guard_idle=0 started_pid="" started_identity=""
     ensure_control_dir
     acquire_server_start_lock
     trap release_server_start_lock EXIT
@@ -734,28 +755,65 @@ server_operation()
         die 'The control directory belongs to another node; select a node-specific CODEX_HOME before changing its service.'
     fi
     old_pid="$(read_server_pid 2>/dev/null || true)"
-    case "$operation" in restart) stage_mode=verify ;; repair) stage_mode=1 ;; esac
+    local previous="" candidate="" activity="" pending="$RUNTIME_ROOT/.pending-switch"
     if [ "$operation" = stop ]; then
         stop_server || status=$?
-    elif stage_runtime "$stage_mode"; then
-        load_codex_environment
-        if ! CODEX_HOME="$CODEX_HOME_DIR" "${__envpilot_exec_args[@]}" --check; then
-            release_server_start_lock
-            trap - EXIT
-            return 1
+        if [ "$status" = 0 ]; then rm -f "$pending"; fi
+    elif [ "$operation" = reconcile ] && { [ ! -f "$pending" ] || [ -z "$old_pid" ]; }; then
+        # Stopping a service deliberately must never make a scheduled retry start it.
+        [ -n "$old_pid" ] || rm -f "$pending"
+    else
+        if [ -x "$(local_bin)" ]; then previous="$(resolve_link "$(local_current_dir)")"; fi
+        case "$operation" in
+            repair) stage_mode=1 ;;
+            restart) stage_mode=verify ;;
+            update|reconcile) stage_mode=prepare ;;
+            ready) if [ -n "$old_pid" ]; then stage_mode=prepare-fast; fi ;;
+        esac
+        if [ "$stage_mode" = prepare ] || [ "$stage_mode" = prepare-fast ]; then
+            guard_idle=1
+            candidate="$(stage_runtime "$stage_mode")" || status=1
+            if [ "$status" = 0 ] && [ -n "$old_pid" ] &&
+               { [ "$candidate" != "$previous" ] || ! runtime_matches_server "$old_pid" || ! protocol_ready; }; then
+                printf '%s\n' "$candidate" > "$pending"
+                activity="$("$CORE_BIN" codex-activity --socket "$SOCKET" --expected-home "$CODEX_HOME_DIR" 2>/dev/null || true)"
+                if [ "$activity" != idle ]; then
+                    warn "Codex runtime prepared. Active or unknown task state; switch deferred."
+                    status=75
+                fi
+            fi
+            if [ "$status" = 0 ] && [ "$candidate" != "$previous" ]; then
+                "$CORE_BIN" runtime-activate --target "$RUNTIME_ROOT" --source "$candidate" || status=1
+            fi
+        else
+            stage_runtime "$stage_mode" || status=1
         fi
-        if [ "$operation" = restart ] || [ "$operation" = repair ]; then
+        if [ "$status" = 0 ]; then
+            load_codex_environment
+            CODEX_HOME="$CODEX_HOME_DIR" "${__envpilot_exec_args[@]}" --check || status=1
+        fi
+        if [ "$status" = 0 ] && { [ "$operation" = restart ] || [ "$operation" = repair ]; }; then
             log "Restarting Codex app-server; connected tasks may be interrupted."
             stop_server 1 || status=$?
         fi
-        if [ "$status" = 0 ]; then start_server_locked 0 || status=$?; fi
+        if [ "$status" = 0 ]; then start_server_locked || status=$?; fi
         new_pid="$(read_server_pid 2>/dev/null || true)"
         if [ "$status" = 0 ] && { [ "$operation" = restart ] || [ "$operation" = repair ]; }; then
             if [ -z "$new_pid" ] || [ "$new_pid" = "$old_pid" ]; then status=1; warn "A new app-server process was not verified."; fi
         fi
-        [ "$status" != 0 ] || clean_unused_generations
-    else
-        status=1
+        if [ "$status" = 0 ]; then
+            rm -f "$pending"
+            clean_unused_generations
+        elif [ "$status" = 75 ] && [ -n "$previous" ] && [ "$(resolve_link "$(local_current_dir)")" != "$previous" ]; then
+            "$CORE_BIN" runtime-activate --target "$RUNTIME_ROOT" --source "$previous" || status=1
+        elif [ "$status" != 75 ] && [ -n "$old_pid" ] && [ -n "$previous" ] &&
+             [ "$(resolve_link "$(local_current_dir)")" != "$previous" ]; then
+            if "$CORE_BIN" runtime-activate --target "$RUNTIME_ROOT" --source "$previous" && start_server_locked; then
+                warn "Codex runtime switch failed. Previous app-server restored and verified."
+            else
+                warn "Codex runtime rollback did not verify. Inspect the app-server log."
+            fi
+        fi
     fi
     release_server_start_lock
     trap - EXIT
@@ -779,6 +837,12 @@ status_report()
     source="$(source_bin 2>/dev/null || true)"
     printf 'Persistent source:\n'
     if [ -n "$source" ]; then printf '  %s\n' "$source"; else printf '  not found\n'; fi
+    local upstream persistent actual
+    upstream="$("$CORE_BIN" codex-upstream --config "${ENVPILOT_CONFIG_FILE:-${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}/config.yaml}" 2>/dev/null || true)"
+    persistent=""
+    if [ -n "$source" ]; then persistent="$(run_bounded 15 "$source/codex" --version 2>/dev/null | awk '/^codex-cli /{print $2;exit}' || true)"; fi
+    printf 'Last checked upstream stable: %s\n' "${upstream:-unknown}"
+    printf 'Persistent CLI version: %s\n' "${persistent:-unknown}"
     printf 'Local runtime:\n  %s\n' "$RUNTIME_ROOT"
     if [ -x "$(local_bin)" ]; then
         version="$(local_version)"
@@ -798,9 +862,13 @@ status_report()
     fi
     pid="$(read_server_pid 2>/dev/null || true)"
     if [ -n "$pid" ]; then
+        actual="$("$CORE_BIN" probe --socket "$SOCKET" --expected-home "$CODEX_HOME_DIR" --format version 2>/dev/null || true)"
         printf 'App-server:\n  managed PID %s\n' "$pid"
+        printf 'Control socket handshake version: %s\n' "${actual:-unknown}"
         if [ -f "$(signature_file)" ] && ! runtime_matches_server "$pid"; then
             printf '  VERSION MISMATCH: run envpilot codex remote restart\n'
+        elif [ -f "$RUNTIME_ROOT/.pending-switch" ]; then
+            printf '  Runtime switch pending: envpilot codex remote reconcile\n'
         elif [ -n "$source" ] && [ -f "$RUNTIME_ROOT/.source-metadata" ] && [ "$(source_metadata "$source")" != "$(cat "$RUNTIME_ROOT/.source-metadata")" ]; then
             printf '  SOURCE UPDATED: run envpilot codex remote restart\n'
         fi
@@ -832,7 +900,9 @@ status_report()
 exec_codex()
 {
     QUIET=1
-    stage_runtime 0
+    # Keep new Desktop connections on the same verified generation during a
+    # deferred switch or while the server is running the previous package.
+    if [ ! -x "$(local_bin)" ] || { [ ! -f "$RUNTIME_ROOT/.pending-switch" ] && [ ! -S "$SOCKET" ] && [ ! -d "$START_LOCK" ]; }; then stage_runtime 0; fi
     load_codex_environment
     CODEX_HOME="$CODEX_HOME_DIR" exec "${__envpilot_exec_args[@]}" -- "$@"
 }
@@ -868,12 +938,36 @@ case "$action" in
         plan_report
         ;;
     stage|prepare)
-        stage_runtime 0
+        if [ -S "$SOCKET" ] || [ -f "$RUNTIME_ROOT/.pending-switch" ] || [ -d "$START_LOCK" ]; then
+            stage_runtime prepare
+        else
+            stage_runtime 0
+        fi
         ;;
-    verify)
+    reconcile)
+        if [ -f "$RUNTIME_ROOT/.pending-switch" ]; then server_operation reconcile; fi
+        ;;
+    update)
+        server_operation update
+        ;;
+    verify|verify-if-running)
+        if [ "$action" = verify-if-running ] && ! read_server_pid >/dev/null; then
+            if socket_ready; then die "Cannot verify the owner of the active control socket: $SOCKET"; fi
+            exit 0
+        fi
         source="$(source_bin)"
         "$CORE_BIN" runtime-verify --source "$source" --target "$(local_current_dir)"
         log "Codex runtime matches the complete source package."
+        if pid="$(read_server_pid 2>/dev/null)"; then
+            if ! runtime_matches_server "$pid" || ! protocol_ready; then
+                die "Control socket process or version differs from the staged runtime."
+            fi
+            log "Verified the serving app-server PID and handshake version."
+        elif socket_ready; then
+            die "Cannot verify the owner of the active control socket: $SOCKET"
+        else
+            log "No serving app-server to verify."
+        fi
         ;;
     warm|ready)
         start_server

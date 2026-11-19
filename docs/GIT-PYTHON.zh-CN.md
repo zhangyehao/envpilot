@@ -31,6 +31,8 @@ Python standalone 的用户态安装位置：
 $HOME/software/python/current/bin/python3
 ~~~
 
+Linux/macOS 更新时先在独立版本目录解压。归档内的 `bin/python3` 可以是指向版本化解释器的符号链接。envpilot 核实入口和目标均在包内，再用隔离模式运行解释器，核对精确版本并导入标准库。验证通过后才切换 `python/current`。验证失败时仍可使用旧解释器。
+
 旧 glibc 主机如果已有 Conda Python 3.9+，envpilot 优先使用 Conda，不再创建第二个解释器。缺少编译器、开发库或可用资产时，安装会停止并给出原因，不会记录虚假的完成状态。
 
 ## 非交互 shell

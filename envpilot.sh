@@ -36,6 +36,11 @@ envpilot — 用户态环境安装与维护
   envpilot version                      查看 envpilot 版本（-v、-V、--version）
   envpilot help                         查看帮助（-h、-help、--help）
   envpilot config edit|validate|show     编辑、校验或查看配置
+  envpilot config migrate --preview     预览新增字段；用 --yes 写入主配置
+  envpilot config export --portable     导出可迁移的偏好 YAML
+  envpilot preflight [--json]           在新主机检查运行条件
+  envpilot completion bash|zsh|powershell 生成 Tab 补全脚本
+  envpilot codex models status|refresh  查看或刷新模型目录
   envpilot plan                         查看拟议变更
   envpilot apply [--yes --non-interactive] 应用配置
   envpilot install|update [组件]         安装或更新组件
@@ -66,6 +71,11 @@ Configuration workflow:
   envpilot version                      Show the application version (-v, -V, --version).
   envpilot help                         Show help (-h, -help, --help).
   envpilot config edit|validate|show     Edit, validate or inspect configuration.
+  envpilot config migrate --preview     Preview new fields; --yes writes missing defaults.
+  envpilot config export --portable     Export preferences for another host.
+  envpilot preflight [--json]           Check the current host before migration.
+  envpilot completion bash|zsh|powershell  Print the Tab completion script.
+  envpilot codex models status|refresh  Inspect or refresh model catalogs.
   envpilot plan                         Preview changes.
   envpilot apply [--yes --non-interactive] Apply configured components and integration.
   envpilot snapshot                     Create an immutable recovery point.
@@ -138,8 +148,12 @@ parse_args()
     EP_HISTORY_DAYS=30
     EP_HISTORY_COMPONENT=""
     EP_MIHOMO_FILE=""
+    EP_INIT_POLICY=""
+    EP_PREVIEW=0
+    EP_PORTABLE=0
+    EP_CODEX_PREFERENCES=0
     case "$EP_COMMAND" in
-        config|shell|restore|updates)
+        config|shell|restore|updates|completion)
             if [ -n "${1:-}" ] && [[ "$1" != -* ]]; then EP_ACTION="$1"; shift; fi ;;
     esac
     if { [ "$EP_COMMAND" = "install" ] || [ "$EP_COMMAND" = "update" ] || [ "$EP_COMMAND" = "upgrade" ]; } && [ "${1:-}" != "" ]; then
@@ -178,6 +192,19 @@ parse_args()
     while [ "$#" -gt 0 ]; do
         arg="${1%$'\r'}"
         case "$arg" in
+            --policy)
+                [ "$EP_COMMAND" = init ] || ep_die '--policy requires init'
+                case "${2:-}" in check|nightly) ;; *) ep_die '--policy requires check or nightly' ;; esac
+                EP_INIT_POLICY="$2"; shift 2 ;;
+            --preview)
+                [ "$EP_COMMAND:$EP_ACTION" = config:migrate ] || ep_die 'Use config migrate --preview'
+                EP_PREVIEW=1; shift ;;
+            --codex-preferences)
+                [ "$EP_COMMAND:$EP_ACTION" = config:export ] || ep_die 'Use config export --codex-preferences'
+                EP_CODEX_PREFERENCES=1; shift ;;
+            --portable)
+                [ "$EP_COMMAND:$EP_ACTION" = config:export ] || ep_die 'Use config export --portable'
+                EP_PORTABLE=1; shift ;;
             --network)
                 case "$EP_COMMAND:$EP_MIHOMO_ACTION" in
                     mihomo:update-subscription|mihomo:subscription) ;;
@@ -302,6 +329,7 @@ run_doctor()
     ep_init
     ep_platform_detect
     ep_log "envpilot doctor"
+    ep_core updates status --format text
     ep_platform_print
     ep_doctor_command
     ep_doctor_git
@@ -512,7 +540,7 @@ run_codex()
 {
     ep_init
     ep_platform_detect
-    ep_codex_remote_cli "$EP_CODEX_ACTION" "$EP_CODEX_VALUE"
+    ep_codex_remote_cli "$EP_CODEX_ACTION" "$EP_CODEX_VALUE" "$EP_UPDATE_FORMAT"
 }
 
 run_reset()
@@ -544,6 +572,20 @@ run_self_test()
     bash "$ENVPILOT_ROOT/tests/run-tests.sh"
 }
 
+ep_unknown_command()
+{
+    local word="$1" helper suggestion=""
+    shift
+    if [[ "$word" =~ ^[A-Za-z-]{1,48}$ ]] && helper="$(ep_core_path)"; then
+        suggestion="$("$helper" suggest "word=$word" "$@" | head -n 1)"
+    fi
+    case "${ENVPILOT_LANG:-${LANG:-}}" in
+        zh*) printf '未知命令。%s\n' "${suggestion:+你想输入 $suggestion 吗？}" >&2 ;;
+        *) printf 'Unknown command. %s\n' "${suggestion:+Did you mean $suggestion?}" >&2 ;;
+    esac
+    return 2
+}
+
 main()
 {
     local original_args=("$@")
@@ -551,14 +593,40 @@ main()
     case "$EP_COMMAND" in
         help|-h|--help|self-test|update-manifests|update-mihomo-cache) ;;
         version) show_version; return ;;
-        init) ep_ensure_core; ep_core init --lang "${ENVPILOT_LANG:-auto}"; return ;;
+        init)
+            local policy="${EP_INIT_POLICY:-check}"
+            if [ ! -f "${EP_CONFIG_FILE:-${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}/config.yaml}" ] && [ -z "$EP_INIT_POLICY" ] && [ "${EP_NON_INTERACTIVE:-0}" != 1 ] && [ "${EP_ASSUME_YES:-0}" != 1 ] && [ -t 0 ]; then
+                case "${ENVPILOT_LANG:-${LANG:-}}" in
+                    zh*) printf '%s' '维护策略 [1 仅检查 / 2 夜间安装 03:00–05:00，默认 1] ' >&2 ;;
+                    *) printf '%s' 'Maintenance [1 check only / 2 install at 03:00–05:00, default 1] ' >&2 ;;
+                esac
+                local answer
+                IFS= read -r answer || return 1
+                case "$answer" in 1|'') ;; 2) policy=nightly ;; *) ep_die 'Use 1 or 2.' ;; esac
+            fi
+            ep_core init --policy "$policy" --lang "${ENVPILOT_LANG:-auto}"; return ;;
         config)
-            if [ "${EP_ACTION:-show}" = edit ]; then "${EDITOR:-vi}" "${EP_CONFIG_FILE:-${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}/config.yaml}"; return; fi
-            case "${EP_ACTION:-show}" in validate|show) ep_core "${EP_ACTION:-show}" ;; *) ep_die "Use envpilot config edit, validate or show." ;; esac
+            case "${EP_ACTION:-show}" in
+                edit) "${EDITOR:-vi}" "${EP_CONFIG_FILE:-${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}/config.yaml}" ;;
+                show|validate) ep_core "${EP_ACTION:-show}" ;;
+                migrate)
+                    if [ "$EP_PREVIEW" != 1 ] && [ "${EP_ASSUME_YES:-0}" = 1 ]; then ep_core config-migrate --apply
+                    else ep_core config-migrate --preview; fi ;;
+                export)
+                    case "$EP_PORTABLE:$EP_CODEX_PREFERENCES" in
+                        1:0) ep_core config-portable ;; 0:1) ep_core config-codex-preferences ;;
+                        *) ep_die 'Choose --portable or --codex-preferences' ;;
+                    esac ;;
+                *) ep_unknown_command "$EP_ACTION" config ;;
+            esac
             return ;;
+        completion) ep_core completion "$EP_ACTION"; return ;;
+        preflight) ep_core host-preflight --format "$EP_UPDATE_FORMAT"; return ;;
+        doctor) if [ "$EP_UPDATE_FORMAT" = json ]; then ep_core updates status --format json; return; fi; ep_config_load || return ;;
         plan) ep_core plan; return ;;
 
-        *) ep_config_load || return ;;
+        apply|apply-shell|install|update|upgrade|setup-command|restore|rollback|shell|updates|self-update|snapshot|run|mihomo|codex|resume|reset) ep_config_load || return ;;
+        *) ep_unknown_command "$EP_COMMAND" ;;
     esac
     case "$EP_COMMAND" in
         mihomo)
@@ -576,13 +644,6 @@ main()
             fi ;;
     esac
     case "$EP_COMMAND" in
-        config)
-            case "${EP_ACTION:-show}" in
-                edit) "${EDITOR:-vi}" "${EP_CONFIG_FILE:-${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}/config.yaml}" ;;
-                validate|show) ep_core "${EP_ACTION:-show}" ;;
-                *) ep_die 'Use envpilot config edit, validate or show.' ;;
-            esac ;;
-        plan) ep_core plan ;;
         apply) ep_apply_config ;;
         snapshot) ep_snapshot ;;
         run)
@@ -599,7 +660,14 @@ main()
         setup-command) ep_init; ep_setup_command ;;
         rollback) ep_init; ep_rollback_latest ;;
         restore) run_restore ;;
-        mihomo) run_mihomo ;;
+        mihomo)
+            case "$EP_MIHOMO_ACTION" in
+                update-subscription|subscription)
+                    ep_history_begin subscription
+                    run_mihomo
+                    ep_history_finish 0 ;;
+                *) run_mihomo ;;
+            esac ;;
         codex) run_codex ;;
         resume) run_resume ;;
         reset) run_reset ;;

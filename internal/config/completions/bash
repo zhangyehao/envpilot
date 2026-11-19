@@ -1,0 +1,11 @@
+# envpilot Bash completion; consult the installed helper only when Tab is pressed.
+_envpilot_complete() {
+    local helper candidate
+    IFS= read -r helper < "${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}/core-path" || return 0
+    [ -x "$helper" ] || return 0
+    COMPREPLY=()
+    while IFS= read -r candidate; do COMPREPLY+=("$candidate"); done < <(
+        "$helper" complete "word=${COMP_WORDS[COMP_CWORD]}" "${COMP_WORDS[@]:1:COMP_CWORD-1}"
+    )
+}
+case $- in *i*) complete -o default -F _envpilot_complete envpilot ;; esac

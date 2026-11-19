@@ -3,6 +3,7 @@
 *.md text eol=lf
 *.json text eol=lf
 templates/* text eol=lf
+internal/config/completions/* text eol=lf
 *.yml text eol=lf
 *.yaml text eol=lf
 *.py text eol=lf

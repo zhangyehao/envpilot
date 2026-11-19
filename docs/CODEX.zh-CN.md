@@ -18,9 +18,21 @@ envpilot codex remote repair    # 强制重建并重启
 
 ## 模型发现与刷新
 
+0.5.0 起，可以在同一张报告中比较配置文件所选供应商、Codex 二进制内置目录和当前节点控制 socket 的实际模型列表。
+
+```bash
+envpilot codex models refresh
+envpilot codex models status
+envpilot codex models status --json
+```
+
+`refresh` 向所选供应商的 `base_url/models` 请求模型 ID，通过 `codex debug models --bundled` 读取内置目录，再向指定 `CODEX_HOME` 的 app-server 发起握手和分页 `model/list`（包含隐藏项）。`status` 读取本节点最近一次观测，可离线查看。失败会保留该来源上次成功的列表和时间，并显示新的错误状态。连续检查结果相同时 `refresh` 保持静默。上游 HTTP 状态、CLI 不支持内置查询、服务未启动分别显示；`hidden` 表示服务返回了该模型但通常不会在默认选择器展示。
+
+供应商读取用户 `$CODEX_HOME/config.toml` 的默认 `model_provider`、其 `base_url` 与 `env_key`。供应商 ID 列表和 Codex 模型元数据由上游分别维护。刷新不会生成 `models-yanhuo.json` 或写入 `model_catalog_json`。使用 Desktop 启动参数、项目配置或临时 profile 时，实际服务结果以控制 socket 一栏为准。成功的供应商请求时间记录在 `provider.last_success`。定时频率由主配置的 `updates.models` 控制。
+
 默认不设置 `model_catalog_json`。模型发现应交给 Codex 和所选供应商；下载缓存或 Codex 内置目录是网络发现的回退，不应为了补齐下拉列表而手工伪造模型能力数据。
 
-内置目录编译在 Codex 可执行文件中，不能单独在线刷新；升级 Codex 才会更新这份目录。执行 `envpilot update codex`，再用 `codex --version` 检查版本。目标服务此前运行时，envpilot 会切换完整运行包并重启 app-server。删除缓存或仅重启旧版本不会改变其内置目录。例如 0.156.1 的官方更新新增了 GPT-6 Sol/Luna，无需设置本地目录覆盖。
+内置目录编译在 Codex 可执行文件中，不能单独在线刷新；升级 Codex 才会更新这份目录。执行 `envpilot update codex`，再用 `codex --version` 检查版本。目标服务此前运行时，envpilot 会先准备完整运行包，并在确认空闲后切换 app-server。删除缓存或仅重启旧版本不会改变其内置目录。例如 0.156.1 的官方更新新增了 GPT-6 Sol/Luna，无需设置本地目录覆盖。
 
 Codex 0.156.0 的 API-key 模型发现受 `features.api_key_model_discovery` 开关控制（该版本默认关闭），自定义供应商还需要支持 Codex 原生模型目录并配置 `model_providers.<id>.model_catalog_url`。普通 OpenAI 兼容 `/v1/models` 通常只返回 ID，不能直接代替包含上下文长度、推理选项等信息的 Codex 原生目录。是否能从上游更新，需要核对所选供应商、认证方式、接口格式及缓存状态，不能仅以模型数量判断。
 
@@ -50,7 +62,11 @@ envpilot codex remote enable
 
 所有命令识别同一用户、当前节点和目标控制 socket 的实例，包括 Desktop/SSH 创建的服务。停止不再依赖 PID 文件必须存在；每次发信号前核对进程身份。其他 CODEX_HOME 和无法确认归属的进程保持不变。
 
-`restart` 必须确认新进程、实际运行文件和协议握手；`ready` 可复用健康且版本匹配的实例；`repair` 强制重建运行文件。`stop` 后再次 `enable` 会使用当前版本启动。更新前服务运行时，`update codex` 会刷新运行文件并重启；此前停止则保持停止。
+`restart` 必须确认新进程、实际运行文件和协议握手；`ready` 可复用健康且版本匹配的实例；`repair` 强制重建运行文件。`stop` 后再次 `enable` 会使用当前版本启动。更新前服务运行时，`update codex` 会刷新运行文件，并在确认空闲后重启。已停止的服务在下次启用时使用新版本。
+
+0.5.0 的 `remote status` 同时列出上次定时/手动检查到的上游稳定版、持久安装版本、节点运行副本以及控制 socket 握手返回的服务版本。尚未检查上游时显示 `unknown`，可执行 `envpilot updates check`。运行中的 `remote verify` 同时核对完整运行包、PID 对应的运行文件和握手版本。这是此 `CODEX_HOME` 对应的 Desktop/SSH 服务端点。
+
+更新运行中的服务时，envpilot 先验证候选运行包，再分页读取已加载线程及执行状态。任务活跃、协议太旧或无法查明时，返回 75 并保留待切换版本。维护调度器会在允许的窗口重试。可手动运行 `envpilot codex remote reconcile` 重试已延后的切换。原先运行的健康版本切换失败时会尝试恢复并重新握手，更新命令仍报告失败。显式 `remote restart` 或 `repair` 可立即重启。Codex 当前的查询接口只报告检查时的活动，检查之后新提交的任务仍可能与切换同时发生。
 
 请在独立终端操作。重启可能中断当前请求，持久配置、认证和 sessions 保留。控制目录不迁往临时存储；可重建的运行文件位于按用户、节点和 CODEX_HOME 区分的版本化缓存中。
 

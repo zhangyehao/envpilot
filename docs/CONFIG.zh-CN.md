@@ -54,6 +54,18 @@ envpilot run -- python3 --version
 
 非交互模式不会等待输入。未选择的备用安装方式不会自动启用。第三方安装器的原始输出保留原文。
 
+## 0.5.0 的完整主配置
+
+`init` 将所有可配置字段和说明写入主 YAML。`self-update`（Git 或平台包）调用新版入口时会给已有文件补缺，并在写入前保存快照。手动拉取源码后执行 `envpilot apply-shell` 也会补齐。要单独预览和应用：
+
+```bash
+envpilot config migrate --preview
+envpilot config migrate --yes
+envpilot config validate
+```
+
+预览列出要补的键、当前生效值和来源。继承全局的组件策略写入 `null`，临时的环境变量值不会写入 YAML。已有注释、选择的订阅来源和端口保留。重复迁移无需写入。PowerShell 可使用 `-Preview` 和 `-Yes`。
+
 ## 完整样例、更新与命令优先级
 
 [完整中文样例](../examples/config.example.zh-CN.yaml) 与 [英文样例](../examples/config.example.en.yaml) 包含全部字段及参数说明；请合并所需字段，不要覆盖已有用户配置。

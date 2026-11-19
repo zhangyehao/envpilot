@@ -476,6 +476,7 @@ ep_apply_shell_profile()
         if [ "${EP_ASSUME_YES:-0}" != 1 ]; then ep_confirm "Install the envpilot shell loading block?" no || return 0; fi
         ep_snapshot
     fi
+    if [ -f "${EP_CONFIG_FILE:-${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}/config.yaml}" ]; then ep_core config-migrate --apply; fi
     ep_setup_command
     ep_core shell --shell "$shell" --target "$target"
     ep_log "Reload with: source $target"

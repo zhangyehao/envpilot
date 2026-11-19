@@ -12,7 +12,7 @@ Configure once with `envpilot init`, `envpilot config edit`, `envpilot config va
 
 `envpilot doctor` diagnoses without replacing snapshots. `snapshot` creates a recovery point; `restore` restores it. External package-manager operations are not fully reversible by file snapshots.
 
-Codex remote lifecycle: `status`, `enable`, `verify`, `ready`, `restart`, `stop`, `repair`, `disable`. `update codex` already restarts a previously running server. See [Codex](CODEX.md).
+Codex remote lifecycle: `status`, `enable`, `verify`, `ready`, `restart`, `stop`, `repair`, `disable`. Use `remote status` for upstream, persistent, staged and serving versions. Automatic switching waits for an idle service. See [Codex](CODEX.md).
 
 Mihomo commands added in 0.4.5: `envpilot mihomo select` prompts for a group/node; `nodes` lists candidates and `test "GROUP"` probes directly listed proxy nodes only. Explicitly use `test "GROUP" "MEMBER"` for nested groups or DIRECT/REJECT. Scripts use `envpilot mihomo select "GROUP" "NODE" --non-interactive`; these node commands support `--json`. Saved choices survive restart and subscription refresh when the names still exist.
 
@@ -23,3 +23,10 @@ Since 0.4.7, set `group_order: ["烟火云"]` inside the main configuration's `m
 PowerShell options are `-Network`, `-SubscriptionFile`, `-Json` and `-NonInteractive`; their double-dash aliases above are also supported. See [Mihomo](MIHOMO.md).
 
 Version aliases: `version`, `-v`, `-V`, `-version`, `--version`. Help aliases: `help`, `-h`, `-H`, `-help`, `--help`. They work offline without a valid YAML or helper.
+
+## Maintenance and command completion
+
+- `envpilot doctor` displays policy, actual scheduler registration, recent invocations and component results. `doctor --json` prints the maintenance report.
+- `envpilot codex models status` shows observed catalogs. `refresh` queries the provider, installed CLI and serving socket again.
+- `envpilot config migrate --preview` shows missing settings. Use `--yes` to write them. Use `envpilot config export --portable` and `envpilot preflight` to move hosts.
+- `envpilot apply-shell` installs Tab completion for newly opened Bash, zsh or PowerShell sessions. Use `envpilot completion bash`, `zsh` or `powershell` to print the relevant script. Press Tab after `envpilot codex mo` to complete `models`. Typo suggestions require choosing and submitting the command.

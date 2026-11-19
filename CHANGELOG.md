@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.0 - 2026-11-19
+
+- Show live scheduler registration, actual timer invocations and each component’s check/install times in `doctor`. Choose check-only or overnight updates at init, override policy per component, and designate a shared-home maintenance host.
+- Schedule protected Mihomo subscription refreshes and track them in update history. Compare Codex provider, bundled and serving model catalogs, with source-specific freshness and errors.
+- Verify the serving Codex process and its handshake, defer automatic switching during active or unknown work, and restore the previous runtime when a candidate fails.
+- Accept staged Python executables linked inside the package, allow slow Conda/Mamba startup, and preview package and configuration changes.
+- Fill missing main YAML settings on upgrade, preview a migration, export portable preferences, inspect a new host and complete commands in Bash, zsh and PowerShell.
+
 ## 0.4.7 - 2026-10-26
 
 - Add optional `mihomo.group_order` to show preferred groups first in node listings and selection menus, for example `["烟火云"]`. The default is `[]`; remaining groups sort by name and absent names are ignored.

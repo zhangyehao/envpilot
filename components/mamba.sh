@@ -2,22 +2,17 @@
 
 ep_mamba_bin()
 {
-    if ep_command_exists mamba; then
-        command -v mamba
-        return 0
-    fi
-
     local conda_path prefix candidate
     conda_path="$(ep_conda_bin 2>/dev/null || true)"
-    [ -n "$conda_path" ] || return 1
-    prefix="$(ep_conda_prefix_from_bin "$conda_path" 2>/dev/null || true)"
-    [ -n "$prefix" ] || return 1
-    for candidate in \
-        "$prefix/bin/mamba" \
-        "$prefix/condabin/mamba" \
-        "$prefix/Scripts/mamba.exe"; do
-        [ -x "$candidate" ] && { printf '%s' "$candidate"; return 0; }
-    done
+    if [ -n "$conda_path" ]; then
+        prefix="$(ep_conda_prefix_from_bin "$conda_path" 2>/dev/null || true)"
+        if [ -n "$prefix" ]; then
+            for candidate in "$prefix/bin/mamba" "$prefix/condabin/mamba" "$prefix/Scripts/mamba.exe"; do
+                [ -x "$candidate" ] && { printf '%s' "$candidate"; return 0; }
+            done
+        fi
+    fi
+    if [ -z "${BASHRC_CONDA_PRIMARY_PREFIX:-}" ] && ep_command_exists mamba; then command -v mamba; return 0; fi
     return 1
 }
 

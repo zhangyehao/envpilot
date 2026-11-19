@@ -54,15 +54,27 @@ func componentTool(c Config, component string) (string, bool) {
 	case "git", "python":
 		candidates = append(candidates, filepath.Join(prefix, component, "current", "bin", name))
 	case "mihomo":
-		candidates = append(candidates, filepath.Join(prefix, "mihomo", "mihomo"))
+		// Existing installers place Mihomo under ~/software even if other tools
+		// use a custom install.prefix. Follow the native validator's order.
+		candidates = append(candidates, filepath.Join(h, "software", "mihomo", name), filepath.Join(prefix, "mihomo", name))
 	case "github", "tmux":
 		candidates = append(candidates, filepath.Join(h, ".local", "bin", name), filepath.Join(h, ".local", "envpilot", "bin", name))
 	case "conda", "mamba":
-		for _, base := range []string{Expand(c.Conda.Prefix), filepath.Join(prefix, "miniconda3"), filepath.Join(prefix, "anaconda3"), filepath.Join(h, "miniconda3"), filepath.Join(h, "anaconda3"), os.Getenv("CONDA_PREFIX")} {
-			if base == "" {
-				continue
-			}
+		dist := c.Conda.Distribution + "3"
+		bases := []string{filepath.Join(prefix, dist), filepath.Join(h, dist), filepath.Join(h, "software", dist)}
+		other := "anaconda3"
+		if dist == "anaconda3" {
+			other = "miniconda3"
+		}
+		bases = append(bases, filepath.Join(prefix, other), filepath.Join(h, other), filepath.Join(h, "software", other))
+		if c.Conda.Prefix != "" {
+			bases = []string{Expand(c.Conda.Prefix)}
+		}
+		for _, base := range bases {
 			candidates = append(candidates, filepath.Join(base, "bin", name))
+			if component == "mamba" {
+				candidates = append(candidates, filepath.Join(base, "condabin", name))
+			}
 			if runtime.GOOS == "windows" {
 				candidates = append(candidates, filepath.Join(base, "Scripts", name+".exe"), filepath.Join(base, "Library", "bin", name+".exe"))
 			}
@@ -77,6 +89,11 @@ func componentTool(c Config, component string) (string, bool) {
 				return p + ".exe", true
 			}
 		}
+	}
+	// A pinned prefix names an installation. A similarly named command in
+	// another environment must not be reported as its installed version.
+	if (component == "conda" || component == "mamba") && c.Conda.Prefix != "" {
+		return "", false
 	}
 	names := []string{name}
 	if component == "python" {
@@ -102,13 +119,18 @@ func installedComponent(c Config, component string) (string, error) {
 	if component == "mihomo" {
 		arg = "-v"
 	}
-	b, err := versionOutput(path, arg)
+	timeout := 10 * time.Second
+	conda := component == "conda" || component == "mamba"
+	if conda {
+		timeout = 60 * time.Second
+	}
+	b, err := probeVersionOutput(path, arg, timeout, conda)
 	if err != nil {
-		return "", fmt.Errorf("E_UPDATE_PROBE")
+		return "", err
 	}
 	match := toolVersion.FindStringSubmatch(string(b))
 	if len(match) < 2 {
-		return "", fmt.Errorf("E_UPDATE_PROBE")
+		return "", fmt.Errorf("E_UPDATE_PROBE_FORMAT")
 	}
 	return match[1], nil
 }
@@ -116,10 +138,40 @@ func installedComponent(c Config, component string) (string, error) {
 // Windows npm/Conda launchers can be batch files. Pass their path as data
 // through PowerShell rather than interpolating it into a cmd.exe command.
 func versionOutput(path, arg string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	return probeVersionOutput(path, arg, 10*time.Second, false)
+}
+
+func cleanCondaEnvironment(env []string, condarc string) []string {
+	// Keep in sync with ep_run_conda_clean and Invoke-CleanConda.
+	remove := map[string]bool{"LD_LIBRARY_PATH": true, "PYTHONHOME": true, "PYTHONPATH": true, "CONDA_CHANNELS": true,
+		"CONDA_DEFAULT_CHANNELS": true, "CONDA_CUSTOM_CHANNELS": true, "CONDA_SOLVER": true, "CONDARC": true}
+	result := make([]string, 0, len(env)+1)
+	for _, item := range env {
+		key, _, _ := strings.Cut(item, "=")
+		if runtime.GOOS == "windows" {
+			key = strings.ToUpper(key)
+		}
+		if !remove[key] {
+			result = append(result, item)
+		}
+	}
+	return append(result, "CONDARC="+condarc)
+}
+
+func probeVersionOutput(path, arg string, timeout time.Duration, conda bool) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, path, arg)
-	env := append(os.Environ(), "PATH="+filepath.Dir(path)+string(os.PathListSeparator)+os.Getenv("PATH"))
+	env := os.Environ()
+	if conda {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return nil, fmt.Errorf("E_UPDATE_PROBE_COMMAND")
+		}
+		env = cleanCondaEnvironment(env, filepath.Join(home, ".condarc"))
+	} else {
+		env = append(env, "PATH="+filepath.Dir(path)+string(os.PathListSeparator)+os.Getenv("PATH"))
+	}
 	if runtime.GOOS == "windows" && (strings.EqualFold(filepath.Ext(path), ".cmd") || strings.EqualFold(filepath.Ext(path), ".bat")) {
 		shell, err := exec.LookPath("pwsh")
 		if err != nil {
@@ -131,7 +183,14 @@ func versionOutput(path, arg string) ([]byte, error) {
 	}
 	cmd.Env = env
 	cmd.WaitDelay = time.Second
-	return cmd.Output()
+	b, err := cmd.Output()
+	if ctx.Err() == context.DeadlineExceeded {
+		return nil, fmt.Errorf("E_UPDATE_PROBE_TIMEOUT")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("E_UPDATE_PROBE_COMMAND")
+	}
+	return b, nil
 }
 func managedUpdateComponent(c Config, component string) bool {
 	_, managed := componentTool(c, component)

@@ -54,3 +54,9 @@ Verify Bash, PowerShell, Go, Python, ShellCheck and workflow checks. Publish onl
 All components use the shared updates policy. Default interval is 3 days and the automatic installation window is 03:00–05:00 in the configured timezone. Automatic installation is opt-in; manual commands run immediately. Do not trigger an out-of-window installation by checking status. Missing tools are skipped; external/system tools remain with their package manager. Keep update history for all manual/automatic component and self updates; preserve failed/incomplete results and never put raw credentials/errors in structured history.
 
 Use `shell.prefer_managed: [git, python]` only by explicit selection. Verify actual command resolution, keep aliases/functions, and preserve activated Conda/venv Python. Update bilingual complete YAML samples whenever the schema changes. Preserve immutable tags, review active automation PRs, and remove only fully merged inactive development branches.
+
+## Maintenance since 0.5.0
+
+Use `envpilot doctor` for actual scheduler registration, the last timer invocation, and per-component outcomes. Register on the configured maintenance node. Component policy overrides inherit global settings through null. Subscription replacement is opt-in and uses Mihomo's window. Check `envpilot codex models status` for provider, bundled and serving observations. Automatic Codex switching defers on active or indeterminate work; the explicit restart command can interrupt tasks.
+
+New installs write the complete YAML. The 0.5.0 shell entrypoint used by older self-updaters fills missing defaults after taking a snapshot. Preview with `envpilot config migrate --preview`. See [host migration](HOSTS.md) for portable settings and protected references.

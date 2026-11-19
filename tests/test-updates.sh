@@ -32,11 +32,18 @@ printf '0 2 * * * /usr/bin/true\n' > "$HOME/test.crontab"
 cp "$HOME/test.crontab" "$fixture/original.crontab"
 bash "$ROOT/envpilot.sh" setup-command
 if [ "$(uname -s)" != Darwin ]; then
+    # A 0.4.7 scheduler already invokes the stable entrypoint. Upgrading via
+    # the new apply-shell must make subsequent automatic triggers observable.
+    mkdir -p "$ENVPILOT_CONFIG_DIR/updates"
+    printf "#!/bin/bash\nexec '%s' updates run --config '%s'\n" "$HOME/.local/bin/envpilot" "$ENVPILOT_CONFIG_DIR/config.yaml" > "$ENVPILOT_CONFIG_DIR/updates/run.sh"
+    bash "$ROOT/envpilot.sh" apply-shell --yes --non-interactive
+    grep -q ' updates tick --config ' "$ENVPILOT_CONFIG_DIR/updates/run.sh"
     bash "$ROOT/envpilot.sh" updates enable
     cp "$HOME/test.crontab" "$fixture/enabled.crontab"
     bash "$ROOT/envpilot.sh" updates enable
     cmp "$HOME/test.crontab" "$fixture/enabled.crontab"
-    bash -n "$ENVPILOT_CONFIG_DIR/updates/run.sh"
+    launchers=("$ENVPILOT_CONFIG_DIR"/updates/schedulers/*/run.sh)
+    test "${#launchers[@]}" = 1 && bash -n "${launchers[0]}"
     bash "$ROOT/envpilot.sh" updates disable
     cmp "$HOME/test.crontab" "$fixture/original.crontab"
 fi
@@ -82,3 +89,4 @@ if command -v zsh >/dev/null 2>&1; then
     '
 fi
 echo '[TEST] update CLI, offline policy, history and idempotent scheduler passed'
+python3 "$ROOT/tests/test-scheduled-subscription.py"

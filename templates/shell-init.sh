@@ -45,6 +45,13 @@ envpilot_codex_ready() { envpilot codex remote ready "$@"; }
 # User customizations remain user-owned and run only in interactive shells.
 case $- in
     *i*)
+        if [ -n "${BASH_VERSION:-}" ] && [ -r "$__envpilot_config_dir/shell/completion-bash.sh" ]; then
+            # shellcheck disable=SC1091 # Installed for this shell by apply-shell.
+            . "$__envpilot_config_dir/shell/completion-bash.sh"
+        elif [ -n "${ZSH_VERSION:-}" ] && [ -r "$__envpilot_config_dir/shell/completion-zsh.sh" ]; then
+            # shellcheck disable=SC1091 # zsh loads its own completion syntax.
+            . "$__envpilot_config_dir/shell/completion-zsh.sh"
+        fi
         if [ "${ENVPILOT_LEGACY_LOCAL:-0}" = 1 ] && [ -r "$__envpilot_config_dir/shell.local" ]; then
             # shellcheck disable=SC1091 # Optional user-owned customization.
             . "$__envpilot_config_dir/shell.local"

@@ -31,3 +31,10 @@ envpilot doctor
 `envpilot mihomo update-subscription` 更新完整配置，默认先直连、失败后尝试代理；`--network direct|proxy|auto` 覆盖网络路径。无法下载时上传完整 Clash YAML，Unix 上先执行 `chmod 600 PATH`，再执行 `envpilot mihomo update-subscription --file PATH`。下载失败保留原配置和运行服务。订阅 URL 通过受保护文件或环境引用读取。
 
 PowerShell 对应选项为 `-Network`、`-SubscriptionFile`、`-Json`、`-NonInteractive`，也支持上述双横线写法。详见 [Mihomo](MIHOMO.zh-CN.md)。
+
+## 维护与补全
+
+- `envpilot doctor` 显示策略、实际调度登记、本机最近触发和各项结果；`doctor --json` 输出维护报告。
+- `envpilot codex models status` 查看模型目录记录；`refresh` 从供应商、内置 CLI 和控制 socket 重新采集。
+- `envpilot config migrate --preview` 查看缺少的设置，`--yes` 写入。`envpilot config export --portable` 与 `envpilot preflight` 用于迁机。
+- `envpilot apply-shell` 安装 Tab 补全，新开 Bash、zsh 或 PowerShell 即可使用。也可用 `envpilot completion bash`、`zsh` 或 `powershell` 输出对应脚本。输入 `envpilot codex mo` 后按 Tab 可补为 `models`。拼写接近的候选词仅供选择，仍需按回车执行。

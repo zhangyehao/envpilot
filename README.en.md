@@ -40,7 +40,7 @@ envpilot apply
 
 ### Update an existing installation
 
-The current version, **0.4.7**, adds `mihomo.group_order` to place frequently used groups first in menus. It includes the 0.4.6 fix for `args[@]: unbound variable` when running `mihomo nodes/select/test` without a group name on Bash 4.2. Existing 0.4.x users can follow the steps below while retaining subscription references, configuration and ports.
+**0.5.0** adds scheduled maintenance to `envpilot doctor` and fills new YAML fields with documented defaults during an upgrade. Existing values and comments are preserved. After updating, open a new shell and press Tab after `envpilot codex mo` to complete `models`.
 
 **0.4.0 and later:**
 
@@ -51,7 +51,7 @@ envpilot update codex                # Or git, mihomo, etc.
 envpilot codex remote status
 ```
 
-`update codex` refreshes the complete runtime and restarts/verifies a previously running service. A stopped service stays stopped. Normally do not stop it first. For a stop-first workflow, use `stop → update codex → restart → status`.
+Use `envpilot codex remote status` to compare the last observed stable release, persistent install, node-local runtime and the version returned by the control socket. An active task or inconclusive activity check defers the switch. Run `envpilot codex models refresh`, then `envpilot codex models status`, to compare the provider, bundled CLI and running service catalogs and their last successful observations.
 
 **0.3.0** has no self-update command. Use this one-time bridge, which checks local edits/divergence, backs up files and migrates to a stable tag without a forced reset:
 
@@ -97,32 +97,40 @@ The next `nodes` and `select` commands use this order. Default `[]` sorts groups
 
 ### Scheduled checks and overnight installation
 
-Since 0.4.4, checks run every **3 days** by default. Automatic installations start during **03:00–05:00**. The default only checks; enable unattended installation explicitly:
+On first run, `envpilot init` offers check-only maintenance or overnight installation. For scripts, run `envpilot init --policy check --non-interactive` or choose `nightly`. The default check interval is three days and the installation window is 03:00–05:00 local time. **Run `envpilot updates enable` once on the maintenance host to register the scheduler.**
+
+To update Codex daily, refresh the subscription every three days and keep Conda/Mamba check-only on a shared home, edit these fields in the existing configuration:
 
 ```yaml
 updates:
-  enabled: true
+  maintenance_host: login02  # Use your maintenance host; leave empty on a standalone host.
   interval_days: 3
-  auto_apply: true
-  components: [mihomo, git, python, conda, mamba, codex, github, tmux]
-  envpilot: true
+  auto_apply: false
   window_start: "03:00"
   window_end: "05:00"
-  timezone: Local                    # Or Asia/Shanghai, UTC, America/New_York.
+  timezone: Asia/Shanghai
+  policies:
+    codex: {interval_days: 1, auto_apply: true}
+  subscription: {enabled: true, interval_days: 3}
+  models: {enabled: true, interval_days: 3}
 ```
+
+Scheduled subscription refresh is opt-in. It uses the protected reference and Mihomo's maintenance window. Applying a validated subscription can restart the proxy. A failed download or validation preserves the current subscription. Use `null` in a component policy to inherit the global setting.
 
 ```bash
 envpilot config validate
-envpilot updates check               # Check now, never install.
-envpilot updates enable              # Register persistent scheduling.
-envpilot updates status
-envpilot updates history             # Last 30 days, manual and automatic.
+envpilot updates enable
+envpilot doctor                      # Policy, actual registration, last trigger, per-component results
+envpilot updates check               # Check immediately
+envpilot updates history             # Last 30 days
 envpilot updates history --days 90 --component codex
 ```
 
-Missing components are skipped. External/system installations remain with their original package manager. Managed tools retain their compatibility rules. The window limits installation start times; work already started may finish afterward. Codex restarts can interrupt tasks. Manual `update COMPONENT` and `self-update` run immediately. YAML changes take effect without re-registering the interval. Disable with `envpilot updates disable`. See [updates and history](docs/UPDATES.md).
+Run `envpilot update COMPONENT` for a manual update and `envpilot updates disable` to unregister the scheduler. [Update policies and history](docs/UPDATES.md)
 
 ## Configuration
+
+Use `envpilot config migrate --preview` to see missing fields, effective values and their sources. Run `envpilot config migrate --yes` to snapshot the file and fill the gaps. A normal self-update does this automatically. For a new host, `envpilot preflight` checks the environment and `envpilot config export --portable` exports preferences as YAML. Codex model preferences can be exported separately. [Moving to another host](docs/HOSTS.md)
 
 Default: `~/.config/envpilot/config.yaml`. Precedence: arguments → declared environment overrides → YAML → defaults.
 
@@ -157,6 +165,10 @@ Validate edits with `envpilot config validate`. Apply installation/shell changes
 | Update envpilot | `envpilot self-update` |
 | Check / run due policy | `envpilot updates check`; `envpilot updates run` |
 | Schedule / status / history | `envpilot updates enable/disable/status/history` |
+| Preview / fill new settings | `envpilot config migrate --preview`, `envpilot config migrate --yes` |
+| Inspect a host / export preferences | `envpilot preflight`, `envpilot config export --portable` |
+| Model catalogs | `envpilot codex models status`, `envpilot codex models refresh` |
+| Tab completion | `envpilot completion bash` (also zsh or powershell) |
 | Shell integration / removal | `envpilot apply-shell`; `envpilot shell remove` |
 | Child environment | `envpilot run -- COMMAND ...` |
 | Diagnose / snapshot / restore | `envpilot doctor`; `envpilot snapshot`; `envpilot restore` |

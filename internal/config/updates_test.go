@@ -270,6 +270,7 @@ func TestShortenedUpdateInterval(t *testing.T) {
 	c.Updates.IntervalDays = 1
 	c.Updates.Components = nil
 	c.Updates.Envpilot = false
+	c.Updates.Models.Enabled = false
 	u := defaultUpdateRunner()
 	u.now = func() time.Time { return now }
 	state, err := u.run(c, ".", path, false)

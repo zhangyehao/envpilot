@@ -87,7 +87,7 @@ ep_doctor_python()
 ep_install_python()
 {
     ep_require_unix_runtime
-    local existing managed source archive source_version version target_dir python_bin python_root current_dir action
+    local existing managed source source_version version action
     managed="$(ep_python_managed_bin)"
     if [[ " ${ENVPILOT_PREFER_MANAGED_TOOLS:-} " != *" python "* ]] &&
        { [ "$EP_UPGRADE" != 1 ] || [ ! -x "$managed" ]; } && existing="$(ep_python_system_bin 2>/dev/null)"; then
@@ -141,21 +141,22 @@ ep_install_python()
         return 0
     }
 
-    archive="$(mktemp "${TMPDIR:-/tmp}/envpilot-python.XXXXXX.tar.gz")"
-    target_dir="$EP_PREFIX/python/${version:-standalone-$EP_ARCH}"
-    mkdir -p "$target_dir"
-    if [ -f "$source" ]; then cp "$source" "$archive"; else ep_fetch_url "$source" "$archive"; fi
-    tar -xzf "$archive" -C "$target_dir"
-    python_bin="$(find "$target_dir" -type f -name python3 -perm -u+x 2>/dev/null | head -n 1 || true)"
-    [ -n "$python_bin" ] || ep_die "Python archive did not contain an executable bin/python3."
-    "$python_bin" --version >/dev/null 2>&1 || ep_die "Downloaded Python cannot run on this host; the previous active interpreter was preserved."
-    python_root="$(cd "$(dirname "$python_bin")/.." && pwd)"
-    current_dir="$EP_PREFIX/python/current"
-    rm -rf -- "$current_dir"
-    if ! ln -s "$python_root" "$current_dir" 2>/dev/null; then
-        cp -R "$python_root" "$current_dir"
-    fi
-    rm -f "$archive"
+    (
+        local base="$EP_PREFIX/python" staging archive
+        mkdir -p "$base" || exit 1
+        staging="$(mktemp -d "$base/$version.XXXXXXXX")" || exit 1
+        trap 'rm -rf -- "$staging"' EXIT
+        archive="$staging/.download.tar.gz"
+        if [ -f "$source" ]; then cp "$source" "$archive" || exit 1; else ep_fetch_url "$source" "$archive" || exit 1; fi
+        tar -xzf "$archive" -C "$staging" || exit 1
+        rm -f "$archive" || exit 1
+        # The helper verifies links, runs the staged interpreter, then publishes current.
+        trap - EXIT
+        if ! ep_core python-activate -- "$base" "$staging" "$version"; then
+            rm -rf -- "$staging"
+            exit 1
+        fi
+    ) || ep_die "Python installation failed; see the staged validation error above."
     managed="$(ep_python_managed_bin)"
     [ -x "$managed" ] || ep_die "Python installation completed but $managed was not created."
     action=installed

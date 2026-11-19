@@ -3,9 +3,11 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -13,6 +15,7 @@ import (
 )
 
 type UpdateHistoryEntry struct {
+	Scope     string    `json:"scope,omitempty"`
 	ID        string    `json:"id"`
 	Started   time.Time `json:"started_at"`
 	Finished  time.Time `json:"finished_at,omitempty"`
@@ -23,8 +26,62 @@ type UpdateHistoryEntry struct {
 	Status    string    `json:"status"`
 }
 
+func historyScope(c Config) string {
+	path := c.SourcePath
+	if path == "" {
+		path = filepath.Join(Dir(), "config.yaml")
+	}
+	return filepath.Base(updateStatePath(path))
+}
+
+// Manual installation events do not pass through the scheduler. Add them to
+// the displayed status without changing when the next scheduled checks are due.
+func includeInstallationHistory(c Config, state *UpdateState) error {
+	files, err := filepath.Glob(filepath.Join(Dir(), "updates", "history", "event-*.json"))
+	if err != nil {
+		return err
+	}
+	recent := map[string]time.Time{}
+	scope := historyScope(c)
+	for _, file := range files {
+		var e UpdateHistoryEntry
+		b, err := os.ReadFile(file)
+		if err != nil {
+			return err
+		}
+		// A concurrent history-begin may still be writing this new event.
+		if json.Unmarshal(b, &e) != nil || e.Scope != scope || e.Finished.IsZero() {
+			continue
+		}
+		switch e.Status {
+		case "updated", "installed", "refreshed":
+			if e.Finished.After(recent[e.Component]) {
+				recent[e.Component] = e.Finished
+			}
+		}
+	}
+	for i, r := range state.Results {
+		if recent[r.Component].After(r.LastApplied) {
+			state.Results[i].LastApplied = recent[r.Component]
+		}
+		delete(recent, r.Component)
+	}
+	for _, name := range slices.Sorted(maps.Keys(recent)) {
+		state.Results = append(state.Results, UpdateResult{Component: name, Status: "never", LastApplied: recent[name]})
+	}
+	return nil
+}
+
+func historyVersion(c Config, root, name string) string {
+	if name == "subscription" {
+		return ""
+	}
+	v, _ := installedUpdate(c, root, name)
+	return v
+}
+
 func BeginUpdateHistory(c Config, root, component string) (string, error) {
-	if component != "envpilot" && !containsComponent(Names, component) {
+	if component != "subscription" && component != "envpilot" && !containsComponent(Names, component) {
 		return "", fmt.Errorf("E_HISTORY_COMPONENT")
 	}
 	dir := filepath.Join(Dir(), "updates", "history")
@@ -40,12 +97,12 @@ func BeginUpdateHistory(c Config, root, component string) (string, error) {
 		return "", err
 	}
 	id := filepath.Base(f.Name())
-	before, _ := installedUpdate(c, root, component)
+	before := historyVersion(c, root, component)
 	origin := "manual"
 	if os.Getenv("ENVPILOT_UPDATE_ORIGIN") == "automatic" {
 		origin = "automatic"
 	}
-	entry := UpdateHistoryEntry{ID: id, Started: time.Now().UTC(), Component: component, Origin: origin, Before: before, Status: "in_progress"}
+	entry := UpdateHistoryEntry{Scope: historyScope(c), ID: id, Started: time.Now().UTC(), Component: component, Origin: origin, Before: before, Status: "in_progress"}
 	err = json.NewEncoder(f).Encode(entry)
 	return id, err
 }
@@ -70,11 +127,15 @@ func FinishUpdateHistory(c Config, root, id, exitCode string) error {
 			root = strings.TrimSpace(string(b))
 		}
 	}
-	entry.After, _ = installedUpdate(c, root, entry.Component)
+	entry.After = historyVersion(c, root, entry.Component)
 	entry.Finished = time.Now().UTC()
 	switch {
+	case exitCode == "75" && entry.Component == "codex":
+		entry.Status = "deferred"
 	case exitCode != "0":
 		entry.Status = "failed"
+	case entry.Component == "subscription":
+		entry.Status = "refreshed"
 	case entry.Before == "" && entry.After != "":
 		entry.Status = "installed"
 	case entry.After == "":
@@ -94,7 +155,7 @@ func UpdateHistory(c Config, days int, component, format string) error {
 	if days < 1 || days > 36500 {
 		return fmt.Errorf("history days must be between 1 and 36500")
 	}
-	if component != "" && component != "envpilot" && !containsComponent(Names, component) {
+	if component != "" && component != "subscription" && component != "envpilot" && !containsComponent(Names, component) {
 		return fmt.Errorf("E_HISTORY_COMPONENT")
 	}
 	entries := []UpdateHistoryEntry{}
@@ -127,7 +188,7 @@ func UpdateHistory(c Config, days int, component, format string) error {
 	for _, entry := range entries {
 		status, origin := entry.Status, entry.Origin
 		if IsChinese(c.Language) {
-			status = map[string]string{"updated": "已更新", "installed": "已安装", "unchanged": "版本未变", "failed": "失败", "in_progress": "进行中/未完成", "completed_version_unknown": "完成，版本未知"}[status]
+			status = map[string]string{"updated": "已更新", "installed": "已安装", "refreshed": "已刷新", "unchanged": "版本未变", "failed": "失败", "deferred": "切换延后", "in_progress": "进行中/未完成", "completed_version_unknown": "完成，版本未知"}[status]
 			origin = map[string]string{"manual": "手动", "automatic": "自动"}[origin]
 		}
 		before, after := entry.Before, entry.After

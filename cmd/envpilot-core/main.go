@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -14,10 +15,18 @@ import (
 	"github.com/zhangyehao/envpilot/internal/config"
 )
 
-var version = "0.4.7"
+var version = "0.5.0"
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
+		// Refresh already reports source-specific changes. Preserve failure for the scheduler
+		// without repeatedly printing the same catalog error on an unchanged observation.
+		if errors.Is(err, config.ErrModelRefresh) {
+			os.Exit(4)
+		}
+		if err == config.ErrModelRefresh {
+			os.Exit(1)
+		}
 		fmt.Fprintln(os.Stderr, "E_ENVPILOT:", config.Translate(os.Getenv("ENVPILOT_LANG"), err.Error()))
 		os.Exit(1)
 	}
@@ -28,6 +37,15 @@ func run(args []string) error {
 	}
 	cmd := args[0]
 	args = args[1:]
+	if cmd == "complete" || cmd == "suggest" {
+		if len(args) == 0 || !strings.HasPrefix(args[0], "word=") {
+			return nil
+		}
+		for _, candidate := range config.CommandCandidates(args[1:], strings.TrimPrefix(args[0], "word="), cmd == "suggest") {
+			fmt.Println(candidate)
+		}
+		return nil
+	}
 	path, lang, format, root, kind, target := "", "", "json", "", "bash", ""
 	envFile, keyEnv, keyFile := "", "", ""
 	expectedHome := ""
@@ -102,7 +120,11 @@ func run(args []string) error {
 		return nil
 	}
 	if cmd == "update-lock" {
-		return config.LockedCommand(rest)
+		err := config.LockedCommand(rest)
+		if child, ok := err.(*exec.ExitError); ok && child.ExitCode() > 0 {
+			os.Exit(child.ExitCode())
+		}
+		return err
 	}
 	if cmd == "message" {
 		if lang == "" {
@@ -192,11 +214,30 @@ func run(args []string) error {
 		return config.VerifyRuntime(runtimeSource, target)
 	}
 
+	if cmd == "codex-activity" {
+		return config.PrintCodexActivity(target, expectedHome)
+	}
+	if cmd == "runtime-activate" {
+		return config.ActivateRuntime(target, runtimeSource)
+	}
+	if cmd == "python-activate" {
+		if len(rest) != 3 {
+			return fmt.Errorf("python-activate BASE STAGING VERSION")
+		}
+		return config.ActivatePython(rest[0], rest[1], rest[2])
+	}
 	if cmd == "init" {
-		if err := config.Init(path, lang); err != nil {
+		policy := "check"
+		if len(rest) != 0 {
+			if len(rest) != 2 || rest[0] != "--policy" {
+				return fmt.Errorf("init --policy check|nightly")
+			}
+			policy = rest[1]
+		}
+		if err := config.InitWithPolicy(path, lang, policy); err != nil {
 			return err
 		}
-		fmt.Println(config.Text(lang, "Configuration created. Run envpilot config edit, then envpilot plan.", "配置已创建。请执行 envpilot config edit，然后执行 envpilot plan。"))
+		fmt.Println(config.Text(lang, "Configuration created. Edit it with envpilot config edit, then run envpilot plan. Register maintenance with envpilot updates enable.", "配置已创建。请执行 envpilot config edit 和 envpilot plan；要让维护策略定时运行，请执行 envpilot updates enable。"))
 		return nil
 	}
 	r, err := config.Load(path, overrides)
@@ -205,6 +246,47 @@ func run(args []string) error {
 	}
 	c := r.Config
 	switch cmd {
+	case "config-migrate":
+		if len(rest) != 1 || (rest[0] != "--preview" && rest[0] != "--apply") {
+			return fmt.Errorf("choose --preview or --apply")
+		}
+		return config.MigrateConfig(r, rest[0] == "--apply", os.Stdout)
+	case "host-preflight":
+		return config.PrintPreflight(os.Stdout, r.Config, format == "json")
+	case "config-codex-preferences":
+		b, err := config.PortableCodexPreferences(r.Config)
+		if err == nil {
+			_, err = os.Stdout.Write(b)
+		}
+		return err
+	case "config-portable":
+		b, err := config.PortableConfig(r.Path)
+		if err == nil {
+			_, err = os.Stdout.Write(b)
+		}
+		return err
+	case "completion":
+		if len(rest) != 1 {
+			return fmt.Errorf("choose bash, zsh or powershell")
+		}
+		s, err := config.CompletionScript(rest[0])
+		if err == nil {
+			fmt.Print(s)
+		}
+		return err
+	case "codex-upstream":
+		return config.PrintLastCodexStable(r.Path)
+	case "conda-preview":
+		if len(rest) == 0 || len(rest) > 2 {
+			return fmt.Errorf("conda-preview packages|condarc [PATH]")
+		}
+		file := ""
+		if len(rest) == 2 {
+			file = rest[1]
+		}
+		return config.CondaPreview(rest[0], file, os.Stdin, os.Stdout, c.Language)
+	case "codex-models":
+		return config.CodexModelsCommand(c, runtimeSource, rest, format)
 	case "protected-download":
 		data, err := io.ReadAll(io.LimitReader(os.Stdin, 64*1024))
 		if err != nil {
