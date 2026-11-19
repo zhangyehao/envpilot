@@ -8,7 +8,9 @@
 - `envpilot self-update`：立即更新 envpilot、配置工具、入口和已复制的管理器，不自动更新所有组件。
 - `envpilot updates run`：执行到期的统一策略；默认每 3 天检查，只有开启 `auto_apply` 且处于安装窗口内才安装。`updates check` 强制检查，但永不安装。
 
-Codex 原本运行时，组件更新负责重建完整 runtime、重启与协议验证；原本停止则保持停止。无需手动拼接 stop/restart。`codex remote status` 和 `updates status` 不联网检查新版本、不安装、不重启。
+首次执行 `envpilot init` 可选择仅检查或夜间安装。无人值守初始化用 `envpilot init --policy check` 或 `envpilot init --policy nightly`。保存主配置并执行 `envpilot setup-command`、`envpilot updates enable` 后，系统调度器开始唤醒 envpilot。
+
+Codex 有活跃任务时延后切换，返回 `deferred`。下一次允许安装时重试切换，核验正在监听的 app-server。`envpilot codex remote status` 显示最近检查到的上游版本和本节点运行情况。
 
 ## 配置与夜间窗口
 
@@ -22,9 +24,20 @@ updates:
   window_start: "03:00"
   window_end: "05:00"
   timezone: Asia/Shanghai
+  maintenance_host: "login02"
+  policies:
+    codex: {interval_days: 1, auto_apply: true, window_start: "03:00", window_end: "05:00"}
+    conda: {auto_apply: false}
+    mamba: {auto_apply: false}
+  subscription: {enabled: true, interval_days: 3}
+  models: {enabled: true, interval_days: 1}
 ```
 
 配置默认 `auto_apply: false`、`timezone: Local`；北京时间需要明确写 `Asia/Shanghai`，避免服务器 UTC 时区造成偏移。时间包含开始、不包含结束，支持跨午夜窗口。每个组件开始安装前再次判断窗口；已经开始的安装允许完成，不在 05:00 强制杀进程。手动更新不受窗口限制。
+
+`policies` 的四个字段均可独立覆盖；省略或填 `null` 继承全局，显式 `false` 仅检查。所有受支持组件及 envpilot 都可配置。上例让 Codex 每天检查并在窗口内安装，让 Conda、Mamba 只检查。共享 home 可将 `maintenance_host` 设为实际维护节点的短主机名或完整域名；其他节点仍可检查并核验自己的 Codex 实例。空字符串允许当前节点执行维护。
+
+`subscription.enabled` 默认关闭。开启后，仅在维护节点的 Mihomo 窗口内调用 `envpilot mihomo update-subscription`，沿用现有下载、校验和已保存的节点选择。订阅引用写在 `mihomo.subscription.file` 或 `mihomo.subscription.env`，不要把 URL 写入策略。此开关可独立于软件自动安装启用。手动 `updates check` 只检查软件和模型，不替换订阅。`models.enabled` 默认开启，每三天对已安装的 Codex 刷新目录。用 `envpilot codex models status` 查看各来源。
 
 `interval_days` 为 1–365 天，按经过的小时计算，不使用每月日号取模。网络或安装失败后 1 小时重试；等待安装的版本在下一个允许窗口处理。机器离线/关机期间不会安装，恢复运行后继续检查窗口，不在白天补做夜间安装。时区数据随工具打包。
 
@@ -38,7 +51,7 @@ envpilot updates status
 envpilot updates disable
 ```
 
-调度器每小时唤醒一次轻量命令，是否到期由 YAML 和检查状态决定：
+新版调度每分钟检查是否到期，只有到期组件才执行探测、下载或安装，以支持短于一小时的维护窗口。已有小时任务可执行 `envpilot updates enable` 刷新登记。平台使用以下调度器。
 
 | 平台 | 调度器 |
 | --- | --- |
@@ -46,7 +59,9 @@ envpilot updates disable
 | macOS | 当前登录用户的 launchd agent |
 | Windows | 当前用户的任务计划程序，不保存密码，需要用户处于登录状态 |
 
-Linux 的 cron 服务必须在运行；systemd 用户实例是否在退出登录后继续，取决于系统的 linger 设置。envpilot 不修改管理员级设置。无可用调度器时会明确失败；也可以在集群调度器中每小时运行 `envpilot updates run`。不需要保持终端打开。
+Linux 的 cron 服务必须在运行；systemd 用户实例是否在退出登录后继续，取决于系统的 linger 设置。使用自己的集群调度器时，定时调用 `envpilot updates tick`，可记录实际触发时间。普通手动检查或 `updates run` 不计为系统触发。
+
+`envpilot doctor` 将默认策略、各组件覆盖、实际调度登记、上次触发与结果、最近成功检查、安装时间和下个窗口放在同一份报告。出现“未登记”时运行 `updates enable`。“已登记”但从未触发或超过两小时未触发时，检查系统定时服务和登录节点。单个组件失败可见稳定错误码；其他组件的成功状态独立保存。机器可读结果见 `envpilot doctor --json`。
 
 同一用户使用一个 envpilot 更新任务；再次 `enable --config PATH` 切换到指定配置。修改配置内容后无需重建定时任务。`updates.enabled: false` 暂停执行，`updates disable` 注销任务；历史保留。迁移主目录或命令入口后重新登记。
 
@@ -65,6 +80,7 @@ envpilot updates history
 envpilot updates history --days 90
 envpilot updates history --days 30 --component git
 envpilot updates history --component codex --json
+envpilot updates history --component subscription
 envpilot updates status --json
 ```
 

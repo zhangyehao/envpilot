@@ -51,11 +51,17 @@ func LockedCommand(args []string) error {
 }
 
 type UpdateResult struct {
-	Component string `json:"component"`
-	Installed string `json:"installed,omitempty"`
-	Latest    string `json:"latest,omitempty"`
-	Status    string `json:"status"`
-	ErrorCode string `json:"error_code,omitempty"`
+	LastUpstreamSuccess time.Time `json:"last_upstream_success"`
+	PendingSwitch       bool      `json:"pending_switch,omitempty"`
+	LastAttempt         time.Time `json:"last_attempt"`
+	LastSuccess         time.Time `json:"last_success"`
+	LastApplied         time.Time `json:"last_applied"`
+	NextCheck           time.Time `json:"next_check"`
+	Component           string    `json:"component"`
+	Installed           string    `json:"installed,omitempty"`
+	Latest              string    `json:"latest,omitempty"`
+	Status              string    `json:"status"`
+	ErrorCode           string    `json:"error_code,omitempty"`
 }
 type UpdateState struct {
 	LastAttempt time.Time      `json:"last_attempt"`
@@ -241,15 +247,26 @@ type updateRunner struct {
 	latest    func(Config, string) (string, error)
 	installed func(Config, string, string) (string, error)
 	apply     func(Config, string, string, string) error
+	task      func(Config, string, string, string) error
 }
 
 func defaultUpdateRunner() updateRunner {
-	return updateRunner{time.Now, latestUpdate, installedUpdate, applyUpdate}
+	return updateRunner{time.Now, latestUpdate, installedUpdate, applyUpdate, applyUpdate}
 }
 func applyUpdate(c Config, root, path, component string) error {
 	command := []string{"update", component}
 	if component == "envpilot" {
 		command = []string{"self-update"}
+	}
+	switch component {
+	case "subscription":
+		command = []string{"mihomo", "update-subscription"}
+	case "models":
+		command = []string{"codex", "models", "refresh"}
+	case "codex-reconcile":
+		command = []string{"codex", "remote", "reconcile"}
+	case "codex-verify":
+		command = []string{"codex", "remote", "verify-if-running"}
 	}
 	var cmd *exec.Cmd
 	if runtime.GOOS == "windows" {
@@ -281,156 +298,10 @@ func applyUpdate(c Config, root, path, component string) error {
 	}
 	defer log.Close()
 	_, _ = fmt.Fprintf(log, "\n%s %s\n", time.Now().UTC().Format(time.RFC3339), component)
-	cmd.Stdout, cmd.Stderr = io.MultiWriter(os.Stdout, log), io.MultiWriter(os.Stderr, log)
+	// stdout is reserved for the structured updates report.
+	cmd.Stdout, cmd.Stderr = io.MultiWriter(os.Stderr, log), io.MultiWriter(os.Stderr, log)
 	// No stdin: unattended updates cannot prompt for input.
 	return cmd.Run()
-}
-func (u updateRunner) run(c Config, root, path string, force bool) (UpdateState, error) {
-	state, err := readUpdateState(path)
-	if err != nil {
-		return state, fmt.Errorf("E_UPDATE_STATE: %w", err)
-	}
-	now := u.now().UTC()
-	// Shortening the configured interval takes effect without deleting state.
-	configuredNext := state.LastAttempt.Add(time.Duration(c.Updates.IntervalDays) * 24 * time.Hour)
-	if !state.LastAttempt.IsZero() && configuredNext.Before(state.NextCheck) {
-		state.NextCheck = configuredNext
-	}
-	if c.Updates.AutoApply {
-		for _, result := range state.Results {
-			if result.Status == "available" {
-				state.NextCheck = nextUpdateWindow(c.Updates, now)
-			}
-		}
-	}
-	if !force && (!c.Updates.Enabled || now.Before(state.NextCheck)) {
-		return state, nil
-	}
-	if c.Install.Mode == "offline" {
-		return state, fmt.Errorf("E_UPDATE_OFFLINE")
-	}
-	state.LastAttempt, state.Results = now, nil
-	failed := false
-	// Codex first: self-update can switch the registered installation directory.
-	components := append([]string{}, c.Updates.Components...)
-	if c.Updates.Envpilot {
-		components = append(components, "envpilot")
-	}
-	for _, component := range components {
-		result := UpdateResult{Component: component, Status: "current"}
-		result.Installed, err = u.installed(c, root, component)
-		switch {
-		case err != nil:
-			result.Status, result.ErrorCode = "failed", "E_UPDATE_PROBE"
-		case result.Installed == "":
-			result.Status = "not_installed"
-		case !knownComponentVersion(component, result.Installed):
-			result.Status = "unmanaged_version"
-		case component != "codex" && component != "envpilot" && !managedUpdateComponent(c, component):
-			result.Status = "external"
-		default:
-			result.Latest, err = u.latest(c, component)
-			if err != nil {
-				result.Status, result.ErrorCode = "failed", "E_UPDATE_CHECK"
-			} else if newerComponentVersion(component, result.Latest, result.Installed) {
-				result.Status = "available"
-				if !force && c.Updates.AutoApply && inUpdateWindow(c.Updates, u.now()) {
-					if err = u.apply(c, root, path, component); err != nil {
-						result.Status, result.ErrorCode = "failed", "E_UPDATE_APPLY"
-					} else {
-						checkRoot := root
-						if component == "envpilot" {
-							if b, e := os.ReadFile(filepath.Join(Dir(), "command-root")); e == nil {
-								checkRoot = strings.TrimSpace(string(b))
-							}
-						}
-						actual, e := u.installed(c, checkRoot, component)
-						if e != nil || !knownComponentVersion(component, actual) || ((component == "codex" || component == "envpilot") && newerVersion(result.Latest, actual)) {
-							result.Status, result.ErrorCode = "failed", "E_UPDATE_VERIFY"
-						} else {
-							result.Status = "updated"
-							if actual == result.Installed {
-								result.Status = "compatible"
-							}
-							result.Installed = actual
-						}
-					}
-				}
-			}
-		}
-		failed = failed || result.Status == "failed"
-		state.Results = append(state.Results, result)
-	}
-	state.NextCheck = now.Add(time.Duration(c.Updates.IntervalDays) * 24 * time.Hour)
-	if failed {
-		state.NextCheck = now.Add(time.Hour)
-	} else {
-		state.LastSuccess = now
-	}
-	// A manual check must not postpone an already-due unattended installation.
-	if c.Updates.AutoApply {
-		for _, result := range state.Results {
-			if result.Status == "available" {
-				state.NextCheck = nextUpdateWindow(c.Updates, u.now())
-			}
-		}
-	}
-	b, err := SafeJSON(state)
-	if err == nil {
-		err = WriteAtomic(updateStatePath(path), b, 0600)
-	}
-	if err == nil && failed {
-		err = fmt.Errorf("E_UPDATE_FAILED")
-	}
-	return state, err
-}
-
-func UpdatesCommand(c Config, root, path, action, format string) error {
-	if action == "enable" || action == "disable" {
-		return ConfigureUpdateSchedule(c, path, action == "enable")
-	}
-	var state UpdateState
-	var err error
-	switch action {
-	case "status":
-		state, err = readUpdateState(path)
-	case "check", "run":
-		err = WithUpdateLock(func() error {
-			var e error
-			state, e = defaultUpdateRunner().run(c, root, path, action == "check")
-			return e
-		})
-	default:
-		return fmt.Errorf("use envpilot updates check|run|status|history|enable|disable")
-	}
-	if format == "json" {
-		b, _ := SafeJSON(state)
-		fmt.Println(string(b))
-	} else {
-		fmt.Println(Text(c.Language, "Update policy", "更新策略") + fmt.Sprintf(": enabled=%t, interval_days=%d, auto_apply=%t", c.Updates.Enabled, c.Updates.IntervalDays, c.Updates.AutoApply))
-		fmt.Println(Text(c.Language, "Automatic installation window: ", "自动安装窗口：") + c.Updates.WindowStart + "–" + c.Updates.WindowEnd + " (" + c.Updates.Timezone + ")")
-		scheduler, _ := os.ReadFile(filepath.Join(Dir(), "updates", "scheduler"))
-		if len(scheduler) == 0 {
-			scheduler = []byte(Text(c.Language, "not registered (envpilot updates enable)", "未登记（envpilot updates enable）"))
-		}
-		fmt.Println(Text(c.Language, "Scheduler: ", "定时任务：") + strings.TrimSpace(string(scheduler)))
-		fmt.Println(Text(c.Language, "Last check / next check: ", "上次检查 / 下次检查：") + updateTime(state.LastAttempt) + " / " + updateTime(state.NextCheck))
-		for _, result := range state.Results {
-			label := result.Status
-			if IsChinese(c.Language) {
-				label = map[string]string{"current": "已是当前稳定版或更高版本", "available": "有新版本", "updated": "已更新", "failed": "失败", "not_installed": "未安装，跳过", "unmanaged_version": "非稳定版，不自动替换", "compatible": "保留当前兼容版本", "external": "外部/系统安装，由原包管理器维护"}[result.Status]
-			}
-			fmt.Printf("%s: %s → %s [%s] %s\n", result.Component, result.Installed, result.Latest, label, result.ErrorCode)
-			if result.Status == "available" {
-				if result.Component != "envpilot" {
-					fmt.Println("  envpilot update " + result.Component)
-				} else {
-					fmt.Println("  envpilot self-update")
-				}
-			}
-		}
-	}
-	return err
 }
 func updateTime(t time.Time) string {
 	if t.IsZero() {

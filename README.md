@@ -40,7 +40,7 @@ envpilot apply
 
 ### 更新已有安装
 
-当前版本 **0.4.7** 支持用 `mihomo.group_order` 将常用策略组排在菜单前面。它同时包含 0.4.6 的旧 Bash 修复：在 Bash 4.2 下，不带组名运行 `mihomo nodes/select/test` 不再因 `args[@]: unbound variable` 退出。已有 0.4.x 用户可按下方步骤更新，保留订阅、配置和端口。
+**0.5.0** 将自动维护放进 `envpilot doctor`。升级时会为已有主配置补上新增字段、默认值和说明，保留已有值和注释。升级后打开新终端，可用 Tab 补全命令，例如输入 `envpilot codex mo` 后按 Tab 得到 `models`。
 
 **0.4.0 及以上：**
 
@@ -51,7 +51,7 @@ envpilot update codex                # 更新组件，也可换成 git、mihomo 
 envpilot codex remote status
 ```
 
-Codex 原来在运行时，`update codex` 会刷新完整运行目录并重启、验证；原来已停止则保持停止。通常不用先 `stop`。明确需要先停再更新时使用 `stop → update codex → restart → status`。
+`envpilot codex remote status` 可对照上次检查到的上游稳定版、持久安装、节点运行副本以及控制 socket 握手返回的版本。更新遇到正在执行的任务或无法确认空闲时，会把切换延后。用 `envpilot codex models refresh` 获取当前供应商、CLI 内置及运行服务的目录，再用 `envpilot codex models status` 查看各自的结果和最近成功时间。
 
 **0.3.0** 没有 `self-update`，先运行一次升级桥接脚本。它检查源码修改/分叉、备份旧文件、拉取稳定标签并迁移配置，不强制重置仓库：
 
@@ -97,32 +97,40 @@ mihomo:
 
 ### 定时检查与夜间自动安装
 
-从 0.4.4 起，默认每 **3 天**检查一次，自动安装窗口默认 **03:00–05:00**。默认仅检查；需要无人值守安装时，在主配置中设置：
+首次运行 `envpilot init` 时选择「仅检查」或「夜间安装」。脚本中可显式运行 `envpilot init --policy check --non-interactive` 或将 `check` 换为 `nightly`。默认每 3 天检查，安装窗口为本机时间 03:00–05:00。**选择策略后，还要在负责维护的服务器上执行一次 `envpilot updates enable` 登记定时任务。**
+
+例如，要在共享 home 的 `login02` 上每天检查并更新 Codex、每 3 天夜间刷新订阅，而 Conda 和 Mamba 只提示，编辑主配置里已有的对应字段：
 
 ```yaml
 updates:
-  enabled: true
+  maintenance_host: login02  # 替换为自己的维护节点；单机可以留空
   interval_days: 3
-  auto_apply: true
-  components: [mihomo, git, python, conda, mamba, codex, github, tmux]
-  envpilot: true
+  auto_apply: false
   window_start: "03:00"
   window_end: "05:00"
   timezone: Asia/Shanghai
+  policies:
+    codex: {interval_days: 1, auto_apply: true}
+  subscription: {enabled: true, interval_days: 3}
+  models: {enabled: true, interval_days: 3}
 ```
+
+`updates.subscription.enabled` 默认关闭。开启后，envpilot 在 Mihomo 的维护窗口内使用已保存的订阅引用刷新。替换成功可能重启代理，下载或校验失败时保留原订阅。组件策略中填 `null` 表示继承全局设置。
 
 ```bash
 envpilot config validate
-envpilot updates check               # 立即检查，不安装
-envpilot updates enable              # 登记定时任务，无需保持终端打开
-envpilot updates status              # 策略、下次时间与上次结果
-envpilot updates history             # 最近 30 天的手动/自动更新
+envpilot updates enable
+envpilot doctor                      # 策略、真实登记、上次触发、各组件成功时间和窗口
+envpilot updates check               # 立即检查
+envpilot updates history             # 最近 30 天的更新
 envpilot updates history --days 90 --component codex
 ```
 
-未安装的组件跳过；外部/系统安装由原包管理器维护，受管工具使用各自的兼容性规则。窗口限制自动安装的**开始时间**，已开始的安装允许完成；Codex 重启可能中断任务。手动 `update COMPONENT` / `self-update` 不受窗口限制。修改间隔无需重新登记；禁用任务用 `envpilot updates disable`。详见 [更新机制与历史](docs/UPDATES.zh-CN.md)。
+手动更新可执行 `envpilot update COMPONENT`。禁用已登记的定时任务用 `envpilot updates disable`。[更新机制与历史](docs/UPDATES.zh-CN.md)
 
 ## 配置文件说明
+
+查看旧配置缺什么可执行 `envpilot config migrate --preview`。输出同时列出默认值、当前生效值及来源；`envpilot config migrate --yes` 会先建快照，再补缺项。正常的 `self-update` 自动执行这一步。换服务器时，`envpilot preflight` 检查新机，`envpilot config export --portable` 导出可迁移 YAML；模型偏好可单独导出。[换服务器](docs/HOSTS.zh-CN.md)
 
 主配置：`~/.config/envpilot/config.yaml`。优先级：命令参数 → 已声明的环境变量覆盖 → YAML → 默认值。
 
@@ -165,6 +173,10 @@ command -v python3
 | 更新 envpilot 自身 | `envpilot self-update` |
 | 检查 / 运行到期策略 | `envpilot updates check`；`envpilot updates run` |
 | 定时任务 / 状态 / 历史 | `envpilot updates enable/disable/status/history` |
+| 查看 / 补齐新增配置 | `envpilot config migrate --preview`、`envpilot config migrate --yes` |
+| 检查主机 / 搬迁偏好 | `envpilot preflight`、`envpilot config export --portable` |
+| 模型目录 | `envpilot codex models status`、`envpilot codex models refresh` |
+| Tab 补全脚本 | `envpilot completion bash`（也支持 zsh、powershell） |
 | Shell 接入 / 移除 | `envpilot apply-shell`；`envpilot shell remove` |
 | 独立子进程环境 | `envpilot run -- COMMAND ...` |
 | 诊断 / 快照 / 恢复 | `envpilot doctor`；`envpilot snapshot`；`envpilot restore` |

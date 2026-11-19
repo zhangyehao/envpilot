@@ -1,4 +1,4 @@
-# envpilot 0.4.7 — complete configuration example / 完整配置样例
+# envpilot 0.5.0 — complete configuration example / 完整配置样例
 # Copy selected settings into ~/.config/envpilot/config.yaml; keep existing user settings.
 # See docs/CONFIG.md or docs/CONFIG.zh-CN.md for protected-file setup.
 
@@ -74,6 +74,8 @@ mihomo:
 conda:
   # miniconda or anaconda.
   distribution: miniconda
+  # preserve keeps an existing .condarc; template applies the envpilot template after reporting differences.
+  condarc_policy: preserve
   # Existing Conda installation path; empty means automatic discovery.
   prefix: ""
 
@@ -114,6 +116,25 @@ updates:
   window_end: "05:00"
   # Local = machine timezone. For Beijing time use Asia/Shanghai, especially on UTC servers.
   timezone: Local
+  # On a shared installation, restrict automatic writes to this node (short name or FQDN).
+  # An empty name allows the current host.
+  maintenance_host: ""
+  # Each null inherits the corresponding global setting. Every supported component is listed.
+  # For daily Codex updates, set its interval_days to 1 and auto_apply to true.
+  policies:
+    codex: {interval_days: null, auto_apply: null, window_start: null, window_end: null}
+    envpilot: {interval_days: null, auto_apply: null, window_start: null, window_end: null}
+    mihomo: {interval_days: null, auto_apply: null, window_start: null, window_end: null}
+    python: {interval_days: null, auto_apply: null, window_start: null, window_end: null}
+    git: {interval_days: null, auto_apply: null, window_start: null, window_end: null}
+    conda: {interval_days: null, auto_apply: null, window_start: null, window_end: null}
+    mamba: {interval_days: null, auto_apply: null, window_start: null, window_end: null}
+    github: {interval_days: null, auto_apply: null, window_start: null, window_end: null}
+    tmux: {interval_days: null, auto_apply: null, window_start: null, window_end: null}
+  # Opt in to refresh the protected subscription in Mihomo's window. Applying a new subscription can restart the proxy.
+  subscription: {enabled: false, interval_days: 3}
+  # Check catalogs when Codex is installed. Report changes in model IDs, visibility or status.
+  models: {enabled: true, interval_days: 3}
 
 # Protected assignment-only environment file; never shell scripts. Unix mode 600/400, owned by you.
 secrets:

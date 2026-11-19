@@ -8,6 +8,16 @@ import (
 // Installer adapters and copied service managers share this catalog. Arguments
 // stay data; translations never become shell code or machine-readable fields.
 var messages = [][2]string{
+	{`^Last checked upstream stable: (.*)$`, `上次查到的上游稳定版：${1}`},
+	{`^Persistent CLI version: (.*)$`, `持久安装 CLI 版本：${1}`},
+	{`^Control socket handshake version: (.*)$`, `控制 socket 握手版本：${1}`},
+	{`^  Runtime switch pending: envpilot codex remote reconcile$`, `  运行包已准备，等待切换：envpilot codex remote reconcile`},
+	{`^Codex runtime prepared. Active or unknown task state; switch deferred.$`, `新版运行包已准备。任务活跃或无法确认空闲，已延后切换。`},
+	{`^Codex runtime switch failed. Previous app-server restored and verified.$`, `运行包切换失败，已恢复上一版 app-server 并验证握手。`},
+	{`^Codex runtime rollback did not verify. Inspect the app-server log.$`, `上一版运行包未通过恢复验证，请查看 app-server 日志。`},
+	{`^Verified the serving app-server PID and handshake version.$`, `已验证当前 app-server 的 PID、运行文件和握手版本。`},
+	{`^Control socket process or version differs from the staged runtime.$`, `控制 socket 进程的运行文件或版本与节点副本不符。`},
+	{`^No serving app-server to verify.$`, `当前没有运行中的 app-server 可供验证。`},
 	{`^updates.interval_days must be between 1 and 365$`, `updates.interval_days 必须为 1–365 之间的整数。`},
 	{`^updates.window_start/window_end must be distinct HH:MM values$`, `updates.window_start 和 updates.window_end 必须是不同的 HH:MM 时间。`},
 	{`^updates.timezone.*$`, `updates.timezone 必须为 Local 或有效 IANA 时区，例如 Asia/Shanghai。`},

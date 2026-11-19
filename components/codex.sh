@@ -870,13 +870,8 @@ ep_codex_remote_install_manager()
     cp "$template" "$tmp"
     chmod 700 "$tmp"
     mv "$tmp" "$manager"
-    if declare -F ep_core_path >/dev/null 2>&1; then
-        local core_target core_source
-        core_target="$HOME/.local/lib/envpilot/$(tr -d '\r\n' < "$ENVPILOT_ROOT/VERSION")/envpilot-core"
-        core_source="$(ep_core_path)"
-        mkdir -p "$(dirname "$core_target")"
-        if [ "$core_source" != "$core_target" ]; then cp "$core_source" "$core_target.tmp"; chmod 700 "$core_target.tmp"; mv "$core_target.tmp" "$core_target"; fi
-    fi
+    # InstallCore also records the selected version for Desktop-started wrappers.
+    if declare -F ep_core >/dev/null 2>&1; then ep_core install-core; fi
     ep_log "Installed Codex remote manager: $manager"
 }
 
@@ -896,10 +891,11 @@ ep_codex_remote_invoke()
 {
     local action="${1:-status}"
     shift || true
-    local template
+    local template selected_core="${ENVPILOT_CORE:-}"
+    if declare -F ep_core_path >/dev/null 2>&1; then selected_core="$(ep_core_path)" || return 1; fi
     template="$(ep_codex_remote_template)"
     [ -f "$template" ] || ep_die "Codex remote template is missing: $template"
-    ENVPILOT_CODEX_REMOTE_READY_TIMEOUT="$EP_CODEX_REMOTE_READY_TIMEOUT" \
+    ENVPILOT_CORE="$selected_core" ENVPILOT_CODEX_REMOTE_READY_TIMEOUT="$EP_CODEX_REMOTE_READY_TIMEOUT" \
         bash "$template" "$action" "$@"
 }
 
@@ -982,12 +978,18 @@ ep_codex_remote_disable()
 ep_codex_remote_cli()
 {
     ep_require_unix_runtime
-    local action="${1:-status}" value="${2:-}"
+    local action="${1:-status}" value="${2:-}" binary=""
     case "$action:$value" in
+        models:status|models:refresh|models:)
+            binary="$(ep_codex_remote_invoke source 2>/dev/null || true)"
+            if [ -n "$binary" ]; then binary="$binary/codex"; fi
+            ep_core codex-models "${value:-status}" --source "$binary" --format "${3:-text}"
+            ;;
+        remote:reconcile) ep_codex_remote_invoke reconcile ;;
         remote:enable) ep_codex_remote_enable ;;
         remote:status|remote:) ep_codex_remote_invoke status ;;
         remote:stage|remote:prepare) ep_codex_remote_invoke stage ;;
-        remote:verify) ep_codex_remote_invoke verify ;;
+        remote:verify|remote:verify-if-running) ep_codex_remote_invoke "$value" ;;
         remote:ready|remote:warm) ep_codex_remote_invoke ready ;;
         remote:stop) ep_codex_remote_invoke stop ;;
         remote:restart) ep_codex_remote_invoke restart ;;
@@ -1021,7 +1023,7 @@ ep_install_codex()
     ep_require_unix_runtime
     local action existing probe_ready install_source remote_wrapper_enabled remote_was_running
     remote_was_running=0
-    if bash "$(ep_codex_remote_template)" running >/dev/null 2>&1; then remote_was_running=1; fi
+    if ep_codex_remote_invoke running >/dev/null 2>&1; then remote_was_running=1; fi
     action=configured
     install_source=existing
     remote_wrapper_enabled=0
@@ -1103,7 +1105,13 @@ ep_install_codex()
         ep_codex_remote_install_manager
     fi
     if [ "$action" = updated ] && [ "$remote_was_running" = 1 ]; then
-        ep_codex_remote_invoke restart || ep_die 'Codex was updated, but the app-server restart failed. See envpilot codex remote status.'
+        local switch_status=0
+        ep_codex_remote_invoke update || switch_status=$?
+        if [ "$switch_status" != 0 ]; then
+            ep_codex_remote_cli models refresh text || true
+            return "$switch_status"
+        fi
     fi
+    if [ "$action" = updated ]; then ep_codex_remote_cli models refresh text || true; fi
     ep_report_event codex "$action" "preserved the Codex install method and configured env_key" "$EP_CODEX_VERSION" "$install_source" "${EP_CODEX_INSTALLED_BIN:-$EP_CODEX_BIN}"
 }

@@ -15,4 +15,6 @@ Git requires version 2.30 or newer. A compatible system/module installation is r
 
 Python requires version 3.9 or newer. Existing system or Conda interpreters are preferred. Standalone assets are selected for OS, architecture and libc; incompatible latest releases are not installed on older glibc hosts.
 
+On Linux/macOS each new standalone archive is extracted into a fresh version directory. A package's `bin/python3` may be a relative link to its versioned interpreter. EnvPilot verifies that both paths resolve inside the archive, runs the interpreter in isolated mode to check the exact version and import its standard library, then switches `python/current`. A failed validation leaves the previously active interpreter usable.
+
 New shell integration preserves existing command priority. Use `envpilot run` to select managed tools for a child, or configure additional paths deliberately. Configuration parsing itself uses the bundled `envpilot-core`, so installing Python is not a prerequisite for editing or applying YAML.

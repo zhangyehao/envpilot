@@ -8,7 +8,9 @@
 - `envpilot self-update` updates envpilot, its helper, entrypoint and copied managers immediately.
 - `envpilot updates run` executes the due policy. The default check interval is 3 days. Installation requires `auto_apply: true` and an open maintenance window. `updates check` forces a check without installing.
 
-Codex updates refresh the entire runtime and restart/verify a previously running server; stopped servers stay stopped. No manual stop/restart sequence is required. `codex remote status` and `updates status` do not check online releases or change services.
+Choose checks or nightly installations at first `envpilot init`. Unattended setup accepts `envpilot init --policy check` or `envpilot init --policy nightly`. Save the configuration, then use `envpilot setup-command` and `envpilot updates enable` to register the system timer.
+
+Active Codex work defers the switch. The scheduler retries in the installation window and verifies the listening server. Use `envpilot codex remote status` for the last observed upstream version and the local instance.
 
 ## Policy and installation window
 
@@ -22,9 +24,20 @@ updates:
   window_start: "03:00"
   window_end: "05:00"
   timezone: Local
+  maintenance_host: "login02"
+  policies:
+    codex: {interval_days: 1, auto_apply: true, window_start: "03:00", window_end: "05:00"}
+    conda: {auto_apply: false}
+    mamba: {auto_apply: false}
+  subscription: {enabled: true, interval_days: 3}
+  models: {enabled: true, interval_days: 1}
 ```
 
 Defaults are `auto_apply: false` and `timezone: Local`. Specify an IANA zone such as `Asia/Shanghai` when the intended zone differs from the server's. Start is inclusive; end is exclusive. Cross-midnight windows are supported. Each component must start inside the window; work already started may finish afterward. Manual updates ignore the window.
+
+Under `policies`, an omitted or null field inherits the global value. Set an explicit `false` to check a component without automatic installation. All components and envpilot support overrides. The example checks Codex daily and allows nightly installation. Conda and Mamba only check. On shared homes, set `maintenance_host` to the short name or FQDN of the host responsible for shared installations and subscriptions. Other nodes can check releases and verify their own Codex instance. The empty default allows the current host to maintain its installation.
+
+Opt in to `subscription.enabled` to run `envpilot mihomo update-subscription` at the specified interval during the Mihomo window. It uses the saved file or environment reference, validates the download and restores valid selections. Keep the URL in the protected reference, outside the policy. Subscription refresh can be enabled independently of automatic package installation. A manual `updates check` does not replace subscriptions. Model checks default to every three days for an installed Codex. Inspect individual catalog sources with `envpilot codex models status`.
 
 Intervals are 1–365 elapsed days, not day-of-month cron expressions. Failures defer retries by an hour; pending installations wait for an allowed window. A machine that was offline does not install at the wrong time on resuming. Time-zone data is included in the helper.
 
@@ -38,7 +51,7 @@ envpilot updates status
 envpilot updates disable
 ```
 
-The scheduler wakes hourly; YAML and persisted state determine whether work is due:
+New registrations wake each minute to accommodate short maintenance windows. YAML and persisted state determine which components are due. Run `envpilot updates enable` to update an existing hourly registration.
 
 | Platform | Backend |
 | --- | --- |
@@ -46,7 +59,9 @@ The scheduler wakes hourly; YAML and persisted state determine whether work is d
 | macOS | launchd agent for the logged-in user |
 | Windows | Task Scheduler under the current logged-in user, without storing a password |
 
-Cron must be running. A systemd user instance surviving logout depends on the host's linger policy; envpilot does not change administrator settings. If no scheduler is available, registration fails explicitly. Cluster users can run `envpilot updates run` hourly from their own scheduler. No terminal must stay open.
+Cron must be running. A systemd user instance surviving logout depends on the host's linger policy. A custom cluster scheduler can invoke `envpilot updates tick` to record its actual trigger time separately from manual `updates run` or `updates check`.
+
+`envpilot doctor` shows global and component policies, the live scheduler registration, last scheduled trigger and outcome, the next installation window, and the most recent successful check and installation per component. Register an absent job with `envpilot updates enable`. If a registered job has never fired or last fired over two hours ago, check the system scheduler and login node. Component failures retain their error codes alongside successful results from the same run. Use `envpilot doctor --json` for monitoring.
 
 One update task is registered per user. Repeating `enable --config PATH` selects another config; editing its contents requires no re-registration. `updates.enabled: false` pauses execution; `updates disable` removes scheduling and preserves history. Re-register after moving the home or command entrypoint.
 
@@ -65,6 +80,7 @@ envpilot updates history
 envpilot updates history --days 90
 envpilot updates history --days 30 --component git
 envpilot updates history --component codex --json
+envpilot updates history --component subscription
 envpilot updates status --json
 ```
 

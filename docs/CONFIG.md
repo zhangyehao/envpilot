@@ -54,6 +54,18 @@ envpilot run -- python3 --version
 
 Non-interactive mode never waits for input. Optional fallback installation methods are not automatically accepted. Third-party installer output remains in its original language.
 
+## Complete configuration in 0.5.0
+
+`init` writes all editable fields and their documentation to the main YAML. A Git or platform-package self-update runs the new entrypoint, snapshots the existing file and fills missing fields. After pulling source manually, run `envpilot apply-shell` for the same migration. To preview and apply it separately:
+
+```bash
+envpilot config migrate --preview
+envpilot config migrate --yes
+envpilot config validate
+```
+
+The preview lists missing keys, effective values and sources. A per-component override that inherits a global value is written as `null`. Environment overrides remain transient. Existing comments, subscription references and ports are retained. Repeating migration leaves the file intact. PowerShell also accepts `-Preview` and `-Yes`.
+
 ## Complete examples, updates and command priority
 
 [English example](../examples/config.example.en.yaml) and [中文样例](../examples/config.example.zh-CN.yaml) cover every setting and choice. Merge selected fields rather than overwriting existing user settings.

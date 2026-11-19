@@ -1,19 +1,15 @@
 package config
 
 import (
-	"bufio"
-	"crypto/rand"
-	"crypto/sha1"
-	"encoding/base64"
-	"encoding/binary"
+	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net"
-	"net/http"
 	"path/filepath"
 	"regexp"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 func ProbeVersion(result map[string]any) (string, error) {
@@ -48,102 +44,138 @@ func ProbeHome(result map[string]any, expected string) error {
 	return nil
 }
 
-// Probe verifies JSON-RPC initialize over the app-server Unix WebSocket.
-// A listening socket alone is not evidence of a healthy Codex server.
+// codexRPC uses one connection for initialization and subsequent read-only calls.
+// The deadline covers all pages, so an unresponsive or busy server cannot stall cron.
+type codexRPC struct {
+	conn   *websocket.Conn
+	nextID int
+	hello  map[string]any
+}
+
+func openCodexRPC(socket, home string, timeout time.Duration) (*codexRPC, error) {
+	dialer := websocket.Dialer{HandshakeTimeout: 2 * time.Second,
+		NetDialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return (&net.Dialer{Timeout: 2 * time.Second}).DialContext(ctx, "unix", socket)
+		}}
+	conn, _, err := dialer.Dial("ws://localhost/", nil)
+	if err != nil {
+		return nil, err
+	}
+	conn.SetReadLimit(8 << 20)
+	deadline := time.Now().Add(timeout)
+	_ = conn.SetReadDeadline(deadline)
+	_ = conn.SetWriteDeadline(deadline)
+	rpc := &codexRPC{conn: conn}
+	err = rpc.call("initialize", map[string]any{"clientInfo": map[string]string{"name": "envpilot", "version": "1"}, "capabilities": map[string]any{}}, &rpc.hello)
+	if err == nil && home != "" {
+		err = ProbeHome(rpc.hello, home)
+	}
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+	return rpc, nil
+}
+func (s *codexRPC) initialized() error {
+	return s.conn.WriteJSON(map[string]any{"method": "initialized"})
+}
+func (s *codexRPC) call(method string, params any, result any) error {
+	s.nextID++
+	if err := s.conn.WriteJSON(map[string]any{"id": s.nextID, "method": method, "params": params}); err != nil {
+		return err
+	}
+	for {
+		var response struct {
+			ID     *int
+			Result json.RawMessage
+			Error  json.RawMessage
+		}
+		if err := s.conn.ReadJSON(&response); err != nil {
+			return err
+		}
+		if response.ID == nil || *response.ID != s.nextID {
+			continue
+		}
+		// Upstream errors may contain arbitrary request/configuration details.
+		if len(response.Error) > 0 && string(response.Error) != "null" {
+			return fmt.Errorf("Codex rejected %s", method)
+		}
+		if len(response.Result) == 0 || string(response.Result) == "null" {
+			return fmt.Errorf("Codex omitted %s result", method)
+		}
+		return json.Unmarshal(response.Result, result)
+	}
+}
 func Probe(socket string) (map[string]any, error) {
-	c, err := net.DialTimeout("unix", socket, 2*time.Second)
+	s, err := openCodexRPC(socket, "", 3*time.Second)
 	if err != nil {
 		return nil, err
 	}
-	defer c.Close()
-	_ = c.SetDeadline(time.Now().Add(3 * time.Second))
-	keyBytes := make([]byte, 16)
-	if _, err = rand.Read(keyBytes); err != nil {
-		return nil, err
-	}
-	key := base64.StdEncoding.EncodeToString(keyBytes)
-	if _, err = fmt.Fprintf(c, "GET / HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: %s\r\nSec-WebSocket-Version: 13\r\n\r\n", key); err != nil {
-		return nil, err
-	}
-	r := bufio.NewReader(c)
-	resp, err := http.ReadResponse(r, &http.Request{Method: "GET"})
+	defer s.conn.Close()
+	return s.hello, nil
+}
+
+// Codex keeps idle threads loaded. Check each loaded thread's execution status
+// without asking for turns or messages. Fail closed on unknown protocol variants.
+func codexActivity(socket, home string) (string, error) {
+	s, err := openCodexRPC(socket, home, 10*time.Second)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	if resp.StatusCode != 101 {
-		return nil, fmt.Errorf("WebSocket upgrade returned %d", resp.StatusCode)
+	defer s.conn.Close()
+	if err = s.initialized(); err != nil {
+		return "", err
 	}
-	expected := sha1.Sum([]byte(key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"))
-	if resp.Header.Get("Sec-WebSocket-Accept") != base64.StdEncoding.EncodeToString(expected[:]) {
-		return nil, fmt.Errorf("invalid WebSocket handshake")
-	}
-	payload := []byte(`{"id":1,"method":"initialize","params":{"clientInfo":{"name":"envpilot","version":"0.4.3"},"capabilities":{}}}`)
-	mask := make([]byte, 4)
-	if _, err = rand.Read(mask); err != nil {
-		return nil, err
-	}
-	frame := []byte{0x81, 0x80 | byte(len(payload))}
-	if len(payload) >= 126 {
-		frame = []byte{0x81, 0x80 | 126, byte(len(payload) >> 8), byte(len(payload))}
-	}
-	frame = append(frame, mask...)
-	for i, b := range payload {
-		frame = append(frame, b^mask[i%4])
-	}
-	if _, err = c.Write(frame); err != nil {
-		return nil, err
-	}
-	for attempt := 0; attempt < 12; attempt++ {
-		h := make([]byte, 2)
-		if _, err = io.ReadFull(r, h); err != nil {
-			return nil, err
+	cursor := ""
+	for page := 0; page < 100; page++ {
+		var list struct {
+			Data       *[]string
+			NextCursor string
 		}
-		n := uint64(h[1] & 127)
-		if n == 126 {
-			b := make([]byte, 2)
-			if _, err = io.ReadFull(r, b); err != nil {
-				return nil, err
+		if err = s.call("thread/loaded/list", map[string]any{"limit": 100, "cursor": optionalCursor(cursor)}, &list); err != nil {
+			return "", err
+		}
+		if list.Data == nil {
+			return "", fmt.Errorf("loaded thread list missing")
+		}
+		for _, id := range *list.Data {
+			var read struct {
+				Thread struct{ Status struct{ Type string } }
 			}
-			n = uint64(binary.BigEndian.Uint16(b))
-		}
-		if n == 127 {
-			b := make([]byte, 8)
-			if _, err = io.ReadFull(r, b); err != nil {
-				return nil, err
+			if err = s.call("thread/read", map[string]any{"threadId": id, "includeTurns": false}, &read); err != nil {
+				return "", err
 			}
-			n = binary.BigEndian.Uint64(b)
+			switch read.Thread.Status.Type {
+			case "active":
+				return "active", nil
+			case "idle", "notLoaded":
+			default:
+				return "", fmt.Errorf("thread activity could not be established")
+			}
 		}
-		if n > 1024*1024 {
-			return nil, fmt.Errorf("oversized WebSocket message")
+		if list.NextCursor == "" {
+			return "idle", nil
 		}
-		if h[1]&128 != 0 {
-			return nil, fmt.Errorf("unexpected masked server frame")
+		if list.NextCursor == cursor {
+			break
 		}
-		b := make([]byte, int(n))
-		if _, err = io.ReadFull(r, b); err != nil {
-			return nil, err
-		}
-		if h[0]&15 == 8 {
-			return nil, fmt.Errorf("server closed before initialization")
-		}
-		if h[0]&15 != 1 {
-			continue
-		}
-		var message map[string]any
-		if err = json.Unmarshal(b, &message); err != nil {
-			return nil, err
-		}
-		if message["id"] != float64(1) {
-			continue
-		}
-		if e, ok := message["error"]; ok {
-			return nil, fmt.Errorf("initialize rejected: %v", e)
-		}
-		result, ok := message["result"].(map[string]any)
-		if !ok {
-			return nil, fmt.Errorf("invalid initialize result")
-		}
-		return result, nil
+		cursor = list.NextCursor
 	}
-	return nil, fmt.Errorf("initialize response missing")
+	return "", fmt.Errorf("incomplete loaded thread list")
+}
+func optionalCursor(cursor string) any {
+	if cursor == "" {
+		return nil
+	}
+	return cursor
+}
+func PrintCodexActivity(socket, home string) error {
+	if home == "" {
+		return fmt.Errorf("expected Codex home is required")
+	}
+	activity, err := codexActivity(socket, home)
+	if err == nil {
+		fmt.Println(activity)
+	}
+	return err
 }

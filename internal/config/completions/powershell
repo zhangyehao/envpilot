@@ -1,0 +1,13 @@
+# Resolve the installed helper on demand. Only literal command tokens are inspected.
+$envpilotCompleter = {
+    param($wordToComplete, $commandAst, $cursorPosition)
+    $dir = if ($env:ENVPILOT_CONFIG_DIR) { $env:ENVPILOT_CONFIG_DIR } else { Join-Path $HOME '.config/envpilot' }
+    $record = Join-Path $dir 'core-path'
+    if (!(Test-Path -LiteralPath $record)) { return }
+    $helper = (Get-Content -LiteralPath $record -Raw).Trim()
+    $words = @($commandAst.CommandElements | Select-Object -Skip 1 | Where-Object { $_.Extent.EndOffset -le ($cursorPosition - $wordToComplete.Length) } | ForEach-Object { $_.Extent.Text })
+    & $helper complete "word=$wordToComplete" @words | ForEach-Object {
+        [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+    }
+}
+Register-ArgumentCompleter -Native -CommandName envpilot,envpilot.ps1 -ScriptBlock $envpilotCompleter

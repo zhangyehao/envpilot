@@ -1,4 +1,4 @@
-# envpilot 0.4.7 — complete configuration example / 完整配置样例
+# envpilot 0.5.0 — complete configuration example / 完整配置样例
 # Copy selected settings into ~/.config/envpilot/config.yaml; keep existing user settings.
 # See docs/CONFIG.md or docs/CONFIG.zh-CN.md for protected-file setup.
 
@@ -74,6 +74,8 @@ mihomo:
 conda:
   # miniconda 或 anaconda。
   distribution: miniconda
+  # preserve 保留已有 .condarc；template 在预览差异后应用 envpilot 模板。
+  condarc_policy: preserve
   # 已有 Conda 安装目录；留空自动寻找。
   prefix: ""
 
@@ -114,6 +116,24 @@ updates:
   window_end: "05:00"
   # Local 表示本机时区；北京时间填 Asia/Shanghai，尤其注意使用 UTC 的服务器。
   timezone: Local
+  # 共享安装由哪个节点执行自动更新；留空允许本机。可填 login02 或完整主机名。
+  maintenance_host: ""
+  # 组件专属覆盖，null 继承上面的全局设置。下例列出所有组件。
+  # 例如 codex.interval_days: 1 表示每天检查，codex.auto_apply: true 表示在窗口内安装。
+  policies:
+    codex: {interval_days: null, auto_apply: null, window_start: null, window_end: null}
+    envpilot: {interval_days: null, auto_apply: null, window_start: null, window_end: null}
+    mihomo: {interval_days: null, auto_apply: null, window_start: null, window_end: null}
+    python: {interval_days: null, auto_apply: null, window_start: null, window_end: null}
+    git: {interval_days: null, auto_apply: null, window_start: null, window_end: null}
+    conda: {interval_days: null, auto_apply: null, window_start: null, window_end: null}
+    mamba: {interval_days: null, auto_apply: null, window_start: null, window_end: null}
+    github: {interval_days: null, auto_apply: null, window_start: null, window_end: null}
+    tmux: {interval_days: null, auto_apply: null, window_start: null, window_end: null}
+  # 自动刷新受保护文件/变量引用的订阅。显式开启后使用 Mihomo 窗口；更新成功可能重启代理。
+  subscription: {enabled: false, interval_days: 3}
+  # 已安装 Codex 时定期核对模型目录。名称、可见性或状态变化时报告。
+  models: {enabled: true, interval_days: 3}
 
 # 受保护的变量赋值文件，不执行 Shell 脚本。Unix 权限 600/400，属于当前用户。
 secrets:

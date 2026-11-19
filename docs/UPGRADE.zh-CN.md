@@ -2,6 +2,18 @@
 
 [English](UPGRADE.md)
 
+## 0.5.0 的完整主配置
+
+`init` 将所有可配置字段和说明写入主 YAML。`self-update`（Git 或平台包）调用新版入口时会给已有文件补缺，并在写入前保存快照。手动拉取源码后执行 `envpilot apply-shell` 也会补齐。要单独预览和应用：
+
+```bash
+envpilot config migrate --preview
+envpilot config migrate --yes
+envpilot config validate
+```
+
+预览列出要补的键、当前生效值和来源。继承全局的组件策略写入 `null`，临时的环境变量值不会写入 YAML。已有注释、选择的订阅来源和端口保留。重复迁移无需写入。PowerShell 可使用 `-Preview` 和 `-Yes`。
+
 ## 已安装 0.4.x：直接更新
 
 ```bash
@@ -15,7 +27,7 @@ Git 安装要求工作区干净且可快进到稳定版；分叉或未提交修�
 
 ### 升级到 0.4.7 后使用 Mihomo
 
-0.4.7 增加可选的策略组显示顺序。执行上方 `self-update` 并用 `envpilot version` 确认已更新到 0.4.7；在已有 `mihomo` 配置段中加入 `group_order: ["烟火云"]`，下次 `nodes` 和 `select` 即将该组优先显示。默认 `[]` 保留按名称排序，其余组仍按名称排序，暂不存在的名称忽略。此设置不改变节点选择或路由，具体步骤见 [Mihomo](MIHOMO.zh-CN.md#把常用策略组放到前面)。
+0.4.7 增加可选的策略组显示顺序。执行上方 `self-update` 并用 `envpilot version` 确认版本至少为 0.4.7；在已有 `mihomo` 配置段中加入 `group_order: ["烟火云"]`，下次 `nodes` 和 `select` 即将该组优先显示。默认 `[]` 保留按名称排序，其余组仍按名称排序，暂不存在的名称忽略。此设置不改变节点选择或路由，具体步骤见 [Mihomo](MIHOMO.zh-CN.md#把常用策略组放到前面)。
 
 0.4.6 的旧 Bash 修复继续保留：0.4.5 在 Bash 4.2（如 4.2.46）下，不带组名运行 `envpilot mihomo nodes`、`select` 或 `test` 可能报 `args[@]: unbound variable`。这是命令转发错误，不能据此判断 Mihomo 服务已停止；升级无需重新安装 Mihomo 或清除订阅。
 
@@ -52,12 +64,12 @@ git clone https://github.com/zhangyehao/envpilot.git "$HOME/envpilot" && cd "$HO
 
 ## 改用平台包升级（Linux/macOS）
 
-平台包附带匹配的配置工具。下面命令自动选择系统与架构，下载固定的 0.4.7 版本、校验 SHA-256，并解压到新的目录。它们不会覆盖旧源码目录：
+平台包附带匹配的配置工具。下面命令自动选择系统与架构，下载固定的 0.5.0 版本、校验 SHA-256，并解压到新的目录。它们不会覆盖旧源码目录：
 
 ```bash
 (
   set -eu
-  version=0.4.7
+  version=0.5.0
   case "$(uname -s)" in Linux) os=linux ;; Darwin) os=darwin ;; *) echo '请使用匹配系统的平台包'; exit 1 ;; esac
   case "$(uname -m)" in x86_64|amd64) arch=amd64 ;; aarch64|arm64) arch=arm64 ;; armv7l) arch=armv7 ;; *) echo '不支持此架构'; exit 1 ;; esac
   asset="envpilot-$version-$os-$arch.tar.gz"
@@ -79,7 +91,7 @@ git clone https://github.com/zhangyehao/envpilot.git "$HOME/envpilot" && cd "$HO
 上一步全部成功后进入解压目录；目标目录已存在时，请先检查原有内容，不要强行覆盖：
 
 ```bash
-cd "$HOME/.local/share/envpilot/releases/envpilot-0.4.7"
+cd "$HOME/.local/share/envpilot/releases/envpilot-0.5.0"
 ```
 
 ## 登记入口并应用配置

@@ -1,0 +1,23 @@
+# envpilot zsh completion
+_envpilot_complete_zsh() {
+    local helper
+    IFS= read -r helper < "${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}/core-path" || return
+    local -a candidates
+    candidates=("${(@f)$("$helper" complete "word=$PREFIX" "${(@)words[2,CURRENT-1]}")}")
+    compadd -- "${(@)candidates:#}"
+}
+if [[ -o interactive ]]; then
+    if (( $+functions[compdef] )); then
+        compdef _envpilot_complete_zsh envpilot
+    else
+        _envpilot_compctl() {
+            local helper
+            local -a args
+            integer idx
+            read -Ac args; read -cn idx
+            IFS= read -r helper < "${ENVPILOT_CONFIG_DIR:-$HOME/.config/envpilot}/core-path" || return
+            reply=("${(@f)$("$helper" complete "word=$1" "${(@)args[2,idx-1]}")}")
+        }
+        compctl -K _envpilot_compctl envpilot
+    fi
+fi

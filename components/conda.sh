@@ -10,6 +10,12 @@ EP_CONDA_FORGE_CHANNEL="https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/cond
 ep_conda_bin()
 {
     local candidate
+    if [ -n "${BASHRC_CONDA_PRIMARY_PREFIX:-}" ]; then
+        candidate="$BASHRC_CONDA_PRIMARY_PREFIX/bin/conda"
+        [ -x "$candidate" ] || return 1
+        printf '%s' "$candidate"
+        return 0
+    fi
     for candidate in \
         "$EP_PREFIX/miniconda3/bin/conda" \
         "$HOME/miniconda3/bin/conda" \
@@ -63,10 +69,16 @@ ep_conda_prefix_from_bin()
 
 ep_run_conda_clean()
 {
+    ep_run_conda_with_config "$HOME/.condarc" "$@"
+}
+
+ep_run_conda_with_config()
+{
     (
         unset LD_LIBRARY_PATH PYTHONHOME PYTHONPATH \
             CONDA_CHANNELS CONDA_DEFAULT_CHANNELS CONDA_CUSTOM_CHANNELS CONDA_SOLVER
-        CONDARC="$HOME/.condarc"
+        CONDARC="$1"
+        shift
         export CONDARC
         "$@"
     )
@@ -307,7 +319,7 @@ ep_doctor_conda()
     elif cmp -s "$ENVPILOT_ROOT/templates/condarc" "$HOME/.condarc"; then
         ep_log "Conda config: envpilot-managed mirror configuration at $HOME/.condarc"
     else
-        ep_warn "Conda config: differs from envpilot template at $HOME/.condarc; install/update conda may back it up and replace it. Mamba preserves this file."
+        ep_log "Conda config: custom $HOME/.condarc (conda.condarc_policy=${ENVPILOT_CONDA_CONDARC_POLICY:-preserve})."
     fi
 }
 
@@ -315,26 +327,32 @@ ep_write_condarc()
 {
     local condarc="$HOME/.condarc"
     local conda_path="${1:-}"
-    if [ -f "$condarc" ] && cmp -s "$ENVPILOT_ROOT/templates/condarc" "$condarc"; then
+    if [ -f "$condarc" ] && [ "${ENVPILOT_CONDA_CONDARC_POLICY:-preserve}" = preserve ]; then
+        ep_log "Using existing Conda channels: $condarc"
+        return 0
+    elif [ -f "$condarc" ] && cmp -s "$ENVPILOT_ROOT/templates/condarc" "$condarc"; then
         ep_log "Conda channels already match envpilot: $condarc"
     else
         ep_backup_file "$condarc"
-        cp "$ENVPILOT_ROOT/templates/condarc" "$condarc.tmp"
-        mv "$condarc.tmp" "$condarc"
+        local tmp
+        tmp="$(mktemp "$HOME/.condarc.envpilot.XXXXXXXX")" || return 1
+        if ! cp "$ENVPILOT_ROOT/templates/condarc" "$tmp" || ! mv "$tmp" "$condarc"; then
+            rm -f "$tmp"
+            return 1
+        fi
         ep_log "Wrote Conda channels: $condarc"
     fi
-    [ -n "$conda_path" ] && ep_prune_conda_default_seed_config "$conda_path"
+    if [ -n "$conda_path" ]; then ep_prune_conda_default_seed_config "$conda_path"; fi
 }
 
 ep_update_conda()
 {
     local conda_path="$1"
-    local before_version after_version solver
+    local before_version after_version solver preview_config
     before_version="$(ep_run_conda_clean "$conda_path" --version 2>/dev/null || true)"
     ep_log "Component: conda"
     ep_log "Current Conda: ${before_version:-unknown} at $conda_path"
     ep_log "Update strategy: let Conda resolve the newest compatible base conda package for this platform."
-    ep_write_condarc "$conda_path"
     solver="$(ep_conda_preferred_solver "$conda_path")"
     ep_log "Conda update solver: $solver"
 
@@ -345,10 +363,24 @@ ep_update_conda()
         return 0
     fi
 
+    preview_config="$HOME/.condarc"
+    if [ ! -f "$preview_config" ] || [ "${ENVPILOT_CONDA_CONDARC_POLICY:-preserve}" = template ]; then
+        preview_config="$ENVPILOT_ROOT/templates/condarc"
+        ep_core conda-preview -- condarc "$preview_config" || ep_die "Could not preview .condarc."
+    else
+        ep_log "Conda update uses your existing .condarc."
+    fi
+    if ! (set -o pipefail
+        ep_run_conda_with_config "$preview_config" "$conda_path" update -n base -y --solver "$solver" conda --dry-run --json 2>/dev/null |
+            ep_core conda-preview -- packages
+    ); then
+        ep_die "Conda could not preview the base transaction. Run conda update -n base conda --dry-run to inspect the solver on this host."
+    fi
     ep_confirm "Update the Conda base command to the newest compatible package?" "yes" || {
         ep_report_event conda skipped "user declined update" "$before_version" "" "$conda_path"
         return 0
     }
+    ep_write_condarc "$conda_path" || ep_die "Could not write .condarc."
     if ! ep_run_conda_clean "$conda_path" update -n base -y --solver "$solver" conda; then
         ep_report_event conda failed "conda self-update failed" "$before_version" "$HOME/.condarc" "$conda_path"
         ep_die "Conda update failed. The existing installation remains at $conda_path."
@@ -365,6 +397,10 @@ ep_install_conda()
 
     local target target_conda existing_conda installer url source label pattern glibc_version conda_version
     target="$(ep_conda_install_target)"
+    if [ -n "${BASHRC_CONDA_PRIMARY_PREFIX:-}" ]; then
+        target="$BASHRC_CONDA_PRIMARY_PREFIX"
+        [ -x "$target/bin/conda" ] || ep_die "conda.prefix must point to an existing installation with bin/conda."
+    fi
     target_conda="$target/bin/conda"
 
     if [ -x "$target_conda" ]; then
@@ -396,6 +432,10 @@ ep_install_conda()
     fi
 
     if existing_conda="$(ep_conda_bin 2>/dev/null)"; then
+        if [ "$EP_UPGRADE" = "1" ]; then
+            ep_update_conda "$existing_conda"
+            return 0
+        fi
         ep_log "Conda already available at $existing_conda; requested $(ep_conda_distribution_label) target is missing, so installation will continue side by side."
     fi
     installer="$(mktemp "${TMPDIR:-/tmp}/envpilot-conda.XXXXXX.sh")"

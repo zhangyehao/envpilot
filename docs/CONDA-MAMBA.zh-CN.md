@@ -22,12 +22,7 @@ envpilot 的唯一受控模板是仓库内：
 templates/condarc
 ~~~
 
-安装或更新 Conda 时，envpilot 会：
-
-1. 备份已有 ~/.condarc；
-2. 写入模板内容；
-3. 将 CONDARC 指向 ~/.condarc 执行 Conda 命令；
-4. 清除会污染求解的 LD_LIBRARY_PATH、PYTHONHOME、PYTHONPATH 和外部 channel/solver 环境变量。
+主配置中的 `conda.condarc_policy: preserve` 为默认值。已有 `~/.condarc` 时继续使用；缺少文件时使用仓库模板。需要让 envpilot 按模板管理频道时，改为 `template`。在线更新 Conda 前将列出拟增删或修改的配置键，以及求解器预计在 base 环境安装、更换或移除的软件包。确认后才备份和替换需要修改的文件。若预演失败，可运行 `conda update -n base conda --dry-run` 查看 Conda 原始诊断。
 
 当前模板只保留：
 
@@ -40,7 +35,7 @@ channel_priority: strict
 auto_activate_base: false
 ~~~
 
-doctor 会报告 ~/.condarc 是否存在以及是否与模板一致。配置不一致时，执行 install conda 或 update conda 会再次备份并统一配置。`install mamba` 和 `update mamba` 不会重写或备份现有 `~/.condarc`。
+doctor 会报告 ~/.condarc 是否存在以及是否与模板一致。Mamba 使用本次事务的频道参数。
 
 检查实际来源：
 
@@ -49,7 +44,7 @@ conda config --show-sources
 conda config --show channels default_channels channel_priority auto_activate_base
 ~~~
 
-如果希望保留自定义频道，Mamba 安装不会覆盖现有配置；但执行 Conda install/update 时，envpilot 仍会按模板恢复受管频道。需要长期使用自定义频道时，应先确认这是否属于项目的统一策略。
+定时检查给 Conda/Mamba 最多 60 秒启动时间，探测与更新均清理已有 Python、动态库、频道和求解器环境覆盖，并选择用户的 `.condarc`。`E_UPDATE_PROBE_TIMEOUT` 表示超时，`E_UPDATE_PROBE_COMMAND` 表示命令执行失败，`E_UPDATE_PROBE_FORMAT` 表示成功运行但无法识别版本。
 
 ## Mamba 的 solver 和配置行为
 

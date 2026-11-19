@@ -41,13 +41,33 @@ wait "$external" 2>/dev/null || true
 external=""
 bash "$manager" status | grep -F 'socket: READY' >/dev/null
 test "$("$ENVPILOT_CORE" probe --socket "$socket" --format version)" = "$version"
+echo '[TEST] actual idle thread state and model/list over the Desktop control socket'
+test "$("$ENVPILOT_CORE" codex-activity --expected-home "$CODEX_HOME" --socket "$socket")" = idle
+mkdir -p "$ENVPILOT_CONFIG_DIR"
+printf 'version: 1\ninstall:\n  mode: offline\n' > "$ENVPILOT_CONFIG_DIR/config.yaml"
+"$ENVPILOT_CORE" codex-models refresh --source "$ENVPILOT_CODEX_SOURCE_BIN/codex" --format json > "$fixture/models.json"
+python3 - "$fixture/models.json" "$version" <<'PY'
+import json
+import sys
+with open(sys.argv[1]) as handle:
+    state = json.load(handle)
+assert state["remote"]["status"] == "ok" and state["remote"]["version"] == sys.argv[2], state["remote"]["status"]
+assert state["remote"]["models"] and state["provider"]["status"] == "offline_mode"
+assert state["bundled"]["status"] in ("ok", "cli_bundled_unsupported")
+PY
+"$ENVPILOT_CORE" codex-models refresh --source "$ENVPILOT_CODEX_SOURCE_BIN/codex" --format json > "$fixture/unchanged"
+test ! -s "$fixture/unchanged"
+
 if [ -f "$ENVPILOT_CODEX_SOURCE_BIN/codex-package.json" ]; then
     echo '[TEST] complete package, nested resources and real helper executables'
     "$ENVPILOT_CORE" runtime-verify --source "$ENVPILOT_CODEX_SOURCE_BIN" --target "$ENVPILOT_CODEX_RUNTIME_DIR/current"
     "$ENVPILOT_CODEX_RUNTIME_DIR/current/bin/codex-code-mode-host" --help >/dev/null
     "$ENVPILOT_CODEX_RUNTIME_DIR/current/codex-path/rg" --version >/dev/null
     "$ENVPILOT_CODEX_RUNTIME_DIR/current/codex-resources/bwrap" --version >/dev/null
-    "$ENVPILOT_CODEX_RUNTIME_DIR/current/codex-resources/zsh/bin/zsh" --version >/dev/null
+    # 0.170 omits the zsh bundled with 0.156. Verify it when shipped.
+    if [ -e "$ENVPILOT_CODEX_SOURCE_BIN/codex-resources/zsh/bin/zsh" ]; then
+        "$ENVPILOT_CODEX_RUNTIME_DIR/current/codex-resources/zsh/bin/zsh" --version >/dev/null
+    fi
     # Voice host is an IPC worker, not a CLI with --help. Verify its packaged
     # dynamic dependencies instead of assuming a command-line interface.
     ldd "$ENVPILOT_CODEX_RUNTIME_DIR/current/codex-resources/voice/bin/codex-voice-host" > "$fixture/voice-libraries"

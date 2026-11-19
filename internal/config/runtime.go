@@ -388,7 +388,7 @@ func StageRuntime(source, root, mode string) (string, error) {
 	if root == "" {
 		return "", fmt.Errorf("runtime staging requires a target directory")
 	}
-	if mode != "0" && mode != "1" && mode != "verify" {
+	if mode != "0" && mode != "1" && mode != "verify" && mode != "prepare" && mode != "prepare-fast" {
 		return "", fmt.Errorf("invalid runtime staging mode")
 	}
 	layout, err := discoverRuntime(source)
@@ -430,7 +430,8 @@ func StageRuntime(source, root, mode string) (string, error) {
 	}
 	read := func(path string) string { b, _ := os.ReadFile(path); return strings.TrimSpace(string(b)) }
 	digest := read(filepath.Join(root, ".source-digest"))
-	if mode != "0" || metadata != read(filepath.Join(root, ".source-metadata")) || len(digest) != 64 {
+	full := mode != "0" && mode != "prepare-fast"
+	if full || metadata != read(filepath.Join(root, ".source-metadata")) || len(digest) != 64 {
 		digest, err = runtimeFingerprint(layout, "", true)
 		if err != nil {
 			return "", err
@@ -456,7 +457,7 @@ func StageRuntime(source, root, mode string) (string, error) {
 		metaErr = fmt.Errorf("runtime generation is absent or unsafe")
 	}
 	valid := metaErr == nil && runtimeMeta == read(filepath.Join(generation, ".runtime-metadata"))
-	if valid && mode != "0" {
+	if valid && full {
 		actual, e := runtimeFingerprint(layout, generation, true)
 		valid = e == nil && actual == digest
 	}
@@ -520,23 +521,72 @@ func StageRuntime(source, root, mode string) (string, error) {
 	if err = WriteAtomic(filepath.Join(root, ".source-digest"), []byte(digest+"\n"), 0600); err != nil {
 		return "", err
 	}
-	link := filepath.Join(root, fmt.Sprintf(".current-%d", time.Now().UnixNano()))
-	if err = os.Symlink(generation, link); err != nil {
+	if mode == "prepare" || mode == "prepare-fast" {
+		return generation, nil
+	}
+	if err = activateRuntimeLink(root, generation); err != nil {
 		return "", err
+	}
+	return created, nil
+}
+
+// ActivateRuntime atomically selects a complete generation previously staged in this cache.
+// Rehash it before rollback as its persistent source may already have been replaced.
+func ActivateRuntime(root, generation string) error {
+	physical, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return err
+	}
+	generation, err = filepath.Abs(generation)
+	if err != nil {
+		return err
+	}
+	actual, err := filepath.EvalSymlinks(generation)
+	if err != nil || actual != generation || filepath.Dir(generation) != filepath.Join(physical, "releases") {
+		return fmt.Errorf("invalid Codex runtime generation")
+	}
+	b, err := os.ReadFile(filepath.Join(generation, ".runtime-manifest.json"))
+	if err != nil {
+		return err
+	}
+	var layout runtimeLayout
+	if err = json.Unmarshal(b, &layout); err != nil {
+		return err
+	}
+	for _, entry := range layout.Entries {
+		if !fs.ValidPath(entry.Path) || strings.Contains(entry.Path, "\\") {
+			return fmt.Errorf("invalid runtime manifest path")
+		}
+	}
+	digest, err := runtimeFingerprint(layout, generation, true)
+	if err != nil {
+		return err
+	}
+	stored, err := os.ReadFile(filepath.Join(generation, ".source.signature"))
+	if err != nil || strings.TrimSpace(string(stored)) != digest {
+		return fmt.Errorf("runtime generation integrity check failed")
+	}
+	return activateRuntimeLink(physical, generation)
+}
+func activateRuntimeLink(root, generation string) error {
+	current := filepath.Join(root, "current")
+	link := filepath.Join(root, fmt.Sprintf(".current-%d", time.Now().UnixNano()))
+	if err := os.Symlink(generation, link); err != nil {
+		return err
 	}
 	defer os.Remove(link)
 	legacy := ""
 	if st, e := os.Lstat(current); e == nil && st.IsDir() {
-		legacy = filepath.Join(releases, fmt.Sprintf("legacy-%d", time.Now().UnixNano()))
-		if err = os.Rename(current, legacy); err != nil {
-			return "", err
+		legacy = filepath.Join(root, "releases", fmt.Sprintf("legacy-%d", time.Now().UnixNano()))
+		if err := os.Rename(current, legacy); err != nil {
+			return err
 		}
 	}
-	if err = os.Rename(link, current); err != nil {
+	if err := os.Rename(link, current); err != nil {
 		if legacy != "" {
 			_ = os.Rename(legacy, current)
 		}
-		return "", err
+		return err
 	}
-	return created, nil
+	return nil
 }

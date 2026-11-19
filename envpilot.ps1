@@ -1,7 +1,6 @@
 ﻿[CmdletBinding()]
 param(
     [Parameter(Position=0)]
-    [ValidateSet("init","config","plan","apply","snapshot","shell","run","self-update","updates","setup-command","doctor","install","update","upgrade","apply-shell","rollback","restore","mihomo","codex","resume","reset","update-manifests","update-mihomo-cache","self-test","help","version","-v","-version","--version","-h","-help","--help")]
     [string]$Command = "help",
 
     [Parameter(Position=1)]
@@ -26,6 +25,10 @@ param(
     [Alias("-non-interactive")][switch]$NonInteractive,
     [Alias("v","-version")][switch]$Version,
     [Alias("h","-help")][switch]$Help,
+    [Alias("-preview")][switch]$Preview,
+    [Alias("-codex-preferences")][switch]$CodexPreferences,
+    [Alias("-portable")][switch]$Portable,
+    [Alias("-policy")][ValidateSet("check","nightly")][string]$Policy,
     [Alias("-days")][int]$Days = 30,
     [Alias("-json")][switch]$Json,
     [Alias("-component")][string]$HistoryComponent,
@@ -718,10 +721,57 @@ function Show-Doctor {
         }
     }
 }
+function Invoke-CleanConda([string]$Executable, [string]$Condarc, [string[]]$Arguments) {
+    $saved = @{}
+    foreach ($name in 'LD_LIBRARY_PATH','PYTHONHOME','PYTHONPATH','CONDA_CHANNELS','CONDA_DEFAULT_CHANNELS','CONDA_CUSTOM_CHANNELS','CONDA_SOLVER','CONDARC') {
+        $saved[$name] = [Environment]::GetEnvironmentVariable($name)
+        [Environment]::SetEnvironmentVariable($name, $null)
+    }
+    try {
+        $env:CONDARC = $Condarc
+        & $Executable @Arguments
+        if ($LASTEXITCODE -ne 0) { throw "Conda command failed (exit $LASTEXITCODE)." }
+    } finally {
+        foreach ($name in $saved.Keys) { [Environment]::SetEnvironmentVariable($name, $saved[$name]) }
+    }
+}
+
+function Install-Condarc([string]$Path, [string]$Template) {
+    if (Test-Path -LiteralPath $Path) {
+        if ($env:ENVPILOT_CONDA_CONDARC_POLICY -ne 'template') { return }
+        if ((Get-FileHash -LiteralPath $Path).Hash -eq (Get-FileHash -LiteralPath $Template).Hash) { return }
+        Backup-File $Path
+    }
+    $temporary = Join-Path (Split-Path -Parent $Path) ('.condarc.envpilot.' + [guid]::NewGuid())
+    try {
+        Copy-Item -LiteralPath $Template -Destination $temporary
+        if (Test-Path -LiteralPath $Path) {
+            [IO.File]::Replace($temporary, $Path, "$temporary.previous")
+            Remove-Item -LiteralPath "$temporary.previous"
+        } else { [IO.File]::Move($temporary, $Path) }
+    } finally { Remove-Item -LiteralPath $temporary -ErrorAction SilentlyContinue }
+}
+
 function Install-Conda {
-    if (Test-Command conda) {
-        $condaPath = (Get-Command conda).Source
-        $beforeVersion = (& conda --version 2>$null | Out-String).Trim()
+    $condarc = Join-Path $HOME ".condarc"
+    $template = Join-Path $Script:Root "templates/condarc"
+    $condaPath = $null
+    if ($env:BASHRC_CONDA_PRIMARY_PREFIX) {
+        $condaPath = Join-Path $env:BASHRC_CONDA_PRIMARY_PREFIX 'Scripts/conda.exe'
+        if (-not (Test-Path -LiteralPath $condaPath -PathType Leaf)) { Stop-Envpilot "conda.prefix must contain Scripts/conda.exe." }
+    } else {
+        $dist = if ($env:EP_CONDA_DISTRIBUTION -eq 'anaconda') { 'anaconda3' } else { 'miniconda3' }
+        foreach ($base in $Prefix,$HOME,(Join-Path $HOME 'software')) {
+            $candidate = Join-Path $base "$dist/Scripts/conda.exe"
+            if (Test-Path -LiteralPath $candidate -PathType Leaf) { $condaPath = $candidate; break }
+        }
+        if (-not $condaPath) {
+            $exe = Get-Command conda -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($exe) { $condaPath = $exe.Source }
+        }
+    }
+    if ($condaPath) {
+        $beforeVersion = (Invoke-CleanConda $condaPath $condarc @('--version') | Out-String).Trim()
         if (-not $Script:Upgrade) {
             Add-ReportEvent "conda" "skipped" "already installed; use update conda to refresh" $beforeVersion "" $condaPath
             Mark-StateDone "conda"
@@ -735,17 +785,22 @@ function Install-Conda {
             Mark-StateDone "conda"
             return
         }
+        $previewConfig = $condarc
+        if (-not (Test-Path -LiteralPath $condarc) -or $env:ENVPILOT_CONDA_CONDARC_POLICY -eq 'template') {
+            $previewConfig = $template
+            Invoke-EnvpilotCore conda-preview -- condarc $template
+        } else { Write-Info "Conda update uses your existing .condarc." }
+        $plan = Invoke-CleanConda $condaPath $previewConfig @('update','-n','base','-y','conda','--dry-run','--json') 2>$null
+        $core = Get-EnvpilotCore
+        $plan | & $core conda-preview -- packages
+        if ($LASTEXITCODE -ne 0) { Stop-Envpilot "Could not read the Conda dry-run result." }
         if (-not (Confirm-Step "Update the Conda base command to the newest compatible package?" $true)) {
             Add-ReportEvent "conda" "skipped" "user declined update" $beforeVersion "" $condaPath
             return
         }
-        $condarc = Join-Path $HOME ".condarc"
-        Backup-File $condarc
-        Copy-Item -LiteralPath (Join-Path $Script:Root "templates/condarc") -Destination $condarc -Force
-        $global:LASTEXITCODE = 0
-        & conda update -n base -y conda
-        if ($LASTEXITCODE -ne 0) { Stop-Envpilot "Conda self-update failed with exit $LASTEXITCODE. The existing installation remains available." }
-        $afterVersion = (& conda --version 2>$null | Out-String).Trim()
+        Install-Condarc $condarc $template
+        Invoke-CleanConda $condaPath $condarc @('update','-n','base','-y','conda')
+        $afterVersion = (Invoke-CleanConda $condaPath $condarc @('--version') | Out-String).Trim()
         Add-ReportEvent "conda" "updated" "resolved newest compatible base conda package" $afterVersion $condarc $condaPath
         Mark-StateDone "conda"
         Write-Info "Conda update complete: $beforeVersion -> $afterVersion"
@@ -766,9 +821,7 @@ function Install-Conda {
     }
     $process = Start-Process -FilePath $installer -ArgumentList @("/InstallationType=JustMe","/RegisterPython=0","/S","/D=$target") -Wait -PassThru
     if ($process.ExitCode -ne 0) { Stop-Envpilot "Miniconda installer failed with exit $($process.ExitCode)." }
-    $condarc = Join-Path $HOME ".condarc"
-    Backup-File $condarc
-    Copy-Item -LiteralPath (Join-Path $Script:Root "templates/condarc") -Destination $condarc -Force
+    Install-Condarc $condarc $template
     $targetConda = Join-Path $target "Scripts/conda.exe"
     $version = if (Test-Path -LiteralPath $targetConda) { (& $targetConda --version 2>$null | Out-String).Trim() } else { "" }
     Add-ReportEvent "conda" "installed" "installed latest compatible Miniconda" $version $url $target
@@ -1141,6 +1194,8 @@ function Apply-ShellProfile {
         if (-not $Yes -and -not (Confirm-Step "Install the envpilot shell loading block?" $false)) { return }
         Save-EnvpilotSnapshot
     }
+    $configPath = if ($Config) { $Config } else { Join-Path $Script:ConfigDir 'config.yaml' }
+    if (Test-Path -LiteralPath $configPath) { Invoke-EnvpilotCore config-migrate --apply }
     Install-EnvpilotCommand
     Invoke-EnvpilotCore shell --shell powershell --target $profilePath
     Write-Info "Shell integration installed; original profile content preserved: $profilePath"
@@ -1183,6 +1238,11 @@ envpilot — 用户态环境安装与维护
   envpilot version                       查看软件版本（-v、-V、--version）
   envpilot help                          查看帮助（-h、-help、--help）
   envpilot config edit|validate|show      编辑、校验或查看配置
+  envpilot config migrate -Preview / -Yes 查看或补齐新增字段
+  envpilot config export -Portable        导出可迁移的偏好
+  envpilot preflight [-Json]              检查新主机
+  envpilot codex models status|refresh    查看或刷新模型目录
+  envpilot completion powershell         输出补全脚本
   envpilot plan                          查看拟议变更
   envpilot apply [-Yes -NonInteractive]   应用配置
   envpilot install|update [组件]          安装或更新组件
@@ -1208,6 +1268,10 @@ envpilot — 用户态环境安装与维护
 envpilot - cross-platform user-space environment bootstrapper
 
 Configuration: envpilot init; envpilot config edit; envpilot plan; envpilot apply
+Host migration: envpilot preflight; envpilot config export -Portable
+Configuration upgrades: envpilot config migrate -Preview; envpilot config migrate -Yes
+Completion: envpilot completion powershell
+Models: envpilot codex models status|refresh
 Recovery: envpilot snapshot; envpilot restore; envpilot self-update
 Updates: envpilot updates check|run|status|history|enable|disable
 
@@ -1257,6 +1321,16 @@ try {
         exit 0
     }
     if ($Command -eq 'help') { Show-Usage; exit 0 }
+    if ($Command -notin @("init","completion","preflight","config","plan","apply","snapshot","shell","run","self-update","updates","setup-command","doctor","install","update","upgrade","apply-shell","rollback","restore","mihomo","codex","resume","reset","update-manifests","update-mihomo-cache","self-test","help","version","-v","-version","--version","-h","-help","--help")) {
+        $core = Join-Path $Script:Root 'bin/envpilot-core.exe'
+        $record = Join-Path $Script:ConfigDir 'core-path'
+        if (!(Test-Path -LiteralPath $core) -and (Test-Path -LiteralPath $record)) { $core = (Get-Content -LiteralPath $record -Raw).Trim() }
+        $hint = if ($Command -match '^[a-z-]{1,48}$' -and (Test-Path -LiteralPath $core)) { & $core suggest "word=$Command" | Select-Object -First 1 }
+        if ($hint) { throw "Unknown command / 未知命令。 $hint ?" }
+        throw 'Unknown command / 未知命令。 envpilot help'
+    }
+    if ($Command -eq 'completion') { Invoke-EnvpilotCore completion $Component; exit 0 }
+    if ($Command -eq 'preflight') { Invoke-EnvpilotCore host-preflight --format $(if ($Json) { 'json' } else { 'text' }); exit 0 }
     if ($Command -notin @("help","self-test","update-manifests","update-mihomo-cache","init","config","plan")) { Import-EnvpilotConfig }
     $needsUpdateLock = $Command -in @('install','update','upgrade','self-update','apply') -or ($Command -eq 'mihomo' -and $Component -in @('start','stop','restart','select','port','ports','update-subscription','subscription'))
     if ($needsUpdateLock -and $env:ENVPILOT_UPDATE_LOCK_HELD -ne '1') {
@@ -1276,11 +1350,21 @@ try {
         Initialize-Envpilot
     }
     switch ($Command) {
-        "init" { Invoke-EnvpilotCore init --lang $(if ($Lang) { $Lang } else { "auto" }) }
+        "init" {
+            $path = if ($Config) { $Config } else { Join-Path $Script:ConfigDir 'config.yaml' }
+            if (!$Policy -and !$Yes -and !$NonInteractive -and ![Console]::IsInputRedirected -and [Environment]::UserInteractive -and !(Test-Path -LiteralPath $path)) {
+                $answer = Read-Host 'Maintenance / 维护策略 [1 check only 仅检查 / 2 install 夜间安装 03:00–05:00; 1]'
+                if ($answer -eq '2') { $Policy = 'nightly' } elseif ($answer -notin @('1','')) { throw 'Choose 1 or 2 / 请输入 1 或 2' }
+            }
+            Invoke-EnvpilotCore init --policy $(if ($Policy) { $Policy } else { 'check' }) --lang $(if ($Lang) { $Lang } else { "auto" })
+        }
         "config" {
             if ($Component -eq "edit") { & $(if ($env:EDITOR) { $env:EDITOR } else { "notepad.exe" }) $(if ($Config) { $Config } else { Join-Path $Script:ConfigDir 'config.yaml' }) }
             elseif ($Component -in @('show','validate','all')) { Invoke-EnvpilotCore $(if ($Component -eq 'all') { 'show' } else { $Component }) }
-            else { throw 'Use config edit, validate or show.' }
+            elseif ($Component -eq 'migrate') { Invoke-EnvpilotCore config-migrate $(if ($Yes -and !$Preview) { '--apply' } else { '--preview' }) }
+            elseif ($Component -eq 'export' -and $CodexPreferences -and !$Portable) { Invoke-EnvpilotCore config-codex-preferences }
+            elseif ($Component -eq 'export' -and $Portable -and !$CodexPreferences) { Invoke-EnvpilotCore config-portable }
+            else { throw 'Use config edit, validate, show, migrate -Preview/-Yes or export -Portable.' }
         }
         "plan" { Invoke-EnvpilotCore plan }
         "apply" { Apply-EnvpilotConfig }
@@ -1302,14 +1386,23 @@ try {
             & (Get-EnvpilotCore) run --config $(if ($Config) { $Config } else { Join-Path $Script:ConfigDir 'config.yaml' }) -- @runArgs
             exit $LASTEXITCODE
         }
-        "doctor" { Show-Doctor }
+        "doctor" { Invoke-EnvpilotCore updates status --format $(if ($Json) { "json" } else { "text" }); if (!$Json) { Show-Doctor } }
         "install" { Save-EnvpilotSnapshot; Invoke-Install }
         { $_ -in @("update","upgrade") } { Save-EnvpilotSnapshot; $Script:Upgrade = $true; Invoke-Install }
         "apply-shell" { Apply-ShellProfile }
         "rollback" { Rollback-Latest }
         "restore" { if (Test-Path -LiteralPath (Join-Path $Script:ConfigDir "latest-snapshot")) { Invoke-EnvpilotCore restore } else { Restore-Baseline } }
-        "mihomo" { Invoke-MihomoCommand }
-        "codex" { Invoke-CodexCommand }
+        "mihomo" {
+            if ($Component -in @('update-subscription','subscription')) {
+                $historyId = Invoke-EnvpilotCore history-begin subscription
+                $historyExit = "1"
+                try { Invoke-MihomoCommand; $historyExit = "0" } finally { Invoke-EnvpilotCore history-finish $historyId $historyExit }
+            } else { Invoke-MihomoCommand }
+        }
+        "codex" {
+            if ($Component -eq 'models') { Invoke-EnvpilotCore codex-models $(if ($Value) { $Value } else { 'status' }) --format $(if ($Json) { 'json' } else { 'text' }) }
+            else { Invoke-CodexCommand }
+        }
         "resume" { if (Test-Path $Script:StateFile) { Get-Content $Script:StateFile }; $Component = "all"; Invoke-Install }
         "reset" { Remove-Item -LiteralPath $Script:StateFile -Force -ErrorAction SilentlyContinue; Write-Info "State reset." }
         "update-manifests" { Update-Manifests }

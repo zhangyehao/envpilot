@@ -16,6 +16,9 @@ const Begin = "# >>> envpilot >>>"
 const End = "# <<< envpilot <<<"
 
 func Init(path, lang string) error {
+	return InitWithPolicy(path, lang, "check")
+}
+func InitWithPolicy(path, lang, policy string) error {
 	if path == "" {
 		path = filepath.Join(Dir(), "config.yaml")
 	}
@@ -34,6 +37,14 @@ func Init(path, lang string) error {
 		c.Language = lang
 	}
 	c = ImportLegacy(c)
+	switch policy {
+	case "", "check":
+		c.Updates.AutoApply = false
+	case "nightly":
+		c.Updates.AutoApply = true
+	default:
+		return fmt.Errorf("E_UPDATE_POLICY: use check or nightly")
+	}
 	if err := Validate(c); err != nil {
 		return err
 	}
@@ -213,6 +224,11 @@ func stripBlock(data string) (string, error) {
 	return data[:start] + data[end:], nil
 }
 func InstallShell(c Config, root, kind, target string, remove bool) error {
+	if !remove {
+		if err := refreshScheduleLauncher(c.SourcePath); err != nil {
+			return err
+		}
+	}
 	target = ShellTarget(kind, target)
 	data, err := os.ReadFile(target)
 	if err != nil && !os.IsNotExist(err) {
@@ -265,6 +281,25 @@ func InstallShell(c Config, root, kind, target string, remove bool) error {
 		script, e := os.ReadFile(filepath.Join(root, "templates", name))
 		if e != nil {
 			return e
+		}
+		// Bash and zsh profiles can share this home (and shell/init.sh).
+		// Each interpreter must parse only its own completion syntax.
+		if kind == "powershell" {
+			completion, err := CompletionScript(kind)
+			if err != nil {
+				return err
+			}
+			script = append(append(script, '\n'), completion...)
+		} else {
+			for _, shell := range []string{"bash", "zsh"} {
+				completion, err := CompletionScript(shell)
+				if err != nil {
+					return err
+				}
+				if err := WriteAtomic(filepath.Join(Dir(), "shell", "completion-"+shell+".sh"), []byte(completion), 0600); err != nil {
+					return err
+				}
+			}
 		}
 		if e = WriteAtomic(filepath.Join(Dir(), "shell", dest), script, 0600); e != nil {
 			return e

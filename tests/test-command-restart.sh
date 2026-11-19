@@ -111,7 +111,20 @@ sed 's/0.153.0/0.154.0/g' "$source_dir/codex" > "$source_dir/codex.new"
 mv "$source_dir/codex.new" "$source_dir/codex"
 chmod 700 "$source_dir/codex"
 export FAKE_CODEX_VERSION=0.154.0
-bash "$manager" ready
+echo '[TEST] updating prepares a generation but keeps active/unknown tasks on the previous runtime'
+original_gen="$(readlink "$runtime/current")"
+for state in active unknown; do
+    printf '%s\n' "$state" > "$CODEX_HOME/app-server-control/test-activity"
+    ret=0
+    bash "$manager" update || ret=$?
+    [ "$ret" = 75 ]
+    [ "$(cat "$pid_file")" = "$before" ]
+    [ "$(readlink "$runtime/current")" = "$original_gen" ]
+    [ -s "$runtime/.pending-switch" ]
+done
+printf 'idle\n' > "$CODEX_HOME/app-server-control/test-activity"
+bash "$manager" reconcile
+test ! -f "$runtime/.pending-switch"
 [ "$(cat "$pid_file")" != "$before" ]
 [ "$("$runtime/current/bin/codex" --version)" = 'codex-cli 0.154.0' ]
 before="$(cat "$pid_file")"
@@ -119,6 +132,20 @@ printf '#!/bin/sh\nexit 1\n' > "$runtime/current/bin/codex"
 bash "$manager" restart
 [ "$(cat "$pid_file")" != "$before" ]
 [ "$("$runtime/current/bin/codex" --version)" = 'codex-cli 0.154.0' ]
+echo '[TEST] a staged executable failing app-server startup rolls back the actual serving binary'
+cp "$source_dir/codex" "$fixture/healthy-codex"
+good_generation="$(readlink "$runtime/current")"
+cat > "$source_dir/codex" <<'EOF'
+#!/usr/bin/env bash
+if [ "${1:-}" = --version ]; then echo 'codex-cli 0.155.0'; exit 0; fi
+exit 1
+EOF
+chmod 700 "$source_dir/codex"
+if bash "$manager" update; then exit 1; fi
+[ "$(readlink "$runtime/current")" = "$good_generation" ]
+[ "$("$ENVPILOT_CORE" probe --socket "$CODEX_HOME/app-server-control/app-server-control.sock" --format version)" = '0.154.0' ]
+cp "$fixture/healthy-codex" "$source_dir/codex"
+bash "$manager" reconcile
 echo '[TEST] an invalid new source preserves the healthy running server'
 mkdir -p "$fixture/bad-source"
 printf '#!/bin/sh\nexit 1\n' > "$fixture/bad-source/codex"

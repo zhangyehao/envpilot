@@ -11,6 +11,10 @@ import (
 	"strings"
 )
 
+func taskArguments(launcher string) string {
+	return `-NoProfile -NonInteractive -File "` + launcher + `"`
+}
+
 func scheduleCommand(name string, args ...string) error {
 	cmd := exec.Command(name, args...)
 	// Scheduler failures contain no protected configuration.
@@ -53,16 +57,26 @@ func cronUpdateBlock(existing, launcher string, enable bool) (string, error) {
 		if body != "" {
 			body += "\n"
 		}
-		body += begin + "\n17 * * * * /bin/bash " + Quote(launcher) + " >/dev/null 2>&1\n" + end
+		body += begin + "\n* * * * * /bin/bash " + Quote(launcher) + " >/dev/null 2>&1\n" + end
 	}
 	return body + "\n", nil
 }
 
 func ConfigureUpdateSchedule(c Config, path string, enable bool) error {
-	dir := filepath.Join(Dir(), "updates")
+	dir := scheduleDirectory()
 	record := filepath.Join(dir, "scheduler")
 	old, _ := os.ReadFile(record)
 	backend := strings.TrimSpace(string(old))
+	if backend == "" {
+		legacy, _ := os.ReadFile(filepath.Join(Dir(), "updates", "scheduler"))
+		previous := strings.TrimSpace(string(legacy))
+		if previous != "" {
+			live := queryScheduler(previous, legacyScheduleLauncher())
+			if live == "registered" || live == "registered_hourly" {
+				backend = previous
+			}
+		}
+	}
 	h, _ := os.UserHomeDir()
 	path, err := filepath.Abs(Expand(path))
 	if err != nil {
@@ -83,10 +97,7 @@ func ConfigureUpdateSchedule(c Config, path string, enable bool) error {
 			return err
 		}
 	}
-	launcher := filepath.Join(dir, "run.sh")
-	if runtime.GOOS == "windows" {
-		launcher = filepath.Join(dir, "run.ps1")
-	}
+	launcher := scheduleLauncher()
 	if enable {
 		// Capture paths only, never environment credentials, proxy passwords or keys.
 		body := "#!/usr/bin/env bash\nset -eu\numask 077\nexport HOME=" + Quote(h) + "\nexport ENVPILOT_CONFIG_DIR=" + Quote(Dir()) + "\n"
@@ -95,9 +106,9 @@ func ConfigureUpdateSchedule(c Config, path string, enable bool) error {
 			paths = append(paths, Expand(p))
 		}
 		body += "export PATH=" + Quote(strings.Join(paths, ":")) + "\n"
-		body += "exec " + Quote(command) + " updates run --config " + Quote(path) + "\n"
+		body += "exec " + Quote(command) + " updates tick --config " + Quote(path) + "\n"
 		if runtime.GOOS == "windows" {
-			body = "$ErrorActionPreference = 'Stop'\n$env:ENVPILOT_CONFIG_DIR = " + PSQuote(Dir()) + "\n& " + PSQuote(command) + " updates run -Config " + PSQuote(path) + "\nexit $LASTEXITCODE\n"
+			body = "$ErrorActionPreference = 'Stop'\n$env:ENVPILOT_CONFIG_DIR = " + PSQuote(Dir()) + "\n& " + PSQuote(command) + " updates tick -Config " + PSQuote(path) + "\nexit $LASTEXITCODE\n"
 		}
 		if err = WriteAtomic(launcher, []byte(body), 0700); err != nil {
 			return err
@@ -132,7 +143,7 @@ func ConfigureUpdateSchedule(c Config, path string, enable bool) error {
 			if err = WriteAtomic(unit, []byte("[Unit]\nDescription=envpilot update checks\n[Service]\nType=oneshot\nExecStart=/bin/bash "+escaped+"\n"), 0600); err != nil {
 				return err
 			}
-			if err = WriteAtomic(timer, []byte("[Unit]\nDescription=envpilot update checks (YAML interval)\n[Timer]\nOnCalendar=hourly\nPersistent=true\n[Install]\nWantedBy=timers.target\n"), 0600); err != nil {
+			if err = WriteAtomic(timer, []byte("[Unit]\nDescription=envpilot update checks (YAML interval)\n[Timer]\nOnCalendar=*-*-* *:*:00\nAccuracySec=1s\nPersistent=true\n[Install]\nWantedBy=timers.target\n"), 0600); err != nil {
 				return err
 			}
 			if err = scheduleCommand("systemctl", "--user", "daemon-reload"); err == nil {
@@ -175,7 +186,7 @@ func ConfigureUpdateSchedule(c Config, path string, enable bool) error {
 		if enable {
 			var escaped strings.Builder
 			_ = xml.EscapeText(&escaped, []byte(launcher))
-			body := `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>Label</key><string>com.envpilot.updates</string><key>ProgramArguments</key><array><string>/bin/bash</string><string>` + escaped.String() + `</string></array><key>StartInterval</key><integer>3600</integer><key>RunAtLoad</key><true/></dict></plist>`
+			body := `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>Label</key><string>com.envpilot.updates</string><key>ProgramArguments</key><array><string>/bin/bash</string><string>` + escaped.String() + `</string></array><key>StartInterval</key><integer>60</integer><key>RunAtLoad</key><true/></dict></plist>`
 			if err = WriteAtomic(plist, []byte(body), 0600); err != nil {
 				return err
 			}
@@ -195,7 +206,7 @@ func ConfigureUpdateSchedule(c Config, path string, enable bool) error {
 		script := "Unregister-ScheduledTask -TaskName 'envpilot-updates' -Confirm:$false -ErrorAction SilentlyContinue"
 		if enable {
 			// InteractiveToken runs as this user, without asking for/storing passwords.
-			script = "$ErrorActionPreference='Stop'; $a=New-ScheduledTaskAction -Execute " + PSQuote(shell) + " -Argument " + PSQuote("-NoProfile -NonInteractive -File "+strconv.Quote(launcher)) + "; $t=New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Hours 1); $p=New-ScheduledTaskPrincipal -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive; $s=New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Hours 2); Register-ScheduledTask -TaskName 'envpilot-updates' -Action $a -Trigger $t -Principal $p -Settings $s -Force | Out-Null"
+			script = "$ErrorActionPreference='Stop'; $a=New-ScheduledTaskAction -Execute " + PSQuote(shell) + " -Argument " + PSQuote(taskArguments(launcher)) + "; $t=New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 1); $p=New-ScheduledTaskPrincipal -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive; $s=New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Hours 2); Register-ScheduledTask -TaskName 'envpilot-updates' -Action $a -Trigger $t -Principal $p -Settings $s -Force | Out-Null"
 		}
 		err = scheduleCommand(shell, "-NoProfile", "-NonInteractive", "-Command", script)
 	default:

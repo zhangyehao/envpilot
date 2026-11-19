@@ -21,6 +21,9 @@ import (
 )
 
 func RefreshScripts(c Config, root string) error {
+	if err := refreshScheduleLauncher(c.SourcePath); err != nil {
+		return err
+	}
 	h, _ := os.UserHomeDir()
 	for _, name := range []string{"mihomo_common.sh", "start_mihomo.sh", "stop_mihomo.sh", "status_mihomo.sh", "update_mihomo_subscription.sh"} {
 		target := filepath.Join(Expand(c.Install.Prefix), "mihomo", name)

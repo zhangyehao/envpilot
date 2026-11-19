@@ -20,7 +20,7 @@ Each generation records `.runtime-manifest.json` and a full content fingerprint.
 
 Leave `model_catalog_json` unset by default. Codex and the selected provider should own model discovery; downloaded caches and bundled metadata are fallbacks, not a reason to fabricate model capabilities to fill the picker.
 
-The bundled catalog is compiled into the Codex executable; updating Codex refreshes it. Run `envpilot update codex`, then check `codex --version`. A previously running target service is restarted using the updated complete runtime. Deleting caches or restarting the old executable does not change its bundled catalog. For example, the official 0.156.1 update adds GPT-6 Sol/Luna without a local catalog override.
+The bundled catalog is compiled into the Codex executable; updating Codex refreshes it. Run `envpilot update codex`, then check `codex --version`. A previously running target service switches to the updated complete runtime when its tasks are idle. Deleting caches or restarting the old executable does not change its bundled catalog. For example, the official 0.156.1 update adds GPT-6 Sol/Luna without a local catalog override.
 
 In Codex 0.156.0, API-key discovery is gated by `features.api_key_model_discovery` (disabled by default). Custom providers also need a Codex-native catalog endpoint configured as `model_providers.<id>.model_catalog_url`. A standard OpenAI-compatible `/v1/models` response containing IDs is not interchangeable with the rich Codex catalog. Verify provider routing, authentication, response format and cache state before claiming upstream refresh works.
 
@@ -59,3 +59,19 @@ The 0.154.0 native daemon interface requires a fixed standalone installation pat
 Version 0.4.2 also handles Desktop/SSH reconnects that start a replacement during restart. It rediscovers the socket owner and verifies the user, Codex home, runtime files and protocol version before accepting a new PID. Product names with spaces, such as `Codex Desktop/0.156.0`, are supported. Unidentified owners and other homes remain protected. If a supervisor keeps reviving the service during stop, the command reports failure instead of claiming the service is stopped.
 
 Use YAML secret references for OPENAI_API_KEY; do not paste credentials into scripts, logs or repository files. Native login remains available through `codex login`. See [configuration](CONFIG.md) and [recovery](UPGRADE.md).
+
+
+## Model catalogs and idle upgrades (0.5.0)
+
+```bash
+envpilot codex models refresh
+envpilot codex models status
+envpilot codex models status --json
+envpilot codex remote status
+envpilot codex remote verify
+envpilot codex remote reconcile
+```
+
+Refresh reads the default provider selected by `$CODEX_HOME/config.toml` and requests model IDs from its `base_url/models`. It also runs `codex debug models --bundled` and pages the selected app-server's `model/list` with hidden entries included. Each source records its own status and last successful observation. A failed check retains the last successful list. A repeat observation with the same results is silent. Status reads the saved observation for this host and Codex home. A provider may list an ID before the CLI offers matching metadata. The control socket column shows the actual service catalog when Desktop uses a different launch profile. Configure scheduled checks under `updates.models`. No model catalog override is created.
+
+Remote status displays the last checked upstream stable version, persistent CLI, local generation and control socket handshake version. Run `envpilot updates check` to populate the upstream observation. With a running instance, verify checks the complete runtime, serving executable identity and handshake. Before switching a running service after an update, envpilot prepares a verified generation and inspects each loaded thread's status. Active tasks and unknown activity defer the switch (exit 75). The scheduler retries in the configured installation window. Use reconcile to retry a pending switch. A failed switch attempts to restore and handshake the previous working generation and still reports an update failure. An explicit remote restart or repair requests an immediate restart. Codex reports a point-in-time activity snapshot and a new turn can race the switch.
