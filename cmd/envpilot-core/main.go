@@ -15,7 +15,7 @@ import (
 	"github.com/zhangyehao/envpilot/internal/config"
 )
 
-var version = "0.5.0"
+var version = "0.5.1"
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
@@ -173,6 +173,26 @@ func run(args []string) error {
 	if cmd == "install-core" {
 		return config.InstallCore(root)
 	}
+	if cmd == "python-asset" {
+		if len(rest) != 1 {
+			return fmt.Errorf("python-asset requires a requested version (empty for latest)")
+		}
+		asset, err := config.PythonAsset(rest[0])
+		if err == nil {
+			fmt.Println(asset)
+		}
+		return err
+	}
+	if cmd == "python-local-digest" {
+		if len(rest) != 3 || (rest[2] != "online" && rest[2] != "offline") {
+			return fmt.Errorf("python-local-digest requires an archive, manifest path and online/offline mode")
+		}
+		digest, err := config.PythonLocalDigest(rest[0], rest[1], rest[2] == "online")
+		if err == nil {
+			fmt.Println(digest)
+		}
+		return err
+	}
 	if cmd == "probe" {
 		result, err := config.Probe(target)
 		if err != nil {
@@ -240,6 +260,9 @@ func run(args []string) error {
 		fmt.Println(config.Text(lang, "Configuration created. Edit it with envpilot config edit, then run envpilot plan. Register maintenance with envpilot updates enable.", "配置已创建。请执行 envpilot config edit 和 envpilot plan；要让维护策略定时运行，请执行 envpilot updates enable。"))
 		return nil
 	}
+	if cmd == "config-edit" {
+		return config.EditConfig(path, overrides, os.Stdout)
+	}
 	r, err := config.Load(path, overrides)
 	if err != nil {
 		return err
@@ -252,6 +275,9 @@ func run(args []string) error {
 		}
 		return config.MigrateConfig(r, rest[0] == "--apply", os.Stdout)
 	case "host-preflight":
+		if target != "" {
+			return config.PrintToolPreflight(os.Stdout, r, root, target, format == "json")
+		}
 		return config.PrintPreflight(os.Stdout, r.Config, format == "json")
 	case "config-codex-preferences":
 		b, err := config.PortableCodexPreferences(r.Config)
@@ -333,7 +359,7 @@ func run(args []string) error {
 		if action == "history" {
 			return config.UpdateHistory(c, historyDays, historyComponent, format)
 		}
-		return config.UpdatesCommand(c, root, r.Path, action, format)
+		return config.UpdatesCommand(c, root, r.Path, action, format, overrides)
 	case "secret-export":
 		values, err := config.ReadEnvironment(c.Secrets.File)
 		if err != nil {

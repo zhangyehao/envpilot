@@ -127,6 +127,35 @@ func taskPolicy(u Updates, name string) Updates {
 	}
 }
 
+var errUpdateConfigChanged = errors.New("E_UPDATE_CONFIG_CHANGED")
+var errUpdateConfigInvalid = errors.New("E_UPDATE_CONFIG_INVALID: run envpilot config validate")
+
+func currentPolicyGuard(c Config, path string, overrides map[string]string) func(bool) error {
+	_, initial := os.Stat(path)
+	return func(requireSavedPolicy bool) error {
+		// Load normally supplies defaults for an uninitialized installation.
+		// A removed policy must never authorize an installation or refresh.
+		if _, err := os.Stat(path); err != nil && (requireSavedPolicy || initial == nil || !os.IsNotExist(err)) {
+			return errUpdateConfigInvalid
+		}
+		r, err := Load(path, overrides)
+		if err != nil {
+			return errUpdateConfigInvalid
+		}
+		if !reflect.DeepEqual(c, r.Config) {
+			return errUpdateConfigChanged
+		}
+		return nil
+	}
+}
+
+func (u updateRunner) verify(requireSavedPolicy bool) error {
+	if u.verifyConfig != nil {
+		return u.verifyConfig(requireSavedPolicy)
+	}
+	return nil
+}
+
 func (u updateRunner) run(c Config, root, path string, force bool) (UpdateState, error) {
 	state, err := readUpdateState(path)
 	if err != nil {
@@ -180,7 +209,15 @@ func (u updateRunner) run(c Config, root, path string, force bool) (UpdateState,
 		case force || !now.Before(next):
 			didWork = true
 			checked = true
-			r = u.check(c, root, path, r, p, !force)
+			if err := u.verify(false); err != nil {
+				return state, err
+			}
+			r, err = u.check(c, root, path, r, p, !force)
+			if err != nil {
+				// Finished components were already recorded. Leave the interrupted
+				// observation due so the next wake starts with the saved policy.
+				return state, err
+			}
 			r.LastAttempt = u.now().UTC()
 			if r.Status != "failed" && r.Status != "deferred" && r.Status != "not_installed" && r.Status != "external" && r.Status != "unmanaged_version" {
 				r.LastSuccess = r.LastAttempt
@@ -255,7 +292,7 @@ func actionError(r UpdateResult, err error, code string) UpdateResult {
 	return r
 }
 
-func (u updateRunner) check(c Config, root, path string, r UpdateResult, p Updates, allowApply bool) UpdateResult {
+func (u updateRunner) check(c Config, root, path string, r UpdateResult, p Updates, allowApply bool) (UpdateResult, error) {
 	name := r.Component
 	r.ErrorCode = ""
 	tool := name
@@ -268,71 +305,81 @@ func (u updateRunner) check(c Config, root, path string, r UpdateResult, p Updat
 	v, err := u.installed(c, root, tool)
 	r.Installed = v
 	if err != nil {
-		return actionError(r, err, probeCode(err))
+		return actionError(r, err, probeCode(err)), nil
 	}
 	if v == "" {
 		r.Status = "not_installed"
-		return r
+		return r, nil
 	}
 	if name == "models" || name == "subscription" {
+		if err := u.verify(name == "subscription"); err != nil {
+			return r, err
+		}
 		if err = u.task(c, root, path, name); err != nil {
-			return actionError(r, err, "E_UPDATE_REFRESH")
+			return actionError(r, err, "E_UPDATE_REFRESH"), nil
 		}
 		r.Status = "checked"
 		if name == "subscription" {
 			r.Status = "refreshed"
 		}
-		return r
+		return r, nil
 	}
 	if !knownComponentVersion(name, v) {
 		r.Status = "unmanaged_version"
-		return r
+		return r, nil
 	}
 	if name != "codex" && name != "envpilot" && !managedUpdateComponent(c, name) {
 		r.Status = "external"
-		return r
+		return r, nil
 	}
 	if name == "codex" && c.Updates.MaintenanceHost != "" && u.task != nil && runtime.GOOS != "windows" {
 		host, _ := os.Hostname()
 		if !maintenanceOwner(c.Updates.MaintenanceHost, host) {
 			if err = u.task(c, root, path, "codex-verify"); err != nil {
-				return actionError(r, err, "E_UPDATE_NODE_VERIFY")
+				return actionError(r, err, "E_UPDATE_NODE_VERIFY"), nil
 			}
 		}
 	}
 	latest, err := u.latest(c, name)
 	if err != nil {
-		return actionError(r, err, "E_UPDATE_CHECK")
+		return actionError(r, err, "E_UPDATE_CHECK"), nil
 	}
 	r.Latest, r.LastUpstreamSuccess = latest, u.now().UTC()
 	automatic := allowApply && p.AutoApply && inUpdateWindow(p, u.now())
+	if automatic {
+		// Upstream and version probes may take minutes on shared filesystems.
+		// Re-read the actual file immediately before an install/reconcile.
+		if err := u.verify(true); err != nil {
+			return r, err
+		}
+	}
 	if !newerComponentVersion(name, r.Latest, v) {
 		if name == "codex" && r.PendingSwitch && !automatic {
 			r.Status, r.ErrorCode = "deferred", "E_CODEX_PENDING"
-			return r
+			return r, nil
 		}
 		if name == "codex" && automatic && u.task != nil && runtime.GOOS != "windows" {
 			if err = u.task(c, root, path, "codex-reconcile"); err != nil {
-				return actionError(r, err, "E_UPDATE_VERIFY")
+				return actionError(r, err, "E_UPDATE_VERIFY"), nil
 			}
 			if r.PendingSwitch {
 				r.Status = "updated"
 				r.PendingSwitch = false
-				return r
+				return r, nil
 			}
 		}
 		r.Status = "current"
-		return r
+		return r, nil
 	}
 	r.Status = "available"
 	if !automatic {
-		return r
+		return r, nil
 	}
 	if err = u.apply(c, root, path, name); err != nil {
 		if name == "codex" {
 			r.PendingSwitch = true
 		}
-		return actionError(r, err, "E_UPDATE_APPLY")
+		return actionError(r, err, "E_UPDATE_APPLY"), nil
 	}
 	if name == "envpilot" {
 		if b, e := os.ReadFile(filepath.Join(Dir(), "command-root")); e == nil {
@@ -342,7 +389,7 @@ func (u updateRunner) check(c Config, root, path string, r UpdateResult, p Updat
 	actual, err := u.installed(c, root, name)
 	if err != nil || !knownComponentVersion(name, actual) || ((name == "codex" || name == "envpilot") && newerVersion(r.Latest, actual)) {
 		r.Status, r.ErrorCode = "failed", "E_UPDATE_VERIFY"
-		return r
+		return r, nil
 	}
 	r.Status = "updated"
 	r.PendingSwitch = false
@@ -350,5 +397,5 @@ func (u updateRunner) check(c Config, root, path string, r UpdateResult, p Updat
 		r.Status = "compatible"
 	}
 	r.Installed = actual
-	return r
+	return r, nil
 }

@@ -40,6 +40,8 @@ envpilot apply
 
 ### Update an existing installation
 
+**0.5.1** probes the build environment before compiling managed Git and verifies the standalone Python archive's SHA-256 before extraction. Run `envpilot preflight git` and `envpilot preflight python` on the Linux or macOS maintenance node. Clusters with development libraries in Anaconda can set `git.dependency_prefix: ~/anaconda3`. [Git and Python](docs/GIT-PYTHON.md)
+
 **0.5.0** adds scheduled maintenance to `envpilot doctor` and fills new YAML fields with documented defaults during an upgrade. Existing values and comments are preserved. After updating, open a new shell and press Tab after `envpilot codex mo` to complete `models`.
 
 **0.4.0 and later:**
@@ -96,6 +98,8 @@ mihomo:
 The next `nodes` and `select` commands use this order. Default `[]` sorts groups by name; configured groups come first, remaining groups stay sorted by name, and absent names are ignored. This affects group display order only, preserving node order within groups, current selections and routing. No service restart is needed.
 
 ### Scheduled checks and overnight installation
+
+Each scheduler invocation reads the main configuration. To keep checking Git while holding automatic installation, set `auto_apply: false` under the existing `updates.policies.git`. Save and run `envpilot doctor` to see the effective policy and registration. Run `envpilot updates enable` when registering the timer or switching to a different configuration file.
 
 On first run, `envpilot init` offers check-only maintenance or overnight installation. For scripts, run `envpilot init --policy check --non-interactive` or choose `nightly`. The default check interval is three days and the installation window is 03:00–05:00 local time. **Run `envpilot updates enable` once on the maintenance host to register the scheduler.**
 

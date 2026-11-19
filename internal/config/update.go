@@ -66,12 +66,11 @@ func InstallCore(root string) error {
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}
-	source := filepath.Join(root, "bin", name)
-	if _, err = os.Stat(source); err != nil {
-		source, err = os.Executable()
-		if err != nil {
-			return err
-		}
+	// The entrypoint already selected a matching running helper. A leftover
+	// bin/envpilot-core from an earlier source build can still exist in root.
+	source, err := os.Executable()
+	if err != nil {
+		return err
 	}
 	home, _ := os.UserHomeDir()
 	target := filepath.Join(home, ".local", "lib", "envpilot", strings.TrimSpace(string(version)), name)
@@ -239,7 +238,11 @@ func BundleUpdate(c Config, root, configPath string) error {
 		restoreErr := SnapshotRestore(snapshot, c)
 		return fmt.Errorf("migration failed: %v; managed-file restoration: %v; snapshot: %s", e, restoreErr, snapshot)
 	}
-	if e = RefreshScripts(c, final); e != nil {
+	// Refresh and install the helper using the new package's implementation.
+	refresh := exec.Command(core, "refresh", "--root", final, "--config", configPath)
+	refresh.Stdout = os.Stdout
+	refresh.Stderr = os.Stderr
+	if e = refresh.Run(); e != nil {
 		restoreErr := SnapshotRestore(snapshot, c)
 		return fmt.Errorf("script refresh failed: %v; managed-file restoration: %v; snapshot: %s", e, restoreErr, snapshot)
 	}

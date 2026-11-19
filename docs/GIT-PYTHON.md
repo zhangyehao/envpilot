@@ -2,6 +2,21 @@
 
 [简体中文](GIT-PYTHON.zh-CN.md)
 
+Run `envpilot preflight git` and `envpilot preflight python` on the maintenance node using the scheduler's account. Git probes compile, link and execute small programs. Python checks the package platform and the installation filesystem's execution and symbolic link support. Both accept `--json`.
+
+Linux Git 2.56 builds can use OpenSSL when the host lacks a working getrandom interface. The optional Rust code can be disabled so Cargo is unnecessary. To use site-specific development libraries or a compiler directory, merge these fields into the main configuration:
+
+```yaml
+git:
+  dependency_prefix: ~/anaconda3
+  toolchain_bin: ""   # Optional directory containing compiler/build tools
+  build_jobs: 2       # Match the CPU allocation
+```
+
+Defaults suit hosts with standard tools and libraries. Manual and scheduled Git builds read the same settings. Store site settings in YAML so they survive scheduler re-registration.
+
+Standalone Python downloads use the upstream SHA-256 associated with the exact release asset. Offline archives need a matching bundled manifest entry or a trusted adjacent `SHA256SUMS` or `<archive>.sha256`. The digest and staged interpreter are verified before activation.
+
 ```bash
 envpilot install git
 envpilot update git

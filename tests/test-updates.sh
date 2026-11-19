@@ -44,6 +44,37 @@ if [ "$(uname -s)" != Darwin ]; then
     cmp "$HOME/test.crontab" "$fixture/enabled.crontab"
     launchers=("$ENVPILOT_CONFIG_DIR"/updates/schedulers/*/run.sh)
     test "${#launchers[@]}" = 1 && bash -n "${launchers[0]}"
+    # edit validates the exact custom file and reports effective rules without
+    # reinstalling the job. Editing broken YAML remains possible.
+    custom="$fixture/site config.yaml"
+    printf 'updates: {auto_apply: true}\n' > "$custom"
+    bash "$ROOT/envpilot.sh" updates enable --config "$custom"
+    cp "${launchers[0]}" "$fixture/before-edit"
+    cat > "$fixture/bin/test-editor" <<'EOF'
+#!/bin/sh
+cp "$ENVPILOT_TEST_EDIT" "$1"
+EOF
+    chmod 700 "$fixture/bin/test-editor"
+    export EDITOR="$fixture/bin/test-editor" ENVPILOT_TEST_EDIT="$fixture/edit.yaml"
+    printf 'updates: {auto_apply: true, policies: {git: {auto_apply: false}}}\n' > "$ENVPILOT_TEST_EDIT"
+    bash "$ROOT/envpilot.sh" config edit --config "$custom" > "$fixture/edit.log"
+    grep -Fq 'git: check only' "$fixture/edit.log"
+    grep -Fq 'registered scheduler reads this file' "$fixture/edit.log"
+    cmp "${launchers[0]}" "$fixture/before-edit"
+    printf 'updates: {interval_days: private-credential-example}\n' > "$ENVPILOT_TEST_EDIT"
+    if bash "$ROOT/envpilot.sh" config edit --config "$custom" > "$fixture/edit.log" 2>&1; then exit 1; fi
+    grep -Fq E_CONFIG_EDIT_INVALID "$fixture/edit.log"
+    if grep -Fq private-credential-example "$fixture/edit.log"; then exit 1; fi
+    # Report a different registered path explicitly when editing another file.
+    alternative="$fixture/second config.yaml"
+    printf 'updates: {auto_apply: false}\n' > "$alternative"
+    printf 'updates: {auto_apply: true}\n' > "$ENVPILOT_TEST_EDIT"
+    bash "$ROOT/envpilot.sh" config edit --config "$alternative" > "$fixture/edit.log"
+    grep -Fq 'registered for a different file' "$fixture/edit.log"
+    printf 'updates: {enabled: false}\n' > "$ENVPILOT_TEST_EDIT"
+    bash "$ROOT/envpilot.sh" config edit --config "$custom" > "$fixture/edit.log"
+    grep -Fq 'Configuration is valid.' "$fixture/edit.log"
+    unset EDITOR ENVPILOT_TEST_EDIT
     bash "$ROOT/envpilot.sh" updates disable
     cmp "$HOME/test.crontab" "$fixture/original.crontab"
 fi
@@ -90,3 +121,4 @@ if command -v zsh >/dev/null 2>&1; then
 fi
 echo '[TEST] update CLI, offline policy, history and idempotent scheduler passed'
 python3 "$ROOT/tests/test-scheduled-subscription.py"
+bash "$ROOT/tests/test-python-update.sh"

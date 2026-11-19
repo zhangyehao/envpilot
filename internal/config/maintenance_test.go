@@ -180,13 +180,13 @@ func TestDoctorChecksCronAndRecordsOnlySchedulerTrigger(t *testing.T) {
 	}
 	c := Defaults()
 	c.Updates.Enabled = false
-	if err = UpdatesCommand(c, ".", path, "run", "json"); err != nil {
+	if err = UpdatesCommand(c, ".", path, "run", "json", nil); err != nil {
 		t.Fatal(err)
 	}
 	if s := inspectScheduler(path, time.Now()); s.Registration != "registered" || !s.LastTrigger.IsZero() {
 		t.Fatal(s)
 	}
-	if err = UpdatesCommand(c, ".", path, "tick", "json"); err != nil {
+	if err = UpdatesCommand(c, ".", path, "tick", "json", nil); err != nil {
 		t.Fatal(err)
 	}
 	if s := inspectScheduler(path, time.Now()); s.TriggerState != "recent" || s.LastOutcome != "disabled" {

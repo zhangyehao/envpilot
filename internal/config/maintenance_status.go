@@ -179,21 +179,13 @@ func inspectScheduler(path string, now time.Time) schedulerStatus {
 	return s
 }
 
-// Older generated launchers have no way to distinguish a timer activation
-// from a manual "updates run". Only replace the exact command for this config.
+// Refresh only launchers for this configuration. 0.4.x invoked updates run;
+// 0.5.0 also embedded shell.paths. Keep unrelated custom lines intact.
 func refreshScheduleLauncher(path string) error {
 	if path == "" {
 		path = filepath.Join(Dir(), "config.yaml")
 	}
-	launcher := legacyScheduleLauncher()
-	b, err := os.ReadFile(launcher)
-	if os.IsNotExist(err) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	path, err = filepath.Abs(Expand(path))
+	path, err := filepath.Abs(Expand(path))
 	if err != nil {
 		return err
 	}
@@ -201,15 +193,47 @@ func refreshScheduleLauncher(path string) error {
 	if err != nil {
 		return err
 	}
-	line := "exec " + Quote(filepath.Join(h, ".local", "bin", "envpilot")) + " updates run --config " + Quote(path) + "\n"
+	command := filepath.Join(h, ".local", "bin", "envpilot")
 	if runtime.GOOS == "windows" {
-		line = "& " + PSQuote(filepath.Join(h, ".local", "bin", "envpilot.ps1")) + " updates run -Config " + PSQuote(path) + "\n"
+		command += ".ps1"
 	}
-	if strings.Count(string(b), "\n"+line) != 1 {
-		return nil
+	canonical := launcherBody(h, path, command)
+	for _, launcher := range []string{legacyScheduleLauncher(), scheduleLauncher()} {
+		b, err := os.ReadFile(launcher)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		body := string(b)
+		line := "exec " + Quote(command) + " updates tick --config " + Quote(path) + "\n"
+		if runtime.GOOS == "windows" {
+			line = "& " + PSQuote(command) + " updates tick -Config " + PSQuote(path) + "\n"
+		}
+		oldLine := strings.Replace(line, " updates tick ", " updates run ", 1)
+		if strings.Count(body, "\n"+oldLine) == 1 {
+			body = strings.Replace(body, "\n"+oldLine, "\n"+line, 1)
+		}
+		if runtime.GOOS != "windows" && strings.HasSuffix(body, "\n"+line) {
+			// Normalize a previous generated PATH only if both the command and
+			// surrounding template match. Preserve a backup of the replaced file.
+			template, base, _ := strings.Cut(strings.TrimSuffix(canonical, "\n"+line), "export PATH=")
+			value := strings.TrimPrefix(strings.TrimSuffix(body, "\n"+line), template+"export PATH=")
+			if strings.HasPrefix(body, template+"export PATH=") && !strings.ContainsAny(value, "\r\n") && strings.HasPrefix(value, strings.TrimSuffix(base, "'")+":") && strings.HasSuffix(value, "'") {
+				literal := strings.ReplaceAll(value[1:len(value)-1], "'\\''", "'")
+				if Quote(literal) == value {
+					body = canonical
+				}
+			}
+		}
+		if body != string(b) {
+			if err := installLauncher(launcher, body, os.Getenv("ENVPILOT_LANG")); err != nil {
+				return err
+			}
+		}
 	}
-	body := strings.Replace(string(b), "\n"+line, "\n"+strings.Replace(line, " updates run ", " updates tick ", 1), 1)
-	return WriteAtomic(launcher, []byte(body), 0700)
+	return nil
 }
 
 type maintenanceReport struct {
@@ -297,6 +321,8 @@ func printMaintenance(c Config, path, format string, state UpdateState) error {
 			outcome = "进行中"
 		case "disabled":
 			outcome = "已禁用"
+		case "config_changed":
+			outcome = "配置已变更，下次唤醒继续"
 		}
 	}
 	fmt.Printf("%s: %s %s | %s: %s (%s) %s\n", tr("Scheduler", "定时任务"), s.Backend, reg, tr("Last scheduled trigger", "上次定时触发"), updateTime(s.LastTrigger), trigger, outcome)
@@ -334,7 +360,7 @@ func printMaintenance(c Config, path, format string, state UpdateState) error {
 	return nil
 }
 
-func UpdatesCommand(c Config, root, path, action, format string) error {
+func UpdatesCommand(c Config, root, path, action, format string, overrides map[string]string) error {
 	switch action {
 	case "enable", "disable":
 		return ConfigureUpdateSchedule(c, path, action == "enable")
@@ -347,6 +373,11 @@ func UpdatesCommand(c Config, root, path, action, format string) error {
 	case "check", "run", "tick":
 		beat := scheduledTrigger{At: time.Now().UTC(), Outcome: "running"}
 		if action == "tick" {
+			oldPath := os.Getenv("PATH")
+			if err := os.Setenv("PATH", scheduledPath(oldPath, c.Shell.Paths)); err != nil {
+				return err
+			}
+			defer os.Setenv("PATH", oldPath)
 			if err := beat.save(path); err != nil {
 				return err
 			}
@@ -354,20 +385,38 @@ func UpdatesCommand(c Config, root, path, action, format string) error {
 		var state UpdateState
 		err := WithUpdateLock(func() error {
 			var e error
-			state, e = defaultUpdateRunner().run(c, root, path, action == "check")
+			u := defaultUpdateRunner()
+			u.verifyConfig = currentPolicyGuard(c, path, overrides)
+			state, e = u.run(c, root, path, action == "check")
 			return e
 		})
+		if errors.Is(err, errUpdateConfigChanged) {
+			beat.Outcome = "config_changed"
+			// Queued work will be reconsidered with the new settings on the next
+			// wake. Keep completed results and avoid counting this as a failure.
+			fresh, loadErr := Load(path, overrides)
+			if loadErr != nil {
+				err = errUpdateConfigInvalid
+			} else {
+				c, err = fresh.Config, nil
+				if action != "tick" {
+					fmt.Fprintln(os.Stderr, Text(c.Language, "Configuration changed during maintenance. Remaining work will use the saved policy on the next run.", "维护期间主配置已变更。其余操作将在下次运行时采用已保存的策略。"))
+				}
+			}
+		}
 		if action == "tick" {
 			switch {
 			case errors.Is(err, ErrUpdateBusy):
 				beat.Outcome = "E_UPDATE_BUSY"
+			case errors.Is(err, errUpdateConfigInvalid):
+				beat.Outcome = "E_UPDATE_CONFIG_INVALID"
 			case err != nil && err.Error() == "E_UPDATE_OFFLINE":
 				beat.Outcome = "E_UPDATE_OFFLINE"
 			case err != nil:
 				beat.Outcome = "E_UPDATE_FAILED"
 			case !c.Updates.Enabled:
 				beat.Outcome = "disabled"
-			default:
+			case beat.Outcome == "running":
 				beat.Outcome = "ok"
 			}
 			if saveErr := beat.save(path); err == nil {

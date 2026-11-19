@@ -65,6 +65,14 @@ Cron must be running. A systemd user instance surviving logout depends on the ho
 
 One update task is registered per user. Repeating `enable --config PATH` selects another config; editing its contents requires no re-registration. `updates.enabled: false` pauses execution; `updates disable` removes scheduling and preserves history. Re-register after moving the home or command entrypoint.
 
+### When a saved policy takes effect
+
+With global `updates.auto_apply: true`, set `updates.policies.git.auto_apply` to `false` and leave `git` in `updates.components` to keep checking Git and reserve installation for a manual `envpilot update git`. Saving and closing the editor opened by `envpilot config edit` validates the file and reports the changed effective fields and component policies. After editing the same file directly, use `envpilot config validate` for validation and `envpilot doctor` for the current policy and live scheduler registration.
+
+The standard job wakes every minute. Legacy hourly jobs keep their existing cadence. Each wake reads the saved YAML. Starting with 0.5.1, maintenance also rechecks it at each due check and before automatic installations or subscription replacement. An edit that changes effective settings lets a running build finish and leaves queued work for the next wake. Invalid YAML blocks new maintenance operations until corrected. Register with `updates enable` on first setup, when selecting a different config file, or when repairing scheduler registration.
+
+Maintenance gets additional executable directories from the current `shell.paths` and can use the toolchain and dependency locations configured under `git`. When re-registration replaces a different launcher, its previous contents are saved alongside it as `run.sh.previous-*` or `run.ps1.previous-*` for reviewing site-specific customizations.
+
 ## Components and compatibility
 
 Only already-installed components listed in `updates.components` are maintained. Managed Git/Python, Mihomo, GitHub CLI and tmux, plus existing Conda/Mamba and Codex, retain their installation methods. External/system installations are marked `external` and remain with their original package manager.

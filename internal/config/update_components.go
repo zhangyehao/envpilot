@@ -219,33 +219,8 @@ func latestComponent(component string) (string, error) {
 		return best, nil
 	}
 	if component == "python" {
-		var release struct {
-			Draft      bool `json:"draft"`
-			Prerelease bool `json:"prerelease"`
-			Assets     []struct {
-				Name string `json:"name"`
-			} `json:"assets"`
-		}
-		if err := fetchUpdateJSON("https://api.github.com/repos/astral-sh/python-build-standalone/releases/latest", &release); err != nil {
-			return "", err
-		}
-		targets := map[string]string{"linux/amd64": "x86_64-unknown-linux-gnu", "linux/arm64": "aarch64-unknown-linux-gnu", "darwin/amd64": "x86_64-apple-darwin", "darwin/arm64": "aarch64-apple-darwin"}
-		target := targets[runtime.GOOS+"/"+runtime.GOARCH]
-		if target == "" || release.Draft || release.Prerelease {
-			return "", fmt.Errorf("E_UPDATE_PLATFORM")
-		}
-		pattern := regexp.MustCompile(`^cpython-([0-9]+\.[0-9]+\.[0-9]+)\+[^/]+-` + regexp.QuoteMeta(target) + `-install_only\.tar\.gz$`)
-		best := "0.0.0"
-		for _, asset := range release.Assets {
-			match := pattern.FindStringSubmatch(asset.Name)
-			if len(match) > 1 && newerVersion(match[1], best) {
-				best = match[1]
-			}
-		}
-		if best == "0.0.0" {
-			return "", fmt.Errorf("E_UPDATE_RELEASE")
-		}
-		return best, nil
+		_, _, version, err := resolvePythonRelease("")
+		return version, err
 	}
 	repo := repos[component]
 	if repo == "" {

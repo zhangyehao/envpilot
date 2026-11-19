@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding/xml"
 	"fmt"
 	"os"
@@ -10,6 +11,52 @@ import (
 	"strconv"
 	"strings"
 )
+
+func scheduledPath(base string, configured []string) string {
+	paths := filepath.SplitList(base)
+	for _, value := range configured {
+		if dir := Expand(value); dir != "" && !containsComponent(paths, dir) {
+			paths = append(paths, dir)
+		}
+	}
+	return strings.Join(paths, string(os.PathListSeparator))
+}
+
+func launcherBody(home, configPath, command string) string {
+	if runtime.GOOS == "windows" {
+		return "$ErrorActionPreference = 'Stop'\n$env:ENVPILOT_CONFIG_DIR = " + PSQuote(Dir()) + "\n& " + PSQuote(command) + " updates tick -Config " + PSQuote(configPath) + "\nexit $LASTEXITCODE\n"
+	}
+	// The command entrypoint needs a predictable bootstrap PATH. The tick
+	// adds the current YAML's shell.paths after reading its configuration.
+	base := strings.Join([]string{filepath.Join(home, ".local", "bin"), "/usr/local/bin", "/usr/bin", "/bin"}, ":")
+	return "#!/usr/bin/env bash\nset -eu\numask 077\nexport HOME=" + Quote(home) + "\nexport ENVPILOT_CONFIG_DIR=" + Quote(Dir()) + "\nexport PATH=" + Quote(base) + "\nexec " + Quote(command) + " updates tick --config " + Quote(configPath) + "\n"
+}
+
+func installLauncher(path, body, lang string) error {
+	old, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if err == nil && !bytes.Equal(old, []byte(body)) {
+		// A previous installer or administrator may have added site-specific
+		// exports. Keep the original private and name it in the success output.
+		saved, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".previous-*")
+		if err != nil {
+			return err
+		}
+		_, writeErr := saved.Write(old)
+		closeErr := saved.Close()
+		if writeErr != nil || closeErr != nil {
+			os.Remove(saved.Name())
+			if writeErr != nil {
+				return writeErr
+			}
+			return closeErr
+		}
+		fmt.Println(Text(lang, "Previous scheduler launcher saved at", "原定时启动脚本已备份到"), saved.Name())
+	}
+	return WriteAtomic(path, []byte(body), 0700)
+}
 
 func taskArguments(launcher string) string {
 	return `-NoProfile -NonInteractive -File "` + launcher + `"`
@@ -99,18 +146,7 @@ func ConfigureUpdateSchedule(c Config, path string, enable bool) error {
 	}
 	launcher := scheduleLauncher()
 	if enable {
-		// Capture paths only, never environment credentials, proxy passwords or keys.
-		body := "#!/usr/bin/env bash\nset -eu\numask 077\nexport HOME=" + Quote(h) + "\nexport ENVPILOT_CONFIG_DIR=" + Quote(Dir()) + "\n"
-		paths := []string{filepath.Join(h, ".local", "bin"), "/usr/local/bin", "/usr/bin", "/bin"}
-		for _, p := range c.Shell.Paths {
-			paths = append(paths, Expand(p))
-		}
-		body += "export PATH=" + Quote(strings.Join(paths, ":")) + "\n"
-		body += "exec " + Quote(command) + " updates tick --config " + Quote(path) + "\n"
-		if runtime.GOOS == "windows" {
-			body = "$ErrorActionPreference = 'Stop'\n$env:ENVPILOT_CONFIG_DIR = " + PSQuote(Dir()) + "\n& " + PSQuote(command) + " updates tick -Config " + PSQuote(path) + "\nexit $LASTEXITCODE\n"
-		}
-		if err = WriteAtomic(launcher, []byte(body), 0700); err != nil {
+		if err = installLauncher(launcher, launcherBody(h, path, command), c.Language); err != nil {
 			return err
 		}
 	}
@@ -219,8 +255,8 @@ func ConfigureUpdateSchedule(c Config, path string, enable bool) error {
 		if err = WriteAtomic(record, []byte(backend+"\n"), 0600); err != nil {
 			return err
 		}
-		fmt.Println(Text(c.Language, "Update scheduler enabled. Checks follow updates.interval_days; automatic installation requires updates.auto_apply: true.", "已启用更新定时任务。检查间隔使用 updates.interval_days；自动安装需设置 updates.auto_apply: true。"))
-		if c.Updates.AutoApply && containsComponent(c.Updates.Components, "codex") {
+		fmt.Println(Text(c.Language, "Update scheduler enabled. Each wake reads the configured intervals and per-component installation policies from", "已登记定时维护。每次唤醒都会从以下主配置读取检查间隔及各组件安装策略："), path)
+		if taskPolicy(c.Updates, "codex").AutoApply && containsComponent(c.Updates.Components, "codex") {
 			fmt.Println(Text(c.Language, "Codex updates restart a running app-server and can interrupt tasks.", "Codex 更新会重启正在运行的 app-server，可能中断任务。"))
 		}
 	} else {

@@ -1,4 +1,4 @@
-# envpilot 0.5.0 — complete configuration example / 完整配置样例
+# envpilot 0.5.1 — complete configuration example / 完整配置样例
 # Copy selected settings into ~/.config/envpilot/config.yaml; keep existing user settings.
 # See docs/CONFIG.md or docs/CONFIG.zh-CN.md for protected-file setup.
 
@@ -18,6 +18,14 @@ install:
   prefix: ~/software
   # envpilot 发布包来源：github 或 gitee；Gitee 必须有完整版本附件。
   release_source: github
+
+git:
+  # 构建 Git 时查找 libcurl、OpenSSL、iconv 的依赖前缀，如 ~/anaconda3。空值按主机能力选择。
+  dependency_prefix: ""
+  # 编译器和 make 所在目录，如 /opt/gcc/bin。手动与夜间构建均使用，空值使用现有 PATH。
+  toolchain_bin: ""
+  # 并行编译数，0 使用默认值。共享节点可设为 2 或管理员分配的 CPU 数。
+  build_jobs: 0
 
 # 修改后运行 apply-shell 并打开新 Shell 生效；保留原 profile 内容。
 shell:

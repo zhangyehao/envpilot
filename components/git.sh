@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+# shellcheck source=lib/git-build.sh
+. "$ENVPILOT_ROOT/lib/git-build.sh"
+
 EP_GIT_VERSION="${EP_GIT_VERSION:-}"
 EP_GIT_MIN_VERSION="${EP_GIT_MIN_VERSION:-2.30}"
 ep_git_version()
@@ -58,7 +61,7 @@ ep_doctor_git()
 ep_install_git()
 {
     ep_require_unix_runtime
-    local system_git managed source archive version source_version source_dir target_dir current_dir jobs action system_version managed_version
+    local system_git managed source version source_version action system_version managed_version
     system_git="$(command -v git 2>/dev/null || true)"
     managed="$(ep_git_managed_bin)"
     system_version=""
@@ -83,12 +86,6 @@ ep_install_git()
         return 0
     fi
     [ "$EP_OS" != "windows-unix" ] || ep_die "Git is normally supplied by Git Bash/MSYS2 on Windows. Install Git for Windows and rerun doctor."
-    ep_command_exists make || ep_die "Git is missing and make is unavailable. Install a compiler toolchain or provide --mode offline --asset-path git-<version>.tar.xz."
-    ep_command_exists tar || ep_die "tar is required to build user-space Git."
-    if ! ep_command_exists cc && ! ep_command_exists gcc; then
-        ep_die "Git is missing and no C compiler was detected. Load a compiler module or install a user-space toolchain first."
-    fi
-
     version="${EP_GIT_VERSION:-$(ep_git_manifest_version)}"
     if ! ep_version_at_least "$version" "$EP_GIT_MIN_VERSION"; then
         ep_die "Selected Git version $version is below the envpilot minimum $EP_GIT_MIN_VERSION. Update manifests or choose a compatible asset."
@@ -125,26 +122,7 @@ ep_install_git()
         return 0
     }
 
-    archive="$(mktemp "${TMPDIR:-/tmp}/envpilot-git.XXXXXX.tar.xz")"
-    source_dir="$(mktemp -d "${TMPDIR:-/tmp}/envpilot-git-src.XXXXXX")"
-    if [ -f "$source" ]; then cp "$source" "$archive"; else ep_fetch_url "$source" "$archive"; fi
-    tar -xf "$archive" -C "$source_dir"
-    target_dir="$EP_PREFIX/git/$version"
-    mkdir -p "$target_dir"
-    source_dir="$(find "$source_dir" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
-    [ -n "$source_dir" ] || ep_die "Git source archive did not contain a top-level directory."
-    jobs="${ENVPILOT_BUILD_JOBS:-}"
-    [ -n "$jobs" ] || jobs="$(getconf _NPROCESSORS_ONLN 2>/dev/null || printf 2)"
-    ep_log "Building Git with $jobs job(s); this can take several minutes on a login node."
-    (cd "$source_dir" && ./configure --prefix="$target_dir" --with-curl --with-openssl && make -j"$jobs" NO_GETTEXT=YesPlease NO_TCLTK=YesPlease NO_PERL=YesPlease NO_PYTHON=YesPlease all && make NO_GETTEXT=YesPlease NO_TCLTK=YesPlease NO_PERL=YesPlease NO_PYTHON=YesPlease install) || ep_die "User-space Git build failed. Check compiler/development libraries, or use a system/module Git."
-    "$target_dir/bin/git" --version >/dev/null 2>&1 || ep_die "Built Git cannot run on this host; the previous active Git was preserved."
-    current_dir="$EP_PREFIX/git/current"
-    rm -rf -- "$current_dir"
-    if ! ln -s "$target_dir" "$current_dir" 2>/dev/null; then
-        cp -R "$target_dir" "$current_dir"
-    fi
-    rm -rf "$source_dir" "$archive"
-    [ -x "$managed" ] || ep_die "Git build completed but $managed was not created."
+    ep_git_stage install "$version" "$source" || return 1
     action=installed
     [ "$EP_UPGRADE" = "1" ] && action=updated
     ep_state_mark_done git

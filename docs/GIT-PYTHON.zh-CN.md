@@ -11,6 +11,21 @@ envpilot 不会因为命令存在就盲目覆盖系统软件：
 
 ## 命令
 
+先在负责夜间任务的节点和账号执行 `envpilot preflight git` 和 `envpilot preflight python`。前者实际编译、链接并运行小程序；后者检查包支持的平台以及安装文件系统的执行与符号链接能力。两者都支持 `--json`。
+
+在 Linux 的 Git 2.56 构建中，缺少可用的 `getrandom` 时可使用 OpenSSL。可选的 Rust 功能无需安装 Cargo。为旧集群指定开发库、编译器或并行数时，在主配置中合并：
+
+```yaml
+git:
+  dependency_prefix: ~/anaconda3
+  toolchain_bin: ""   # 需要时填编译器和 make 所在目录
+  build_jobs: 2       # 按节点分配的 CPU 调整
+```
+
+普通主机可保留默认值。手动和定时构建 Git 都会读取这些设置。无需在生成的定时启动脚本里追加参数。
+
+独立 Python 下载时使用与具体版本、平台和归档名称匹配的上游 SHA-256。离线包需要清单中的校验值，或在归档旁放可信来源的 `SHA256SUMS` 或 `<归档名>.sha256`。下载、摘要和新解释器通过验证后才切换现有入口。
+
 ~~~bash
 envpilot doctor
 envpilot install git

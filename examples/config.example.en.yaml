@@ -1,4 +1,4 @@
-# envpilot 0.5.0 — complete configuration example / 完整配置样例
+# envpilot 0.5.1 — complete configuration example / 完整配置样例
 # Copy selected settings into ~/.config/envpilot/config.yaml; keep existing user settings.
 # See docs/CONFIG.md or docs/CONFIG.zh-CN.md for protected-file setup.
 
@@ -18,6 +18,14 @@ install:
   prefix: ~/software
   # envpilot release source: github or gitee. Gitee needs complete release attachments.
   release_source: github
+
+git:
+  # Optional prefix for Git dependencies (curl, OpenSSL, iconv), e.g. ~/anaconda3. Empty uses host discovery.
+  dependency_prefix: ""
+  # Optional directory of compiler/build tools, e.g. /opt/gcc/bin. Used by manual and nightly builds.
+  toolchain_bin: ""
+  # Parallel build jobs. Zero uses the default. On shared nodes use the allocated CPU count.
+  build_jobs: 0
 
 # Changes take effect after apply-shell and a new shell. Existing profile content is preserved.
 shell:

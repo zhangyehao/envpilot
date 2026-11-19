@@ -1334,7 +1334,12 @@ try {
         throw 'Unknown command / 未知命令。 envpilot help'
     }
     if ($Command -eq 'completion') { Invoke-EnvpilotCore completion $Component; exit 0 }
-    if ($Command -eq 'preflight') { Invoke-EnvpilotCore host-preflight --format $(if ($Json) { 'json' } else { 'text' }); exit 0 }
+    if ($Command -eq 'preflight') {
+        $arguments = @('host-preflight', '--format', $(if ($Json) { 'json' } else { 'text' }))
+        if ($Component -ne 'all') { $arguments += @('--target', $Component) }
+        Invoke-EnvpilotCore @arguments
+        exit 0
+    }
     if ($Command -notin @("help","self-test","update-manifests","update-mihomo-cache","init","config","plan")) { Import-EnvpilotConfig }
     $needsUpdateLock = $Command -in @('install','update','upgrade','self-update','apply') -or ($Command -eq 'mihomo' -and $Component -in @('start','stop','restart','select','port','ports','update-subscription','subscription'))
     if ($needsUpdateLock -and $env:ENVPILOT_UPDATE_LOCK_HELD -ne '1') {
@@ -1363,7 +1368,7 @@ try {
             Invoke-EnvpilotCore init --policy $(if ($Policy) { $Policy } else { 'check' }) --lang $(if ($Lang) { $Lang } else { "auto" })
         }
         "config" {
-            if ($Component -eq "edit") { & $(if ($env:EDITOR) { $env:EDITOR } else { "notepad.exe" }) $(if ($Config) { $Config } else { Join-Path $Script:ConfigDir 'config.yaml' }) }
+            if ($Component -eq "edit") { Invoke-EnvpilotCore config-edit }
             elseif ($Component -in @('show','validate','all')) { Invoke-EnvpilotCore $(if ($Component -eq 'all') { 'show' } else { $Component }) }
             elseif ($Component -eq 'migrate') { Invoke-EnvpilotCore config-migrate $(if ($Yes -and !$Preview) { '--apply' } else { '--preview' }) }
             elseif ($Component -eq 'export' -and $CodexPreferences -and !$Portable) { Invoke-EnvpilotCore config-codex-preferences }

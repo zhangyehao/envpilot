@@ -32,7 +32,7 @@ func TestComponentReleaseAdapters(t *testing.T) {
 						t.Fatal(r.URL)
 					}
 					target := map[string]string{"linux/amd64": "x86_64-unknown-linux-gnu", "linux/arm64": "aarch64-unknown-linux-gnu", "darwin/amd64": "x86_64-apple-darwin", "darwin/arm64": "aarch64-apple-darwin"}[runtime.GOOS+"/"+runtime.GOARCH]
-					body = fmt.Sprintf(`{"assets":[{"name":"cpython-3.14.0+20260924-%s-install_only.tar.gz"},{"name":"cpython-3.15.0rc2+20260924-%s-install_only.tar.gz"}]}`, target, target)
+					body = fmt.Sprintf(`{"tag_name":"20260924","assets":[{"name":"cpython-3.14.0+20260924-%s-install_only.tar.gz"},{"name":"cpython-3.15.0rc2+20260924-%s-install_only.tar.gz"}]}`, target, target)
 				case "codex":
 					body = `{"version":"0.156.1"}`
 				case "tmux":

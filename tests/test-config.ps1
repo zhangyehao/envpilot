@@ -42,6 +42,15 @@ $updatedYaml = [IO.File]::ReadAllText($configFile).Replace('proxy_port: 42290','
 [IO.File]::WriteAllText($configFile,$updatedYaml)
 $effective = & "$Root/envpilot.ps1" config show | ConvertFrom-Json
 if ($effective.config.mihomo.proxy_port -ne 43000) { throw 'Generated environment masked an edited YAML value.' }
+$editFile = Join-Path $Fixture 'alternate policy.yaml'
+[IO.File]::WriteAllText($editFile, "updates: {auto_apply: true}")
+$oldEditor = $env:EDITOR
+try {
+    $env:EDITOR = Join-Path $Fixture 'edit policy.ps1'
+    [IO.File]::WriteAllText($env:EDITOR, '[IO.File]::WriteAllText($args[0], "updates: {auto_apply: true, policies: {git: {auto_apply: false}}}")')
+    $edited = & "$Root/envpilot.ps1" config edit -Config $editFile | Out-String
+    if ($LASTEXITCODE -ne 0 -or $edited -notmatch 'git: check only') { throw "Edit did not verify the saved Git rule: $edited" }
+} finally { $env:EDITOR = $oldEditor }
 $updateStatus = & "$Root/envpilot.ps1" updates status -Json | ConvertFrom-Json
 if (-not $updateStatus.PSObject.Properties['next_check']) { throw 'Update status JSON is missing.' }
 $history = & "$Root/envpilot.ps1" updates history -Json | Out-String
