@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -18,6 +19,11 @@ var version = "0.5.0"
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
+		// Refresh already reports source-specific changes. Preserve failure for the scheduler
+		// without repeatedly printing the same catalog error on an unchanged observation.
+		if errors.Is(err, config.ErrModelRefresh) {
+			os.Exit(4)
+		}
 		if err == config.ErrModelRefresh {
 			os.Exit(1)
 		}

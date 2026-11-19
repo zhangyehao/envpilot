@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -103,6 +104,47 @@ func TestMaintenanceHostAndPolicyInheritance(t *testing.T) {
 	c.Updates.Subscription.IntervalDays = 0
 	if Validate(c) == nil {
 		t.Fatal("zero interval accepted")
+	}
+}
+
+func TestCodexStagedUpdateRetriesSwitchWithoutReinstall(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix app-server lifecycle")
+	}
+	testHome(t)
+	c := Defaults()
+	c.Updates.Components = []string{"codex"}
+	c.Updates.Envpilot = false
+	c.Updates.Models.Enabled = false
+	c.Updates.Timezone = "UTC"
+	c.Updates.AutoApply = true
+	path := filepath.Join(Dir(), "config.yaml")
+	now := time.Date(2026, 11, 20, 3, 10, 0, 0, time.UTC)
+	version := "1.0.0"
+	installs, switches := 0, 0
+	busy := exec.Command("/bin/sh", "-c", "exit 75").Run()
+	u := updateRunner{now: func() time.Time { return now }, installed: func(Config, string, string) (string, error) { return version, nil }, latest: func(Config, string) (string, error) { return "1.1.0", nil },
+		apply: func(Config, string, string, string) error { installs++; version = "1.1.0"; return busy },
+		task: func(_ Config, _, _, name string) error {
+			if name != "codex-reconcile" {
+				t.Fatal(name)
+			}
+			switches++
+			return nil
+		}}
+	state, err := u.run(c, ".", path, false)
+	if err != nil || state.Results[0].Status != "deferred" || !state.Results[0].LastApplied.IsZero() {
+		t.Fatal(state, err)
+	}
+	now = now.Add(30 * time.Minute)
+	state, err = u.run(c, ".", path, true)
+	if err != nil || !state.Results[0].PendingSwitch || switches != 0 {
+		t.Fatal(state, err, switches)
+	}
+	now = state.Results[0].NextCheck
+	state, err = u.run(c, ".", path, false)
+	if err != nil || installs != 1 || switches != 1 || state.Results[0].Status != "updated" || !state.Results[0].LastApplied.Equal(now) {
+		t.Fatal(state, err, installs, switches)
 	}
 }
 

@@ -1041,6 +1041,10 @@ env_key = "OPENAI_API_KEY"
     $codexCommand = Get-Command codex -ErrorAction SilentlyContinue
     $version = if ($codexCommand) { (& codex --version 2>$null | Out-String).Trim() } else { "" }
     Add-ReportEvent "codex" $action "installed or updated Codex and configured env_key" $version "npm:@openai/codex" $(if ($codexCommand) { $codexCommand.Source } else { "" })
+    if ($action -eq 'updated') {
+        try { Invoke-EnvpilotCore codex-models refresh --format text }
+        catch { Write-Warn 'Could not refresh Codex model information. Run envpilot codex models status.' }
+    }
     Mark-StateDone "codex"
 }
 
@@ -1400,7 +1404,7 @@ try {
             } else { Invoke-MihomoCommand }
         }
         "codex" {
-            if ($Component -eq 'models') { Invoke-EnvpilotCore codex-models $(if ($Value) { $Value } else { 'status' }) --format $(if ($Json) { 'json' } else { 'text' }) }
+            if ($Component -eq 'models') { Invoke-EnvpilotCore codex-models $(if ($Value) { $Value } else { 'status' }) --format $(if ($Json) { 'json' } else { 'text' }); exit $LASTEXITCODE }
             else { Invoke-CodexCommand }
         }
         "resume" { if (Test-Path $Script:StateFile) { Get-Content $Script:StateFile }; $Component = "all"; Invoke-Install }

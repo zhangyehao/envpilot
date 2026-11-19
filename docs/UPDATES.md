@@ -71,7 +71,7 @@ Only already-installed components listed in `updates.components` are maintained.
 
 Git/tmux resolve upstream stable releases; managed Python selects a platform-matching stable asset. Conda/Mamba use their existing environment solver. If compatibility requires keeping the current version, the result is `compatible`, not a false upgrade. Development/prerelease builds are not automatically downgraded. Install new tools explicitly.
 
-Install/update commands share a kernel lock. Concurrent writers receive `E_UPDATE_BUSY`; crashes release the lock. Git self-update rejects edits/divergence. Package upgrades verify SHA-256. On shared homes, register scheduling on one maintenance node to avoid maintaining the same persistent installation from several nodes.
+Install/update commands share a kernel lock. Concurrent writers receive `E_UPDATE_BUSY`; crashes release the lock. Git self-update rejects edits/divergence. Package upgrades verify SHA-256. On shared homes, set updates.maintenance_host and register scheduling on that host for shared installation updates. Other nodes can register their own schedules for local Codex verification. Launchers and check state are scoped to each node.
 
 ## Last 30 days of updates
 

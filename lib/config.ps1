@@ -71,6 +71,7 @@ function Invoke-EnvpilotCore {
         if ($NonInteractive) { $env:EP_NON_INTERACTIVE = '1' }
         [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
         & $core $CoreArgs[0] --config $configPath --root $Script:Root @($CoreArgs | Select-Object -Skip 1)
+        if ($CoreArgs[0] -eq 'codex-models' -and $LASTEXITCODE -eq 4) { return }
         if ($LASTEXITCODE -ne 0) { throw "envpilot-core failed ($LASTEXITCODE)." }
     } finally { [Console]::OutputEncoding = $previousConsoleEncoding; $env:EP_NON_INTERACTIVE = $previousNonInteractive }
 }
