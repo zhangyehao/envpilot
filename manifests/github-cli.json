@@ -35,43 +35,43 @@
     "command": "gh auth login -h github.com --git-protocol ssh"
   },
   "latest": {
-    "version": "v2.101.0",
-    "name": "GitHub CLI 2.101.0",
-    "published_at": "2026-09-15T14:24:34Z",
-    "html_url": "https://github.com/cli/cli/releases/tag/v2.101.0",
-    "checked_at": "2026-09-28T09:46:20Z",
+    "version": "v2.105.0",
+    "name": "GitHub CLI 2.105.0",
+    "published_at": "2026-11-18T00:18:35Z",
+    "html_url": "https://github.com/cli/cli/releases/tag/v2.105.0",
+    "checked_at": "2026-11-23T12:38:55Z",
     "assets": {
       "linux-amd64": {
-        "name": "gh_2.101.0_linux_amd64.tar.gz",
-        "url": "https://github.com/cli/cli/releases/download/v2.101.0/gh_2.101.0_linux_amd64.tar.gz",
-        "size": 15282175,
-        "digest": "sha256:9bca2d1c16825f109907a23307628a2f0698fbf99662b73a5cf0b020293072b8",
+        "name": "gh_2.105.0_linux_amd64.tar.gz",
+        "url": "https://github.com/cli/cli/releases/download/v2.105.0/gh_2.105.0_linux_amd64.tar.gz",
+        "size": 15050573,
+        "digest": "sha256:79e7ab5db738c48777b696e374f8b428f0647debfb424f44d2f426370407fe2f",
         "content_type": "application/x-gtar",
-        "updated_at": "2026-09-15T14:24:15Z"
+        "updated_at": "2026-11-18T00:18:30Z"
       },
       "linux-arm64": {
-        "name": "gh_2.101.0_linux_arm64.tar.gz",
-        "url": "https://github.com/cli/cli/releases/download/v2.101.0/gh_2.101.0_linux_arm64.tar.gz",
-        "size": 13885041,
-        "digest": "sha256:b57e8063f18862647c9d22727c32e9da1b963f8bf9db648fe123a6975695640f",
+        "name": "gh_2.105.0_linux_arm64.tar.gz",
+        "url": "https://github.com/cli/cli/releases/download/v2.105.0/gh_2.105.0_linux_arm64.tar.gz",
+        "size": 13684308,
+        "digest": "sha256:b1278c75107423d818f1937fd92cafc9e5e9b606631568f68d7fb816f5885a02",
         "content_type": "application/x-gtar",
-        "updated_at": "2026-09-15T14:24:15Z"
+        "updated_at": "2026-11-18T00:18:31Z"
       },
       "darwin-amd64": {
-        "name": "gh_2.101.0_macOS_amd64.zip",
-        "url": "https://github.com/cli/cli/releases/download/v2.101.0/gh_2.101.0_macOS_amd64.zip",
-        "size": 15957303,
-        "digest": "sha256:a6fd66c88e2f07d6e4e058173db341d07dd74d58cf8f19ae668293d2bb614ca3",
+        "name": "gh_2.105.0_macOS_amd64.zip",
+        "url": "https://github.com/cli/cli/releases/download/v2.105.0/gh_2.105.0_macOS_amd64.zip",
+        "size": 15734736,
+        "digest": "sha256:23602cbccbbdc6285a8520745b714cb927ce2ca621779373c2a20cd8e33fda66",
         "content_type": "application/zip",
-        "updated_at": "2026-09-15T14:24:17Z"
+        "updated_at": "2026-11-18T00:18:32Z"
       },
       "darwin-arm64": {
-        "name": "gh_2.101.0_macOS_arm64.zip",
-        "url": "https://github.com/cli/cli/releases/download/v2.101.0/gh_2.101.0_macOS_arm64.zip",
-        "size": 14328800,
-        "digest": "sha256:e4303e39d8f07141c4bad4b99b01079f05029c59b27076e8fbc825c985ecdd8b",
+        "name": "gh_2.105.0_macOS_arm64.zip",
+        "url": "https://github.com/cli/cli/releases/download/v2.105.0/gh_2.105.0_macOS_arm64.zip",
+        "size": 14135394,
+        "digest": "sha256:2a5d03103ae444927383b93d9ffd65579a26e2eb900ce1cf11f55258d5319ded",
         "content_type": "application/zip",
-        "updated_at": "2026-09-15T14:24:17Z"
+        "updated_at": "2026-11-18T00:18:32Z"
       }
     }
   }
